@@ -1,12 +1,14 @@
 use symbolica::{
-    atom::{Atom, AtomCore, Symbol},
+    atom::AtomCore,
     domains::finite_field::Zp,
+    parse,
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
+    symbol,
 };
 
 fn main() {
     for x in 'a'..='z' {
-        Symbol::new(x.to_string());
+        symbol!(x.to_string());
     }
 
     // cyclic-4
@@ -20,7 +22,7 @@ fn main() {
     let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
         .iter()
         .map(|x| {
-            let a = Atom::parse(x).unwrap().expand();
+            let a = parse!(x).unwrap().expand();
             a.to_polynomial(&Zp::new(13), None)
         })
         .collect();

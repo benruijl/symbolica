@@ -1,6 +1,7 @@
 //! Manage global state and thread-local workspaces.
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use std::borrow::Cow;
 use std::hash::Hash;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,9 +19,10 @@ use byteorder::LittleEndian;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
-use crate::atom::{FunctionAttribute, NormalizationFunction};
+use crate::atom::{FunctionAttribute, NamespacedSymbol, NormalizationFunction};
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
+use crate::wrap_symbol;
 use crate::{
     atom::{Atom, Symbol},
     coefficient::Coefficient,
@@ -52,9 +54,12 @@ impl StateMap {
     }
 }
 
-struct SymbolData {
-    name: String,
-    function: Option<NormalizationFunction>,
+pub(crate) struct SymbolData {
+    pub(crate) name: String,
+    pub(crate) namespace: Cow<'static, str>,
+    pub(crate) file: Cow<'static, str>,
+    pub(crate) line: usize,
+    pub(crate) function: Option<NormalizationFunction>,
 }
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -97,6 +102,10 @@ impl State {
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
+    pub fn is_builtin_name<S: AsRef<str>>(str: S) -> bool {
+        Self::BUILTIN_SYMBOL_NAMES.contains(&str.as_ref())
+    }
+
     fn new() -> State {
         LicenseManager::check();
 
@@ -105,7 +114,7 @@ impl State {
         };
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol_impl(x);
+            state.get_symbol_impl(wrap_symbol!(x));
         }
 
         #[cfg(test)]
@@ -130,37 +139,44 @@ impl State {
         use crate::atom::FunctionAttribute;
 
         for i in 0..30 {
-            let _ = self.get_symbol_impl(&format!("v{}", i));
+            let _ = self.get_symbol_impl(wrap_symbol!(format!("v{}", i)));
         }
         for i in 0..30 {
-            let _ = self.get_symbol_impl(&format!("f{}", i));
+            let _ = self.get_symbol_impl(wrap_symbol!(format!("f{}", i)));
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                &format!("fs{}", i),
+                wrap_symbol!(format!("fs{}", i)),
                 &[FunctionAttribute::Symmetric],
+                None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                &format!("fc{}", i),
+                wrap_symbol!(format!("fc{}", i)),
                 &[FunctionAttribute::Cyclesymmetric],
+                None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                &format!("fa{}", i),
+                wrap_symbol!(format!("fa{}", i)),
                 &[FunctionAttribute::Antisymmetric],
+                None,
             );
         }
         for i in 0..5 {
-            let _ = self
-                .get_symbol_with_attributes_impl(&format!("fl{}", i), &[FunctionAttribute::Linear]);
+            let _ = self.get_symbol_with_attributes_impl(
+                wrap_symbol!(format!("fl{}", i)),
+                &[FunctionAttribute::Linear],
+                None,
+            );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                &format!("fsl{}", i),
+                wrap_symbol!(format!("fsl{}", i)),
                 &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
+                None,
             );
         }
     }
@@ -170,11 +186,11 @@ impl State {
     ///
     /// Example:
     /// ```
-    /// # use symbolica::atom::{Symbol, FunctionAttribute};
+    /// # use symbolica::symbol;
     /// # use symbolica::state::State;
-    /// Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// symbol!("f"; Symmetric).unwrap();
     /// unsafe { State::reset(); }
-    /// Symbol::new_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
+    /// symbol!("f"; Antisymmetric).unwrap();
     /// ```
     pub unsafe fn reset() {
         let mut state = STATE.write().unwrap();
@@ -183,7 +199,7 @@ impl State {
         SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol_impl(x);
+            state.get_symbol_impl(wrap_symbol!(x));
         }
 
         #[cfg(test)]
@@ -221,13 +237,13 @@ impl State {
     /// Get the symbol for a certain name if the name is already registered,
     /// else register it and return a new symbol without attributes.
     ///
-    /// To register a symbol with attributes, use [`Symbol::new_with_attributes`].
-    pub(crate) fn get_symbol<S: AsRef<str>>(name: S) -> Symbol {
-        STATE.write().unwrap().get_symbol_impl(name.as_ref())
+    /// To register a symbol with attributes, use [`symbol!_with_attributes`].
+    pub(crate) fn get_symbol(name: NamespacedSymbol) -> Symbol {
+        STATE.write().unwrap().get_symbol_impl(name)
     }
 
-    pub(crate) fn get_symbol_impl(&mut self, name: &str) -> Symbol {
-        match self.str_to_id.entry(name.into()) {
+    pub(crate) fn get_symbol_impl(&mut self, name: NamespacedSymbol) -> Symbol {
+        match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
@@ -236,7 +252,7 @@ impl State {
                 }
 
                 let mut wildcard_level = 0;
-                for x in name.chars().rev() {
+                for x in v.key().chars().rev() {
                     if x != '_' {
                         break;
                     }
@@ -250,7 +266,10 @@ impl State {
                 let id_ret = ID_TO_STR.push((
                     new_symbol,
                     SymbolData {
-                        name: name.into(),
+                        name: v.key().clone(),
+                        file: name.file,
+                        namespace: name.namespace,
+                        line: name.line,
                         function: None,
                     },
                 )) - offset;
@@ -267,22 +286,40 @@ impl State {
     ///
     /// This function will return an error when an existing symbol is redefined
     /// with different attributes.
-    pub(crate) fn get_symbol_with_attributes<S: AsRef<str>>(
-        name: S,
+    pub(crate) fn get_symbol_with_attributes(
+        name: NamespacedSymbol,
         attributes: &[FunctionAttribute],
     ) -> Result<Symbol, String> {
         STATE
             .write()
             .unwrap()
-            .get_symbol_with_attributes_impl(name.as_ref(), attributes)
+            .get_symbol_with_attributes_impl(name, attributes, None)
+    }
+
+    /// Register a new symbol with the given attributes and a specific function
+    /// that is called after normalization of the arguments. This function cannot
+    /// be exported, and therefore before importing a state, symbols with special
+    /// normalization functions must be registered explicitly.
+    ///
+    /// If the symbol already exists, an error is returned.
+    pub(crate) fn get_symbol_with_attributes_and_function(
+        name: NamespacedSymbol,
+        attributes: &[FunctionAttribute],
+        f: NormalizationFunction,
+    ) -> Result<Symbol, String> {
+        STATE
+            .write()
+            .unwrap()
+            .get_symbol_with_attributes_impl(name, attributes, Some(f))
     }
 
     pub(crate) fn get_symbol_with_attributes_impl(
         &mut self,
-        name: &str,
+        name: NamespacedSymbol,
         attributes: &[FunctionAttribute],
+        normalization_function: Option<NormalizationFunction>,
     ) -> Result<Symbol, String> {
-        match self.str_to_id.entry(name.into()) {
+        match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
 
@@ -295,10 +332,17 @@ impl State {
                     attributes.contains(&FunctionAttribute::Linear),
                 );
 
-                if r == new_id {
+                if r == new_id && normalization_function.is_none() {
                     Ok(r)
                 } else {
-                    Err(format!("Symbol {} redefined with new attributes", name).into())
+                    let data = &ID_TO_STR[r.get_id() as usize].1;
+                    if data.file.is_empty() {
+                        return Err(
+                            format!("Symbol {} redefined with new attributes.", data.name).into(),
+                        );
+                    } else {
+                        Err(format!("Symbol {} redefined with new attributes. The first definition occurred here: {}:{}.", data.name, data.file, data.line).into())
+                    }
                 }
             }
             Entry::Vacant(v) => {
@@ -312,7 +356,7 @@ impl State {
                 let id = ID_TO_STR.len() - offset;
 
                 let mut wildcard_level = 0;
-                for x in name.chars().rev() {
+                for x in v.key().chars().rev() {
                     if x != '_' {
                         break;
                     }
@@ -331,8 +375,11 @@ impl State {
                 let id_ret = ID_TO_STR.push((
                     new_symbol,
                     SymbolData {
-                        name: name.into(),
-                        function: None,
+                        name: v.key().clone(),
+                        file: name.file,
+                        namespace: name.namespace,
+                        line: name.line,
+                        function: normalization_function,
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
@@ -341,73 +388,6 @@ impl State {
 
                 Ok(new_symbol)
             }
-        }
-    }
-
-    /// Register a new symbol with the given attributes and a specific function
-    /// that is called after normalization of the arguments. This function cannot
-    /// be exported, and therefore before importing a state, symbols with special
-    /// normalization functions must be registered explicitly.
-    ///
-    /// If the symbol already exists, an error is returned.
-    pub(crate) fn get_symbol_with_attributes_and_function<S: AsRef<str>>(
-        name: S,
-        attributes: &[FunctionAttribute],
-        f: NormalizationFunction,
-    ) -> Result<Symbol, String> {
-        STATE
-            .write()
-            .unwrap()
-            .get_symbol_with_attributes_and_function_impl(name.as_ref(), attributes, f)
-    }
-
-    pub(crate) fn get_symbol_with_attributes_and_function_impl(
-        &mut self,
-        name: &str,
-        attributes: &[FunctionAttribute],
-        f: NormalizationFunction,
-    ) -> Result<Symbol, String> {
-        if self.str_to_id.contains_key(name) {
-            Err(format!("Symbol {} already defined", name).into())
-        } else {
-            let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
-            if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
-                panic!("Too many variables defined");
-            }
-
-            // there is no synchronization issue since only one thread can insert at a time
-            // as the state itself is behind a mutex
-            let id = ID_TO_STR.len() - offset;
-
-            let mut wildcard_level = 0;
-            for x in name.chars().rev() {
-                if x != '_' {
-                    break;
-                }
-                wildcard_level += 1;
-            }
-
-            let new_symbol = Symbol::raw_fn(
-                id as u32,
-                wildcard_level,
-                attributes.contains(&FunctionAttribute::Symmetric),
-                attributes.contains(&FunctionAttribute::Antisymmetric),
-                attributes.contains(&FunctionAttribute::Cyclesymmetric),
-                attributes.contains(&FunctionAttribute::Linear),
-            );
-
-            let id_ret = ID_TO_STR.push((
-                new_symbol,
-                SymbolData {
-                    name: name.into(),
-                    function: Some(f),
-                },
-            )) - offset;
-            assert_eq!(id, id_ret);
-
-            self.str_to_id.insert(name.into(), new_symbol);
-
-            Ok(new_symbol)
         }
     }
 
@@ -421,6 +401,29 @@ impl State {
         &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
             .1
             .name
+    }
+
+    /// Get the name for a given symbol.
+    #[inline]
+    pub(crate) fn get_symbol_namespace(id: Symbol) -> &'static str {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
+        ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
+            .1
+            .namespace
+            .as_ref()
+    }
+
+    /// Get the name for a given symbol.
+    #[inline]
+    pub(crate) fn get_symbol_data(id: Symbol) -> &'static SymbolData {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
+        &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)].1
     }
 
     /// Get the user-specified normalization function for the symbol.
@@ -494,6 +497,11 @@ impl State {
         for (s, n) in State::symbol_iter() {
             dest.write_u32::<LittleEndian>(n.as_bytes().len() as u32)?;
             dest.write_all(n.as_bytes())?;
+
+            let namespace = s.get_namespace();
+            dest.write_u32::<LittleEndian>(namespace.as_bytes().len() as u32)?;
+            dest.write_all(namespace.as_bytes())?;
+
             dest.write_u8(s.get_wildcard_level())?;
             dest.write_u8(s.is_symmetric() as u8)?;
             dest.write_u8(s.is_antisymmetric() as u8)?;
@@ -576,6 +584,12 @@ impl State {
 
             let mut str: String = std::string::String::from_utf8(v).unwrap().into();
 
+            let l = source.read_u32::<LittleEndian>()?;
+            let mut v = vec![0; l as usize];
+            source.read_exact(&mut v)?;
+
+            let namespace: String = std::string::String::from_utf8(v).unwrap().into();
+
             let wildcard_level = source.read_u8()?;
             let is_symmetric = source.read_u8()? != 0;
             let is_antisymmetric = source.read_u8()? != 0;
@@ -597,7 +611,15 @@ impl State {
             }
 
             loop {
-                match Symbol::new_with_attributes(&str, &attributes) {
+                match Symbol::new_with_attributes(
+                    NamespacedSymbol {
+                        symbol: str.to_string().into(),
+                        namespace: namespace.to_string().into(),
+                        file: "".into(),
+                        line: 0,
+                    },
+                    &attributes,
+                ) {
                     Ok(id) => {
                         if x as u32 != id.get_id() {
                             state_map.symbols.insert(x as u32, id);
@@ -622,7 +644,7 @@ impl State {
                         } else {
                             return Err(std::io::Error::new(
                                 std::io::ErrorKind::InvalidData,
-                                format!("Symbol conflict for {}", str),
+                                format!("Symbol conflict for {}::{}", namespace, str),
                             ));
                         }
                     }
@@ -867,7 +889,10 @@ impl Drop for RecycledAtom {
 mod tests {
     use std::io::Cursor;
 
-    use crate::atom::{Atom, AtomView, Symbol};
+    use crate::{
+        atom::{Atom, AtomView},
+        parse, symbol,
+    };
 
     use super::State;
 
@@ -882,9 +907,8 @@ mod tests {
 
     #[test]
     fn custom_normalization() {
-        let _real_log = Symbol::new_with_attributes_and_function(
-            "custom_normalization_real_log",
-            &[],
+        let _real_log = symbol!(
+            "custom_normalization_real_log";;
             Box::new(|input, out| {
                 if let AtomView::Fun(f) = input {
                     if f.get_nargs() == 1 {
@@ -901,11 +925,11 @@ mod tests {
                 }
 
                 false
-            }),
+            })
         )
         .unwrap();
 
-        let e = Atom::parse("custom_normalization_real_log(exp(x))").unwrap();
-        assert_eq!(e, Atom::parse("x").unwrap());
+        let e = parse!("custom_normalization_real_log(exp(x))").unwrap();
+        assert_eq!(e, parse!("x").unwrap());
     }
 }

@@ -121,9 +121,9 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 /// ```
 /// # use std::io::BufWriter;
 /// # use std::fs::File;
-/// use symbolica::atom::{Atom, AtomCore};
+/// use symbolica::{atom::AtomCore, parse};
 /// use symbolica::streaming::TermStreamer;
-/// let input = Atom::parse("(x+1)*y + (y+1)^2*z").unwrap();
+/// let input = parse!("(x+1)*y + (y+1)^2*z").unwrap();
 ///
 /// let mut stream = TermStreamer::<BufWriter<File>>::new(Default::default());
 /// stream.push(input);
@@ -133,7 +133,7 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 ///
 /// let r = stream.to_expression();
 ///
-/// let res = Atom::parse("y+z+x*y+2*y*z+y^2*z").unwrap();
+/// let res = parse!("y+z+x*y+2*y*z+y^2*z").unwrap();
 /// assert_eq!(r, res);
 /// ```
 pub struct TermStreamer<W: WriteableNamedStream> {
@@ -617,9 +617,11 @@ mod test {
     use brotli::CompressorWriter;
 
     use crate::{
-        atom::{Atom, AtomCore, AtomType, Symbol},
-        id::{Pattern, WildcardRestriction},
+        atom::{Atom, AtomCore, AtomType},
+        id::WildcardRestriction,
+        parse,
         streaming::{TermStreamer, TermStreamerConfig},
+        symbol,
     };
 
     #[test]
@@ -631,17 +633,17 @@ mod test {
                 max_mem_bytes: 20,
             });
 
-        let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3) + v2 + v3 + v4").unwrap();
+        let input = parse!("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3) + v2 + v3 + v4").unwrap();
         streamer.push(input);
 
         let _ = streamer.reader();
 
-        streamer = streamer + Atom::parse("f1(v1)").unwrap();
+        streamer = streamer + parse!("f1(v1)").unwrap();
 
         streamer = streamer.map(|f| f);
 
-        let pattern = Pattern::parse("f1(x_)").unwrap();
-        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+        let pattern = parse!("f1(x_)").unwrap().to_pattern();
+        let rhs = parse!("f1(v1) + v1").unwrap().to_pattern();
 
         streamer = streamer.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
 
@@ -649,7 +651,7 @@ mod test {
 
         let r = streamer.to_expression();
 
-        let res = Atom::parse("12*v1+v2+v3+v4+11*f1(v1)").unwrap();
+        let res = parse!("12*v1+v2+v3+v4+11*f1(v1)").unwrap();
         assert_eq!(r, res);
     }
 
@@ -662,11 +664,11 @@ mod test {
                 max_mem_bytes: 20,
             });
 
-        let input = Atom::parse("v1*coeff(v2/v3+1)+v2*coeff(v3+1)+v3*coeff(1/v2)").unwrap();
+        let input = parse!("v1*coeff(v2/v3+1)+v2*coeff(v3+1)+v3*coeff(1/v2)").unwrap();
         streamer.push(input);
 
-        let pattern = Pattern::parse("v1_").unwrap();
-        let rhs = Pattern::parse("v1").unwrap();
+        let pattern = parse!("v1_").unwrap().to_pattern();
+        let rhs = parse!("v1").unwrap().to_pattern();
 
         streamer = streamer.map(|x| {
             x.replace_all(
@@ -674,7 +676,7 @@ mod test {
                 &rhs,
                 Some(
                     &(
-                        Symbol::new("v1_"),
+                        symbol!("v1_"),
                         WildcardRestriction::IsAtomType(AtomType::Var),
                     )
                         .into(),
@@ -688,15 +690,15 @@ mod test {
 
         let r = streamer.to_expression();
 
-        let res = Atom::parse("coeff((v3+2*v2*v3+v2*v3^2+v2^2)/(v2*v3))*v1").unwrap();
+        let res = parse!("coeff((v3+2*v2*v3+v2*v3^2+v2^2)/(v2*v3))*v1").unwrap();
         assert_eq!(r - res, Atom::Zero);
     }
 
     #[test]
     fn memory_stream() {
-        let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
-        let pattern = Pattern::parse("f1(x_)").unwrap();
-        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+        let input = parse!("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
+        let pattern = parse!("f1(x_)").unwrap().to_pattern();
+        let rhs = parse!("f1(v1) + v1").unwrap().to_pattern();
 
         let mut stream = TermStreamer::<BufWriter<File>>::new(TermStreamerConfig::default());
         stream.push(input);
@@ -706,13 +708,13 @@ mod test {
 
         let r = stream.to_expression();
 
-        let res = Atom::parse("11*v1+10*f1(v1)").unwrap();
+        let res = parse!("11*v1+10*f1(v1)").unwrap();
         assert_eq!(r, res);
     }
 
     #[test]
     fn term_map() {
-        let input = Atom::parse("v1 + v2 + v3 + v4").unwrap();
+        let input = parse!("v1 + v2 + v3 + v4").unwrap();
 
         let r = input
             .as_view()
@@ -723,7 +725,7 @@ mod test {
             .map_terms(|x| Atom::new_num(1) + &x.to_owned(), 1);
         assert_eq!(r, r2);
 
-        let res = Atom::parse("v1 + v2 + v3 + v4 + 4").unwrap();
+        let res = parse!("v1 + v2 + v3 + v4 + 4").unwrap();
         assert_eq!(r, res);
     }
 }

@@ -184,20 +184,35 @@ impl<N: Display, E: Display> Graph<N, E> {
         out.push_str("graph TD;\n");
 
         for (i, x) in self.nodes.iter().enumerate() {
-            out.push_str(&format!("  {}[{}];\n", i, x.data));
+            let d = format!("{}", x.data);
+            if d.is_empty() {
+                out.push_str(&format!("  {};\n", i));
+            } else {
+                out.push_str(&format!("  {}[\"{}\"];\n", i, d));
+            }
         }
 
         for x in &self.edges {
-            if x.directed {
-                out.push_str(&format!(
-                    "  {} -->|{}| {};\n",
-                    x.vertices.0, x.data, x.vertices.1,
-                ));
+            let d = format!("{}", x.data);
+
+            if d.is_empty() {
+                if x.directed {
+                    out.push_str(&format!("  {} --> {};\n", x.vertices.0, x.vertices.1,));
+                } else {
+                    out.push_str(&format!("  {} --- {};\n", x.vertices.0, x.vertices.1,));
+                }
             } else {
-                out.push_str(&format!(
-                    "  {} ---|{}| {};\n",
-                    x.vertices.0, x.data, x.vertices.1,
-                ));
+                if x.directed {
+                    out.push_str(&format!(
+                        "  {} -->|\"{}\"| {};\n",
+                        x.vertices.0, x.data, x.vertices.1,
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "  {} ---|\"{}\"| {};\n",
+                        x.vertices.0, x.data, x.vertices.1,
+                    ));
+                }
             }
         }
 

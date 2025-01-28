@@ -32,7 +32,10 @@ use smartstring::{LazyCompact, SmartString};
 use pyo3::pymodule;
 
 use crate::{
-    atom::{Atom, AtomCore, AtomType, AtomView, FunctionAttribute, ListIterator, Symbol},
+    atom::{
+        Atom, AtomCore, AtomType, AtomView, DefaultNamespace, FunctionAttribute, ListIterator,
+        Symbol,
+    },
     coefficient::CoefficientView,
     domains::{
         algebraic_number::AlgebraicExtension,
@@ -57,6 +60,7 @@ use crate::{
         Replacement, WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
+    parse,
     parser::Token,
     poly::{
         factor::Factorize, groebner::GroebnerBasis, polynomial::MultivariatePolynomial,
@@ -212,9 +216,13 @@ fn number_shorthand(
 }
 
 /// Shorthand notation for :func:`Expression.parse`.
-#[pyfunction(name = "E")]
-fn expression_shorthand(expr: &str, py: Python) -> PyResult<PythonExpression> {
-    PythonExpression::parse(&PythonExpression::type_object(py), expr)
+#[pyfunction(name = "E", signature = (expr,default_namespace="python"))]
+fn expression_shorthand(
+    expr: &str,
+    default_namespace: &str,
+    py: Python,
+) -> PyResult<PythonExpression> {
+    PythonExpression::parse(&PythonExpression::type_object(py), expr, default_namespace)
 }
 
 /// Specifies the type of the atom.
@@ -1587,7 +1595,8 @@ impl PythonTransformer {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn print(
         &self,
@@ -1604,6 +1613,7 @@ impl PythonTransformer {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
@@ -1622,6 +1632,9 @@ impl PythonTransformer {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },)
         );
     }
@@ -2502,7 +2515,7 @@ impl PythonExpression {
         fn name_check(name: &str) -> PyResult<&str> {
             let illegal_chars = [
                 '\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']', ' ', '\t', '\n', '\r',
-                '\\', ';', ':', '&', '!', '%', '.',
+                '\\', ';', '&', '!', '%', '.',
             ];
 
             if name.is_empty() {
@@ -2520,6 +2533,13 @@ impl PythonExpression {
             }
         }
 
+        let namespace = DefaultNamespace {
+            namespace: "python".into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         if is_symmetric.is_none()
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
@@ -2529,14 +2549,15 @@ impl PythonExpression {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = Symbol::new(name_check(&*name)?);
+                let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?));
                 let r = PythonExpression::from(Atom::new_var(id));
                 return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = Symbol::new(name_check(&*name)?);
+                    let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?));
+
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
                 }
@@ -2575,7 +2596,7 @@ impl PythonExpression {
 
         if names.len() == 1 {
             let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
-            let name = name_check(&*name)?;
+            let name = namespace.attach_namespace(name_check(&*name)?);
 
             let id = if let Some(f) = custom_normalization {
                 if let Pattern::Transformer(t) = f.expr {
@@ -2611,7 +2632,7 @@ impl PythonExpression {
             let mut result = vec![];
             for a in names {
                 let name = a.extract::<PyBackedStr>()?;
-                let name = name_check(&*name)?;
+                let name = namespace.attach_namespace(name_check(&*name)?);
 
                 let id = if let Some(f) = &custom_normalization {
                     if let Pattern::Transformer(t) = &f.expr {
@@ -2680,7 +2701,7 @@ impl PythonExpression {
             Ok(Atom::new_num(num).into())
         } else if let Ok(num) = num.downcast_bound::<PyInt>(py) {
             let a = format!("{}", num);
-            PythonExpression::parse(_cls, &a)
+            PythonExpression::parse(_cls, &a, "python")
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             if let Some(relative_error) = relative_error {
                 let mut r: Rational = f.0.into();
@@ -2775,9 +2796,15 @@ impl PythonExpression {
     /// ValueError
     ///     If the input is not a valid Symbolica expression.
     ///
+    #[pyo3(signature = (input, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, input: &str) -> PyResult<PythonExpression> {
-        let e = Atom::parse(input).map_err(exceptions::PyValueError::new_err)?;
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        input: &str,
+        default_namespace: &str,
+    ) -> PyResult<PythonExpression> {
+        let e = parse!(input, default_namespace.to_string())
+            .map_err(exceptions::PyValueError::new_err)?;
         Ok(e.into())
     }
 
@@ -2844,7 +2871,8 @@ impl PythonExpression {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -2861,6 +2889,7 @@ impl PythonExpression {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(format!(
             "{}",
@@ -2881,6 +2910,9 @@ impl PythonExpression {
                     latex,
                     precision,
                     pretty_matrix: false,
+                    hide_all_namespaces: !show_namespaces,
+                    color_namespace: true,
+                    hide_namespace: Some("python"),
                 },
             )
         ))
@@ -5263,11 +5295,12 @@ impl PythonExpression {
     }
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
-    /// The tensors must be written as functions, with its indices are the arguments.
-    /// The repeated indices should be provided in `contracted_indices`.
+    /// The tensors must be written as functions, with its indices as the arguments.
+    /// Subexpressions, constants and open indices are supported.
     ///
     /// If the contracted indices are distinguishable (for example in their dimension),
-    /// you can provide an optional group marker for each index using `index_group`.
+    /// you can provide a group marker as the second element in the tuple of the index
+    /// specification.
     /// This makes sure that an index will not be renamed to an index from a different group.
     ///
     /// Examples
@@ -5278,38 +5311,20 @@ impl PythonExpression {
     /// >>>
     /// >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
     /// >>>
-    /// >>> print(e.canonize_tensors([mu1, mu2, mu3, mu4]))
+    /// >>> print(e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]))
     /// yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
-    #[pyo3(signature = (contracted_indices, index_group=None))]
     fn canonize_tensors(
         &self,
-        contracted_indices: Vec<ConvertibleToExpression>,
-        index_group: Option<Vec<ConvertibleToExpression>>,
+        contracted_indices: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
     ) -> PyResult<Self> {
         let contracted_indices = contracted_indices
             .into_iter()
-            .map(|x| x.to_expression().expr)
+            .map(|x| (x.0.to_expression().expr, x.1.to_expression().expr))
             .collect::<Vec<_>>();
-        let contracted_indices = contracted_indices
-            .iter()
-            .map(|x| x.as_view())
-            .collect::<Vec<_>>();
-
-        let index_group = index_group.map(|x| {
-            x.into_iter()
-                .map(|x| x.to_expression().expr)
-                .collect::<Vec<_>>()
-        });
-        let index_group = index_group
-            .as_ref()
-            .map(|x| x.iter().map(|x| x.as_view()).collect::<Vec<_>>());
 
         let r = self
             .expr
-            .canonize_tensors(
-                &contracted_indices,
-                index_group.as_ref().map(|x| x.as_slice()),
-            )
+            .canonize_tensors(&contracted_indices)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not canonize tensors: {}", e))
             })?;
@@ -5540,7 +5555,8 @@ impl PythonSeries {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -5557,6 +5573,7 @@ impl PythonSeries {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(format!(
             "{}",
@@ -5576,6 +5593,9 @@ impl PythonSeries {
                     latex,
                     precision,
                     pretty_matrix: false,
+                    hide_all_namespaces: !show_namespaces,
+                    color_namespace: true,
+                    hide_namespace: Some("python"),
                 },
                 PrintState::new()
             )
@@ -6000,7 +6020,8 @@ impl PythonPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -6017,6 +6038,7 @@ impl PythonPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -6034,6 +6056,9 @@ impl PythonPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -6417,14 +6442,27 @@ impl PythonPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
+    #[pyo3(signature = (arg, vars, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        default_namespace: &str,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6730,13 +6768,26 @@ impl PythonIntegerPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
+    #[pyo3(signature = (arg, vars, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        default_namespace: &str,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6819,7 +6870,8 @@ impl PythonFiniteFieldPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -6836,6 +6888,7 @@ impl PythonFiniteFieldPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -6853,6 +6906,9 @@ impl PythonFiniteFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -7309,18 +7365,27 @@ impl PythonFiniteFieldPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
+    #[pyo3(signature = (arg, vars, prime, default_namespace = "python"))]
     #[classmethod]
     pub fn parse(
         _cls: &Bound<'_, PyType>,
         arg: &str,
         vars: Vec<PyBackedStr>,
         prime: u32,
+        default_namespace: &str,
     ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -7400,7 +7465,8 @@ impl PythonPrimeTwoPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -7417,6 +7483,7 @@ impl PythonPrimeTwoPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -7434,6 +7501,9 @@ impl PythonPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -7941,7 +8011,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
     )]
     pub fn format(
         &self,
@@ -7958,6 +8029,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -7975,6 +8047,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -8486,7 +8561,8 @@ impl PythonGaloisFieldPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -8503,6 +8579,7 @@ impl PythonGaloisFieldPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -8520,6 +8597,9 @@ impl PythonGaloisFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -9032,7 +9112,8 @@ impl PythonNumberFieldPolynomial {
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false,
-            precision = None)
+        precision = None,
+            show_namespaces = false)
     )]
     pub fn format(
         &self,
@@ -9049,6 +9130,7 @@ impl PythonNumberFieldPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -9066,6 +9148,9 @@ impl PythonNumberFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -9838,13 +9923,26 @@ impl PythonRationalPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica rational polynomial.
+    #[pyo3(signature = (arg, vars, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        default_namespace: &str,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10126,18 +10224,27 @@ impl PythonFiniteFieldRationalPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica rational polynomial.
+    #[pyo3(signature = (arg, vars, prime, default_namespace = "python"))]
     #[classmethod]
     pub fn parse(
         _cls: &Bound<'_, PyType>,
         arg: &str,
         vars: Vec<PyBackedStr>,
         prime: u32,
+        default_namespace: &str,
     ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10356,7 +10463,7 @@ impl PythonExpressionEvaluator {
         (function_name,
         filename,
         library_name,
-        inline_asm = true,
+        inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
     ))]
@@ -10365,7 +10472,7 @@ impl PythonExpressionEvaluator {
         function_name: &str,
         filename: &str,
         library_name: &str,
-        inline_asm: bool,
+        inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
     ) -> PyResult<PythonCompiledExpressionEvaluator> {
@@ -10375,19 +10482,22 @@ impl PythonExpressionEvaluator {
             options.compiler = compiler_path.to_string();
         }
 
+        let inline_asm = match inline_asm.to_lowercase().as_str() {
+            "default" => InlineASM::default(),
+            "x64" => InlineASM::X64,
+            "aarch64" => InlineASM::AArch64,
+            "none" => InlineASM::None,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid inline assembly type specified.",
+                ))
+            }
+        };
+
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
                 .eval
-                .export_cpp(
-                    filename,
-                    function_name,
-                    true,
-                    if inline_asm {
-                        InlineASM::X64
-                    } else {
-                        InlineASM::None
-                    },
-                )
+                .export_cpp(filename, function_name, true, inline_asm)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
                 .map_err(|e| {
@@ -10816,7 +10926,8 @@ impl PythonMatrix {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -10828,6 +10939,7 @@ impl PythonMatrix {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> String {
         self.matrix.format_string(
             &PrintOptions {
@@ -10845,6 +10957,9 @@ impl PythonMatrix {
                 latex,
                 precision,
                 pretty_matrix,
+                hide_all_namespaces: !show_namespaces,
+                color_namespace: true,
+                hide_namespace: Some("python"),
             },
             PrintState::default(),
         )

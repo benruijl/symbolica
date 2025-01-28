@@ -61,7 +61,7 @@ def N(num: int | float | str | Decimal, relative_error: Optional[float] = None) 
     """Shorthand notation for :func:`Expression.num`"""
 
 
-def E(input: str) -> Expression:
+def E(input: str, default_namespace: str = "python") -> Expression:
     """Shorthand notation for :func:`Expression.parse`"""
 
 
@@ -296,7 +296,7 @@ class Expression:
         """Return all defined symbol names (function names and variables)."""
 
     @classmethod
-    def parse(_cls, input: str) -> Expression:
+    def parse(_cls, input: str, default_namespace: str = "python") -> Expression:
         """
         Parse a Symbolica expression from a string.
 
@@ -390,7 +390,7 @@ class Expression:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
-        precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
@@ -1445,24 +1445,23 @@ class Expression:
         """
 
     def canonize_tensors(self,
-                         contracted_indices: Sequence[Expression | int],
-                         index_group: Optional[Sequence[Expression | int]] = None) -> Expression:
+                         contracted_indices: Sequence[Tuple[Expression | int,Expression | int]]) -> Expression:
         """Canonize (products of) tensors in the expression by relabeling repeated indices.
-        The tensors must be written as functions, with its indices are the arguments.
-        The repeated indices should be provided in `contracted_indices`.
-
+        The tensors must be written as functions, with its indices as the arguments.
+        Subexpressions, constants and open indices are supported.
+    
         If the contracted indices are distinguishable (for example in their dimension),
-        you can provide an optional group marker for each index using `index_group`.
+        you can provide a group marker as the second element in the tuple of the index
+        specification.
         This makes sure that an index will not be renamed to an index from a different group.
-
+    
         Examples
         --------
         >>> g = Expression.symbol('g', is_symmetric=True)
         >>> fc = Expression.symbol('fc', is_cyclesymmetric=True)
         >>> mu1, mu2, mu3, mu4, k1 = Expression.symbol('mu1', 'mu2', 'mu3', 'mu4', 'k1')
         >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
-        >>> print(e.canonize_tensors([mu1, mu2, mu3, mu4]))
-
+        >>> print(e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]))
         yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
         """
 
@@ -2294,6 +2293,7 @@ class Series:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the series into a human-readable string.
@@ -2434,7 +2434,7 @@ class Polynomial:
     """A Symbolica polynomial with rational coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> Polynomial:
+    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> Polynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -2477,6 +2477,7 @@ class Polynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2704,7 +2705,7 @@ class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> IntegerPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> IntegerPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -2747,6 +2748,7 @@ class IntegerPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2909,6 +2911,7 @@ class NumberFieldPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3077,7 +3080,7 @@ class FiniteFieldPolynomial:
     """A Symbolica polynomial with finite field coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int, default_namespace: str = "python") -> FiniteFieldPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -3120,6 +3123,7 @@ class FiniteFieldPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3290,7 +3294,7 @@ class RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -3391,7 +3395,7 @@ class FiniteFieldRationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldRationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int, default_namespace: str = "python") -> FiniteFieldRationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -3550,6 +3554,7 @@ class Matrix:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the matrix into a human-readable string, with tunable settings.
@@ -3606,11 +3611,13 @@ class Evaluator:
         function_name: str,
         filename: str,
         library_name: str,
-        inline_asm: bool = True,
+        inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
     ) -> CompiledEvaluator:
-        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it."""
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+        The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        """
 
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
         """Evaluate the expression for multiple inputs and return the result."""

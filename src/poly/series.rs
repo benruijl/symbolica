@@ -2,16 +2,16 @@
 //!
 //! # Examples
 //! ```
-//! use symbolica::atom::{Atom, AtomCore, Symbol};
+//! use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
 //!
-//! let x = Symbol::new("x");
-//! let a = Atom::parse("(1-cos(x))/sin(x)").unwrap();
+//! let x = symbol!("x");
+//! let a = parse!("(1-cos(x))/sin(x)").unwrap();
 //!
 //! let out = a
 //!     .series(x, Atom::new_num(0), 4.into(), true)
 //!     .unwrap();
 //! println!("{}", out);
-//! assert_eq!(out.to_atom(), Atom::parse("1/2*x+1/24*x^3").unwrap());
+//! assert_eq!(out.to_atom(), parse!("1/2*x+1/24*x^3").unwrap());
 //! ```
 use core::panic;
 use std::{
@@ -42,16 +42,16 @@ use super::Variable;
 ///
 /// A series can be constructed from an [Atom]:
 /// ```
-/// use symbolica::atom::{Atom, AtomCore, Symbol};
+/// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
 ///
-/// let x = Symbol::new("x");
-/// let a = Atom::parse("(1-cos(x))/sin(x)").unwrap();
+/// let x = symbol!("x");
+/// let a = parse!("(1-cos(x))/sin(x)").unwrap();
 ///
 /// let out = a
 ///     .series(x, Atom::new_num(0), 4.into(), true)
 ///     .unwrap();
 /// println!("{}", out);
-/// assert_eq!(out.to_atom(), Atom::parse("1/2*x+1/24*x^3").unwrap());
+/// assert_eq!(out.to_atom(), parse!("1/2*x+1/24*x^3").unwrap());
 /// ```
 #[derive(Clone)]
 pub struct Series<F: Ring> {

@@ -1776,7 +1776,7 @@ mod test {
     use crate::{
         atom::{Atom, AtomCore, AtomView},
         domains::{atom::AtomField, integer::Z, rational::Q, Ring},
-        symb,
+        parse, symbol,
         tensors::matrix::{Matrix, Vector},
     };
 
@@ -2008,18 +2008,22 @@ mod test {
     fn jacobian() {
         let a = Vector::new(
             vec![
-                Atom::parse("x^2+y+z").unwrap(),
-                Atom::parse("y+z").unwrap(),
-                Atom::parse("z+x").unwrap(),
+                parse!("x^2+y+z").unwrap(),
+                parse!("y+z").unwrap(),
+                parse!("z+x").unwrap(),
             ],
             AtomField::new(),
         );
 
-        let b = a.jacobian(&[symb!("x").into(), symb!("y").into(), symb!("z").into()]);
+        let b = a.jacobian(&[
+            symbol!("x").into(),
+            symbol!("y").into(),
+            symbol!("z").into(),
+        ]);
         assert_eq!(
             b.data,
             [
-                Atom::parse("2*x").unwrap(),
+                parse!("2*x").unwrap(),
                 Atom::new_num(1),
                 Atom::new_num(1),
                 Atom::new_num(0),
@@ -2100,7 +2104,6 @@ mod test {
 
         let pv = vec![2 as u32, 0 as u32, 1 as u32];
         let permuted = a.permute_rows(&pv).unwrap();
-        println!("{}", permuted);
         assert_eq!(permuted.data, [31, 32, 33, 11, 12, 13, 21, 22, 23]);
     }
 
@@ -2154,7 +2157,7 @@ mod test {
             vec![
                 vec![Atom::new_num(2), Atom::new_num(3), Atom::new_num(5)],
                 vec![
-                    Atom::parse("(x+3)^2-x^2-6*x-2").unwrap(),
+                    parse!("(x+3)^2-x^2-6*x-2").unwrap(),
                     Atom::new_num(11),
                     Atom::new_num(13),
                 ],

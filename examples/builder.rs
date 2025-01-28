@@ -1,7 +1,7 @@
-use symbolica::{fun, symb};
+use symbolica::{fun, symbol};
 
 fn main() {
-    let (x, y, f) = symb!("x", "y", "f");
+    let (x, y, f) = symbol!("x", "y", "f");
 
     let f = fun!(f, x, y, 2);
 

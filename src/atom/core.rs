@@ -51,9 +51,9 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let atom = Atom::parse("f(x)").unwrap();
-    /// assert_eq!(atom.get_symbol(), Some(Symbol::new("f")));
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let atom = parse!("f(x)").unwrap();
+    /// assert_eq!(atom.get_symbol(), Some(symbol!("f")));
     /// ```
     #[inline(always)]
     fn get_symbol(&self) -> Option<Symbol> {
@@ -76,11 +76,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + x * y + x^2").unwrap();
-    /// let x = Atom::parse("x").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + x * y + x^2").unwrap();
+    /// let x = parse!("x").unwrap();
     /// let collected = expr.collect::<u8, _>(x, None, None);
-    /// assert_eq!(collected, Atom::parse("x * (1 + y) + x^2").unwrap());
+    /// assert_eq!(collected, parse!("x * (1 + y) + x^2").unwrap());
     /// ```
     fn collect<E: Exponent, T: AtomCore>(
         &self,
@@ -103,12 +103,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + x * y + x^2 + z + z^2").unwrap();
-    /// let x = Atom::parse("x").unwrap();
-    /// let z = Atom::parse("z").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + x * y + x^2 + z + z^2").unwrap();
+    /// let x = parse!("x").unwrap();
+    /// let z = parse!("z").unwrap();
     /// let collected = expr.collect_multiple::<u8, _>(&[x, z], None, None);
-    /// assert_eq!(collected, Atom::parse("x * (1 + y) + x^2 + z + z^2").unwrap());
+    /// assert_eq!(collected, parse!("x * (1 + y) + x^2 + z + z^2").unwrap());
     /// ```
     fn collect_multiple<E: Exponent, T: AtomCore>(
         &self,
@@ -126,10 +126,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + x * y + x^2 + z + z^2").unwrap();
-    /// let x = Atom::parse("x").unwrap();
-    /// let z = Atom::parse("z").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + x * y + x^2 + z + z^2").unwrap();
+    /// let x = parse!("x").unwrap();
+    /// let z = parse!("z").unwrap();
     /// let coeff_list = expr.coefficient_list::<u8, _>(&[x, z]);
     /// assert_eq!(coeff_list.len(), 4);
     /// ```
@@ -142,11 +142,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + x * y + x^2").unwrap();
-    /// let x = Atom::parse("x").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + x * y + x^2").unwrap();
+    /// let x = parse!("x").unwrap();
     /// let coeff = expr.coefficient(x);
-    /// let r = Atom::parse("1+y").unwrap();
+    /// let r = parse!("1+y").unwrap();
     /// assert_eq!(coeff, coeff);
     /// ```
     fn coefficient<T: AtomCore>(&self, x: T) -> Atom {
@@ -161,10 +161,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("1/x + 1/y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("1/x + 1/y").unwrap();
     /// let together = expr.together();
-    /// let r = Atom::parse("(x + y) / (x * y)").unwrap();
+    /// let r = parse!("(x + y) / (x * y)").unwrap();
     /// assert_eq!(together, r);
     /// ```
     fn together(&self) -> Atom {
@@ -176,10 +176,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("(x + y) / (x * y)").unwrap();
-    /// let apart = expr.apart(Symbol::new("x"));
-    /// let r = Atom::parse("1 / y + 1 / x").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("(x + y) / (x * y)").unwrap();
+    /// let apart = expr.apart(symbol!("x"));
+    /// let r = parse!("1 / y + 1 / x").unwrap();
     /// assert_eq!(apart, r);
     /// ```
     fn apart(&self, x: Symbol) -> Atom {
@@ -192,10 +192,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("(x^2 - 1) / (x - 1)").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("(x^2 - 1) / (x - 1)").unwrap();
     /// let canceled = expr.cancel();
-    /// let r = Atom::parse("x+1").unwrap();
+    /// let r = parse!("x+1").unwrap();
     /// assert_eq!(canceled, r);
     /// ```
     fn cancel(&self) -> Atom {
@@ -207,10 +207,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x^2 - 1").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x^2 - 1").unwrap();
     /// let factored = expr.factor();
-    /// let r = Atom::parse("(x - 1) * (x + 1)").unwrap();
+    /// let r = parse!("(x - 1) * (x + 1)").unwrap();
     /// assert_eq!(factored, r);
     /// ```
     fn factor(&self) -> Atom {
@@ -225,10 +225,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("-2*x + 4*x^2 + 6*x^3").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("-2*x + 4*x^2 + 6*x^3").unwrap();
     /// let collected_num = expr.collect_num();
-    /// let r = Atom::parse("-2 * (x - 2 * x^2 - 3 * x^3)").unwrap();
+    /// let r = parse!("-2 * (x - 2 * x^2 - 3 * x^3)").unwrap();
     /// assert_eq!(collected_num, r);
     /// ```
     fn collect_num(&self) -> Atom {
@@ -240,10 +240,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("(x + 1)^2").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("(x + 1)^2").unwrap();
     /// let expanded = expr.expand();
-    /// let r = Atom::parse("x^2 + 2 * x + 1").unwrap();
+    /// let r = parse!("x^2 + 2 * x + 1").unwrap();
     /// assert_eq!(expanded, r);
     /// ```
     fn expand(&self) -> Atom {
@@ -258,10 +258,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("(x + 1)^2").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
+    /// let expr = parse!("(x + 1)^2").unwrap();
     /// let expanded = expr.expand_via_poly::<u8, Atom>(None);
-    /// let r = Atom::parse("x^2 + 2 * x + 1").unwrap();
+    /// let r = parse!("x^2 + 2 * x + 1").unwrap();
     /// assert_eq!(expanded, r);
     /// ```
     fn expand_via_poly<E: Exponent, T: AtomCore>(&self, var: Option<T>) -> Atom {
@@ -274,11 +274,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("(x + 1)^2").unwrap();
-    /// let x = Atom::parse("x").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("(x + 1)^2").unwrap();
+    /// let x = parse!("x").unwrap();
     /// let expanded = expr.expand_in(x);
-    /// let r = Atom::parse("x^2 + 2 * x + 1").unwrap();
+    /// let r = parse!("x^2 + 2 * x + 1").unwrap();
     /// assert_eq!(expanded, r);
     /// ```
     fn expand_in<T: AtomCore>(&self, var: T) -> Atom {
@@ -290,10 +290,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("(x + 1)^2").unwrap();
-    /// let expanded = expr.expand_in_symbol(Symbol::new("x"));
-    /// let r = Atom::parse("x^2 + 2 * x + 1").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("(x + 1)^2").unwrap();
+    /// let expanded = expr.expand_in_symbol(symbol!("x"));
+    /// let r = parse!("x^2 + 2 * x + 1").unwrap();
     /// assert_eq!(expanded, r);
     /// ```
     fn expand_in_symbol(&self, var: Symbol) -> Atom {
@@ -306,11 +306,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("(x + 1)^2").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
+    /// let expr = parse!("(x + 1)^2").unwrap();
     /// let mut out = Atom::new();
     /// let changed = expr.expand_into::<Atom>(None, &mut out);
-    /// let r = Atom::parse("x^2 + 2 * x + 1").unwrap();
+    /// let r = parse!("x^2 + 2 * x + 1").unwrap();
     /// assert!(changed);
     /// assert_eq!(out, r);
     /// ```
@@ -325,10 +325,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("2*(x+y)").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("2*(x+y)").unwrap();
     /// let expanded_num = expr.expand_num();
-    /// let r = Atom::parse("2 * x + 2 * y").unwrap();
+    /// let r = parse!("2 * x + 2 * y").unwrap();
     /// assert_eq!(expanded_num, r);
     /// ```
     fn expand_num(&self) -> Atom {
@@ -340,8 +340,8 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x^2 + 2*x + 1").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
+    /// let expr = parse!("x^2 + 2*x + 1").unwrap();
     /// let is_expanded = expr.is_expanded::<Atom>(None);
     /// assert!(is_expanded);
     /// ```
@@ -355,10 +355,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x^2 + 2*x + 1").unwrap();
-    /// let derivative = expr.derivative(Symbol::new("x"));
-    /// let r = Atom::parse("2 * x + 2").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x^2 + 2*x + 1").unwrap();
+    /// let derivative = expr.derivative(symbol!("x"));
+    /// let r = parse!("2 * x + 2").unwrap();
     /// assert_eq!(derivative, r);
     /// ```
     fn derivative(&self, x: Symbol) -> Atom {
@@ -372,12 +372,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x^2 + 2*x + 1").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x^2 + 2*x + 1").unwrap();
     /// let mut out = Atom::new();
-    /// let non_zero = expr.derivative_into(Symbol::new("x"), &mut out);
+    /// let non_zero = expr.derivative_into(symbol!("x"), &mut out);
     /// assert!(non_zero);
-    /// assert_eq!(out, Atom::parse("2 * x + 2").unwrap());
+    /// assert_eq!(out, parse!("2 * x + 2").unwrap());
     /// ```
     fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
         self.as_atom_view().derivative_into(x, out)
@@ -388,14 +388,14 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("exp(x)").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("exp(x)").unwrap();
     /// let series = expr
-    ///     .series(Symbol::new("x"), Atom::new_num(0), (4, 1).into(), true)
+    ///     .series(symbol!("x"), Atom::new_num(0), (4, 1).into(), true)
     ///     .unwrap();
     /// assert_eq!(
     ///     series.to_atom(),
-    ///     Atom::parse("1 + x + x^2 / 2 + x^3 / 6 + x^4 / 24").unwrap()
+    ///     parse!("1 + x + x^2 / 2 + x^3 / 6 + x^4 / 24").unwrap()
     /// );
     /// ```
     fn series<T: AtomCore>(
@@ -414,9 +414,9 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x^2 - 2").unwrap();
-    /// let root = expr.nsolve(Symbol::new("x"), 1.0, 1e-7, 100).unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x^2 - 2").unwrap();
+    /// let root = expr.nsolve(symbol!("x"), 1.0, 1e-7, 100).unwrap();
     /// assert!((root - 1.414213562373095).abs() < 1e-7);
     /// ```
     fn nsolve<N: SingleFloat + Real + PartialOrd>(
@@ -434,12 +434,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
     /// use symbolica::domains::float::F64;
-    /// let expr1 = Atom::parse("x^2 + y^2 - 1").unwrap();
-    /// let expr2 = Atom::parse("x^2 - y").unwrap();
+    /// let expr1 = parse!("x^2 + y^2 - 1").unwrap();
+    /// let expr2 = parse!("x^2 - y").unwrap();
     /// let system = &[expr1, expr2];
-    /// let vars = &[Symbol::new("x"), Symbol::new("y")];
+    /// let vars = &[symbol!("x"), symbol!("y")];
     /// let init = &[F64::from(0.5), F64::from(0.5)];
     /// let roots = Atom::nsolve_system(system, vars, init, 1e-7.into(), 100).unwrap();
     /// assert!((roots[0].into_inner() - 0.786151377757424).abs() < 1e-7);
@@ -464,11 +464,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr1 = Atom::parse("2*x + y - 1").unwrap();
-    /// let expr2 = Atom::parse("x + y + 1").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
+    /// let expr1 = parse!("2*x + y - 1").unwrap();
+    /// let expr2 = parse!("x + y + 1").unwrap();
     /// let system = &[expr1, expr2];
-    /// let vars = &[Atom::parse("x").unwrap(), Atom::parse("y").unwrap()];
+    /// let vars = &[parse!("x").unwrap(), parse!("y").unwrap()];
     /// let solution = Atom::solve_linear_system::<u8, _, _>(system, vars).unwrap();
     /// assert_eq!(solution[0], Atom::new_num(2));
     /// assert_eq!(solution[1], Atom::new_num(-3));
@@ -486,12 +486,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::domains::Ring;
-    /// let expr1 = Atom::parse("2*x + y - 1").unwrap();
-    /// let expr2 = Atom::parse("x - y + 1").unwrap();
+    /// let expr1 = parse!("2*x + y - 1").unwrap();
+    /// let expr2 = parse!("x - y + 1").unwrap();
     /// let system = &[expr1, expr2];
-    /// let vars = &[Atom::parse("x").unwrap(), Atom::parse("y").unwrap()];
+    /// let vars = &[parse!("x").unwrap(), parse!("y").unwrap()];
     /// let (matrix, rhs) = Atom::system_to_matrix::<u8, _, _>(system, vars).unwrap();
     /// let one = matrix.field().one();
     /// assert_eq!(
@@ -523,10 +523,10 @@ pub trait AtomCore {
     ///
     /// ```
     /// use ahash::HashMap;
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let x = Atom::parse("x").unwrap();
-    /// let y = Atom::parse("y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
+    /// let x = parse!("x").unwrap();
+    /// let y = parse!("y").unwrap();
     /// let mut const_map = HashMap::default();
     /// const_map.insert(x.clone(), 1.0);
     /// const_map.insert(y.clone(), 2.0);
@@ -554,11 +554,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::evaluate::FunctionMap;
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let x = Atom::parse("x").unwrap();
-    /// let y = Atom::parse("y").unwrap();
+    /// let expr = parse!("x + y").unwrap();
+    /// let x = parse!("x").unwrap();
+    /// let y = parse!("y").unwrap();
     /// let fn_map = FunctionMap::new();
     /// let params = vec![x.clone(), y.clone()];
     /// let mut tree = expr.to_evaluation_tree(&fn_map, &params).unwrap();
@@ -584,11 +584,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let x = Atom::parse("x").unwrap();
-    /// let y = Atom::parse("y").unwrap();
+    /// let expr = parse!("x + y").unwrap();
+    /// let x = parse!("x").unwrap();
+    /// let y = parse!("y").unwrap();
     /// let fn_map = FunctionMap::new();
     /// let params = vec![x.clone(), y.clone()];
     /// let optimization_settings = OptimizationSettings::default();
@@ -620,12 +620,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
-    /// let expr1 = Atom::parse("x + y").unwrap();
-    /// let expr2 = Atom::parse("x - y").unwrap();
-    /// let x = Atom::parse("x").unwrap();
-    /// let y = Atom::parse("y").unwrap();
+    /// let expr1 = parse!("x + y").unwrap();
+    /// let expr2 = parse!("x - y").unwrap();
+    /// let x = parse!("x").unwrap();
+    /// let y = parse!("y").unwrap();
     /// let fn_map = FunctionMap::new();
     /// let params = vec![x.clone(), y.clone()];
     /// let evaluator = Atom::evaluator_multiple(
@@ -661,9 +661,9 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::id::ConditionResult;
-    /// let expr = Atom::parse("(x+1)^2 - x^2 - 2x - 1").unwrap();
+    /// let expr = parse!("(x+1)^2 - x^2 - 2x - 1").unwrap();
     /// let result = expr.zero_test(100, 1e-7);
     /// assert_eq!(result, ConditionResult::Inconclusive);
     /// ```
@@ -677,12 +677,12 @@ pub trait AtomCore {
     ///
     /// ```
     /// use std::sync::Arc;
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x*y + x^2*y + y/(1+x)").unwrap();
-    /// let vars = Arc::new(vec![Symbol::new("x").into()]);
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x*y + x^2*y + y/(1+x)").unwrap();
+    /// let vars = Arc::new(vec![symbol!("x").into()]);
     /// let result = expr.set_coefficient_ring(&vars);
     /// let r = result.set_coefficient_ring(&Arc::new(vec![]));
-    /// assert_eq!(r, Atom::parse("y*(x+1)^-1*(x+2*x^2+x^3+1)").unwrap());
+    /// assert_eq!(r, parse!("y*(x+1)^-1*(x+2*x^2+x^3+1)").unwrap());
     /// ```
     fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
         self.as_atom_view().set_coefficient_ring(vars)
@@ -694,8 +694,8 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("1/3").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("1/3").unwrap();
     /// let result = expr.coefficients_to_float(2);
     /// assert_eq!(result.to_string(), "3.3e-1");
     /// ```
@@ -712,8 +712,8 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("1/3").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
+    /// let expr = parse!("1/3").unwrap();
     /// let mut out = Atom::new();
     /// expr.coefficients_to_float_into(2, &mut out);
     /// assert_eq!(out.to_string(), "3.3e-1");
@@ -728,10 +728,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
     /// use symbolica::domains::rational::Rational;
-    /// let expr = Atom::parse("0.33*x + 3").unwrap();
+    /// let expr = parse!("0.33*x + 3").unwrap();
     /// let out = expr.map_coefficient(|c| match c {
     ///     CoefficientView::Natural(r, d) => {
     ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
@@ -740,7 +740,7 @@ pub trait AtomCore {
     /// });
     /// assert_eq!(
     ///     out,
-    ///     Atom::parse("3.30000000000000e-1*x+3.00000000000000").unwrap()
+    ///     parse!("3.30000000000000e-1*x+3.00000000000000").unwrap()
     /// );
     /// ```
     fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
@@ -752,10 +752,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
     /// use symbolica::domains::rational::Rational;
-    /// let expr = Atom::parse("0.33*x + 3").unwrap();
+    /// let expr = parse!("0.33*x + 3").unwrap();
     /// let mut out = Atom::new();
     /// expr.map_coefficient_into(|c| match c {
     ///     CoefficientView::Natural(r, d) => {
@@ -765,7 +765,7 @@ pub trait AtomCore {
     /// }, &mut out);
     /// assert_eq!(
     ///     out,
-    ///     Atom::parse("3.30000000000000e-1*x+3.00000000000000").unwrap()
+    ///     parse!("3.30000000000000e-1*x+3.00000000000000").unwrap()
     /// );
     /// ```
     fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
@@ -782,8 +782,8 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("0.333").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
+    /// let expr = parse!("0.333").unwrap();
     /// let result = expr.rationalize_coefficients(&(1, 100).into());
     /// assert_eq!(result, Atom::new_num((1, 3)));
     /// ```
@@ -799,23 +799,23 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::domains::rational::Q;
-    /// let expr = Atom::parse("x^2 + 2*x + 1").unwrap();
+    /// let expr = parse!("x^2 + 2*x + 1").unwrap();
     /// let poly = expr.to_polynomial::<_,u8>(&Q, None);
-    /// assert_eq!(poly.to_expression(), Atom::parse("x^2 + 2 * x + 1").unwrap());
+    /// assert_eq!(poly.to_expression(), parse!("x^2 + 2 * x + 1").unwrap());
     /// ```
     ///
     /// With explicit variable ordering:
     ///
     /// ```
     /// # use std::sync::Arc;
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
     /// use symbolica::domains::rational::Q;
-    /// let expr = Atom::parse("x^2 + 2*x + 1").unwrap();
-    /// let var_map = Arc::new(vec![Symbol::new("x").into()]);
+    /// let expr = parse!("x^2 + 2*x + 1").unwrap();
+    /// let var_map = Arc::new(vec![symbol!("x").into()]);
     /// let poly = expr.to_polynomial::<_,u8>(&Q, Some(var_map));
-    /// assert_eq!(poly.to_expression(), Atom::parse("x^2 + 2 * x + 1").unwrap());
+    /// assert_eq!(poly.to_expression(), parse!("x^2 + 2 * x + 1").unwrap());
     /// ```
     fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
@@ -835,13 +835,13 @@ pub trait AtomCore {
     ///
     /// ```
     /// use std::sync::Arc;
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x^2 + y*x + x + 1").unwrap();
-    /// let var_map = Arc::new(vec![Symbol::new("x").into()]);
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x^2 + y*x + x + 1").unwrap();
+    /// let var_map = Arc::new(vec![symbol!("x").into()]);
     /// let poly = expr.to_polynomial_in_vars::<u8>(&var_map);
     /// assert_eq!(
     ///     poly.flatten(false),
-    ///     Atom::parse("x^2 + (1+y)*x + 1").unwrap()
+    ///     parse!("x^2 + (1+y)*x + 1").unwrap()
     /// );
     /// ```
     fn to_polynomial_in_vars<E: Exponent>(
@@ -859,12 +859,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};;
     /// use symbolica::domains::integer::Z;
     /// use symbolica::domains::rational::Q;
-    /// let expr = Atom::parse("(x^2 + 2*x + 1) / (x + 1)").unwrap();
+    /// let expr = parse!("(x^2 + 2*x + 1) / (x + 1)").unwrap();
     /// let rat_poly = expr.to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
-    /// assert_eq!(rat_poly.to_expression(), Atom::parse("1+x").unwrap());
+    /// assert_eq!(rat_poly.to_expression(), parse!("1+x").unwrap());
     /// ```
     fn to_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
@@ -892,14 +892,14 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::domains::integer::Z;
     /// use symbolica::domains::rational::Q;
-    /// let expr = Atom::parse("(x^2 + 2*x + 1) / (x + 1)").unwrap();
+    /// let expr = parse!("(x^2 + 2*x + 1) / (x + 1)").unwrap();
     /// let fact_rat_poly = expr.to_factorized_rational_polynomial::<_, _, u8>(&Q, &Z, None);
     /// assert_eq!(
     ///     fact_rat_poly.numerator.to_expression(),
-    ///     Atom::parse("x+1").unwrap()
+    ///     parse!("x+1").unwrap()
     /// );
     /// ```
     fn to_factorized_rational_polynomial<
@@ -926,11 +926,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::printer::{PrintOptions, PrintState};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// let expr = parse!("x + y").unwrap();
     /// let mut output = String::new();
-    /// expr.format(&mut output, &PrintOptions::default(), PrintState::default()).unwrap();
+    /// expr.format(&mut output, &PrintOptions::file_no_namespace(), PrintState::default()).unwrap();
     /// assert_eq!(output, "x+y");
     /// ```
     fn format<W: std::fmt::Write>(
@@ -947,11 +947,12 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::printer::PrintOptions;
-    /// let expr = Atom::parse("x^2").unwrap();
+    /// let expr = parse!("x^2").unwrap();
     /// let opts = PrintOptions {
     ///     double_star_for_exponentiation: true,
+    ///     hide_all_namespaces: true,
     ///    ..Default::default()
     /// };
     /// let printer = expr.printer(opts);
@@ -968,10 +969,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
     /// let canonical_str = expr.to_canonical_string();
-    /// assert_eq!(canonical_str, "x+y");
+    /// assert_eq!(canonical_str, "symbolica::x+symbolica::y");
     /// ```
     fn to_canonical_string(&self) -> String {
         self.as_atom_view().to_canonical_string()
@@ -982,10 +983,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
     /// let result = expr.map_terms_single_core(|term| term.expand());
-    /// assert_eq!(result, Atom::parse("x + y").unwrap());
+    /// assert_eq!(result, parse!("x + y").unwrap());
     /// ```
     fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
         self.as_atom_view().map_terms_single_core(f)
@@ -996,10 +997,10 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
     /// let result = expr.map_terms(|term| term.expand(), 4);
-    /// assert_eq!(result, Atom::parse("x + y").unwrap());
+    /// assert_eq!(result, parse!("x + y").unwrap());
     /// ```
     fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
         self.as_atom_view().map_terms(f, n_cores)
@@ -1010,11 +1011,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
     /// let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
     /// let result = expr.map_terms_with_pool(|term| term.expand(), &pool);
-    /// assert_eq!(result, Atom::parse("x + y").unwrap());
+    /// assert_eq!(result, parse!("x + y").unwrap());
     /// ```
     fn map_terms_with_pool(
         &self,
@@ -1025,40 +1026,43 @@ pub trait AtomCore {
     }
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
-    /// The tensors must be written as functions, with its indices are the arguments.
-    /// The repeated indices should be provided in `contracted_indices`.
+    /// The tensors must be written as functions, with its indices as the arguments.
+    /// Subexpressions, constants and open indices are supported.
     ///
     /// If the contracted indices are distinguishable (for example in their dimension),
-    /// you can provide an optional group marker for each index using `index_group`.
+    /// you can provide a group marker as the second element in the tuple of the index
+    /// specification.
     /// This makes sure that an index will not be renamed to an index from a different group.
     ///
     /// Example
     /// -------
     /// ```
-    /// # use symbolica::atom::{Atom, AtomCore, FunctionAttribute, Symbol};
+    /// # use symbolica::{atom::{Atom, AtomCore}, symbol, parse};
     /// #
     /// # fn main() {
-    /// let _ = Symbol::new_with_attributes("fs", &[FunctionAttribute::Symmetric]).unwrap();
-    /// let _ = Symbol::new_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
-    /// let a = Atom::parse("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
+    /// let _ = symbol!("fs"; Symmetric).unwrap();
+    /// let _ = symbol!("fc"; Cyclesymmetric).unwrap();
+    /// let a = parse!("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
     ///
-    /// let mu1 = Atom::parse("mu1").unwrap();
-    /// let mu2 = Atom::parse("mu2").unwrap();
-    /// let mu3 = Atom::parse("mu3").unwrap();
-    /// let mu4 = Atom::parse("mu4").unwrap();
+    /// let mu1 = parse!("mu1").unwrap();
+    /// let mu2 = parse!("mu2").unwrap();
+    /// let mu3 = parse!("mu3").unwrap();
+    /// let mu4 = parse!("mu4").unwrap();
     ///
-    /// let r = a.canonize_tensors(&[mu1.as_view(), mu2.as_view(), mu3.as_view(), mu4.as_view()], None).unwrap();
+    /// let r = a.canonize_tensors(&[(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]).unwrap();
     /// println!("{}", r);
     /// # }
     /// ```
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
-    fn canonize_tensors(
+    fn canonize_tensors<T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        contracted_indices: &[AtomView],
-        index_group: Option<&[AtomView]>,
+        indices: &[(T, G)],
     ) -> Result<Atom, String> {
-        self.as_atom_view()
-            .canonize_tensors(contracted_indices, index_group)
+        let indices = indices
+            .iter()
+            .map(|(i, g)| (i.as_atom_view(), g))
+            .collect::<Vec<_>>();
+        self.as_atom_view().canonize_tensors(&indices)
     }
 
     fn to_pattern(&self) -> Pattern {
@@ -1070,11 +1074,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x + y").unwrap();
     /// let symbols = expr.get_all_symbols(true);
-    /// assert!(symbols.contains(&Symbol::new("x")));
-    /// assert!(symbols.contains(&Symbol::new("y")));
+    /// assert!(symbols.contains(&symbol!("x")));
+    /// assert!(symbols.contains(&symbol!("y")));
     /// ```
     fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
         self.as_atom_view()
@@ -1086,11 +1090,11 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x + f(x)").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x + f(x)").unwrap();
     /// let indeterminates = expr.get_all_indeterminates(true);
-    /// assert!(indeterminates.contains(&Atom::new_var(Symbol::new("x")).as_view()));
-    /// assert!(indeterminates.contains(&Atom::parse("f(x)").unwrap().as_view()));
+    /// assert!(indeterminates.contains(&Atom::new_var(symbol!("x")).as_view()));
+    /// assert!(indeterminates.contains(&parse!("f(x)").unwrap().as_view()));
     /// ```
     fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView> {
         self.as_atom_view().get_all_indeterminates(enter_functions)
@@ -1101,9 +1105,9 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let contains_x = expr.contains_symbol(Symbol::new("x"));
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("x + y").unwrap();
+    /// let contains_x = expr.contains_symbol(symbol!("x"));
     /// assert!(contains_x);
     /// ```
     fn contains_symbol(&self, s: Symbol) -> bool {
@@ -1115,9 +1119,9 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let x = Atom::parse("x").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
+    /// let x = parse!("x").unwrap();
     /// let contains_x = expr.contains(x);
     /// assert!(contains_x);
     /// ```
@@ -1135,8 +1139,8 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("f(x) + y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("f(x) + y").unwrap();
     /// let is_poly = expr.is_polynomial(true, false);
     /// assert!(is_poly.is_some());
     /// ```
@@ -1154,13 +1158,13 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::id::Pattern;
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let pattern = Pattern::parse("x").unwrap();
-    /// let replacement = Pattern::parse("z").unwrap();
+    /// let expr = parse!("x + y").unwrap();
+    /// let pattern = parse!("x").unwrap().to_pattern();
+    /// let replacement = parse!("z").unwrap().to_pattern();
     /// let result = expr.replace_all(&pattern, replacement, None, None);
-    /// assert_eq!(result, Atom::parse("z + y").unwrap());
+    /// assert_eq!(result, parse!("z + y").unwrap());
     /// ```
     fn replace_all<R: BorrowPatternOrMap>(
         &self,
@@ -1178,15 +1182,15 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::id::Pattern;
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let pattern = Pattern::parse("x").unwrap();
-    /// let replacement = Pattern::parse("z").unwrap();
+    /// let expr = parse!("x + y").unwrap();
+    /// let pattern = parse!("x").unwrap().to_pattern();
+    /// let replacement = parse!("z").unwrap().to_pattern();
     /// let mut out = Atom::new();
     /// let changed = expr.replace_all_into(&pattern, replacement, None, None, &mut out);
     /// assert!(changed);
-    /// assert_eq!(out, Atom::parse("z + y").unwrap());
+    /// assert_eq!(out, parse!("z + y").unwrap());
     /// ```
     fn replace_all_into<R: BorrowPatternOrMap>(
         &self,
@@ -1205,18 +1209,18 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::id::{Pattern, Replacement};
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let pattern1 = Pattern::parse("x").unwrap();
-    /// let replacement1 = Pattern::parse("y").unwrap();
-    /// let pattern2 = Pattern::parse("y").unwrap();
-    /// let replacement2 = Pattern::parse("x").unwrap();
+    /// let expr = parse!("x + y").unwrap();
+    /// let pattern1 = parse!("x").unwrap().to_pattern();
+    /// let replacement1 = parse!("y").unwrap().to_pattern();
+    /// let pattern2 = parse!("y").unwrap().to_pattern();
+    /// let replacement2 = parse!("x").unwrap().to_pattern();
     /// let result = expr.replace_all_multiple(&[
     ///     Replacement::new(pattern1, replacement1),
     ///     Replacement::new(pattern2, replacement2),
     /// ]);
-    /// assert_eq!(result, Atom::parse("x + y").unwrap());
+    /// assert_eq!(result, parse!("x + y").unwrap());
     /// ```
     fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
         self.as_atom_view().replace_all_multiple(replacements)
@@ -1228,13 +1232,13 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::id::{Pattern, Replacement};
-    /// let expr = Atom::parse("x + y").unwrap();
-    /// let pattern1 = Pattern::parse("x").unwrap();
-    /// let replacement1 = Pattern::parse("y").unwrap();
-    /// let pattern2 = Pattern::parse("y").unwrap();
-    /// let replacement2 = Pattern::parse("x").unwrap();
+    /// let expr = parse!("x + y").unwrap();
+    /// let pattern1 = parse!("x").unwrap().to_pattern();
+    /// let replacement1 = parse!("y").unwrap().to_pattern();
+    /// let pattern2 = parse!("y").unwrap().to_pattern();
+    /// let replacement2 = parse!("x").unwrap().to_pattern();
     /// let mut out = Atom::new();
     /// let replacements = [
     ///     Replacement::new(pattern1, replacement1),
@@ -1242,7 +1246,7 @@ pub trait AtomCore {
     /// ];
     /// let changed = expr.replace_all_multiple_into(&replacements, &mut out);
     /// assert!(changed);
-    /// assert_eq!(out, Atom::parse("x + y").unwrap());
+    /// assert_eq!(out, parse!("x + y").unwrap());
     /// ```
     fn replace_all_multiple_into<T: BorrowReplacement>(
         &self,
@@ -1260,17 +1264,17 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
-    /// let expr = Atom::parse("x + y").unwrap();
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y").unwrap();
     /// let result = expr.replace_map(&|term, _ctx, out| {
-    ///     if term.to_string() == "x" {
-    ///         *out = Atom::parse("z").unwrap();
+    ///     if term.to_string() == "symbolica::x" {
+    ///         *out = parse!("z").unwrap();
     ///         true
     ///     } else {
     ///         false
     ///     }
     /// });
-    /// assert_eq!(result, Atom::parse("z + y").unwrap());
+    /// assert_eq!(result, parse!("z + y").unwrap());
     /// ```
     fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
         self.as_atom_view().replace_map(m)
@@ -1281,14 +1285,14 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore};
+    /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::id::Pattern;
-    /// let expr = Atom::parse("f(x) + f(y)").unwrap();
-    /// let pattern = Pattern::parse("f(x_)").unwrap();
-    /// let replacement = Pattern::parse("f(z)").unwrap();
+    /// let expr = parse!("f(x) + f(y)").unwrap();
+    /// let pattern = parse!("f(x_)").unwrap().to_pattern();
+    /// let replacement = parse!("f(z)").unwrap().to_pattern();
     /// let mut iter = expr.replace_iter(&pattern, &replacement, None, None);
-    /// assert_eq!(iter.next().unwrap(), Atom::parse("f(z) + f(y)").unwrap());
-    /// assert_eq!(iter.next().unwrap(), Atom::parse("f(z) + f(x)").unwrap());
+    /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(y)").unwrap());
+    /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(x)").unwrap());
     /// ```
     fn replace_iter<'a, R: BorrowPatternOrMap>(
         &'a self,
@@ -1311,15 +1315,15 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::atom::{Atom, AtomCore, Symbol};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
     /// use symbolica::id::Pattern;
-    /// let expr = Atom::parse("f(1) + f(2)").unwrap();
-    /// let pattern = Pattern::parse("f(x_)").unwrap();
+    /// let expr = parse!("f(1) + f(2)").unwrap();
+    /// let pattern = parse!("f(x_)").unwrap().to_pattern();
     /// let mut iter = expr.pattern_match(&pattern, None, None);
     /// let result = iter.next().unwrap();
     /// assert_eq!(
-    ///     result.get(&Symbol::new("x_")).unwrap().to_atom(),
-    ///     Atom::new_num(1)
+    ///     result.get(&symbol!("x_")).unwrap(),
+    ///     &Atom::new_num(1)
     /// );
     /// ```
     fn pattern_match<'a: 'b, 'b>(

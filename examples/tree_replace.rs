@@ -1,19 +1,15 @@
-use symbolica::{
-    atom::{Atom, AtomCore},
-    id::Match,
-    symb,
-};
+use symbolica::{atom::AtomCore, id::Match, parse, symbol};
 
 fn main() {
-    let expr = Atom::parse("f(z)*f(f(x))*f(y)").unwrap();
-    let pat_expr = Atom::parse("f(x_)").unwrap();
+    let expr = parse!("f(z)*f(f(x))*f(y)").unwrap();
+    let pat_expr = parse!("f(x_)").unwrap();
 
     let pattern = pat_expr.to_pattern();
 
     println!("> Matching pattern {} to {}:", pat_expr, expr);
 
     for x in expr.pattern_match(&pattern, None, None) {
-        println!("\t x_ = {}", x.get(&symb!("x_")).unwrap());
+        println!("\t x_ = {}", x.get(&symbol!("x_")).unwrap());
     }
 
     println!("> Matching pattern {} to {}:", pat_expr, expr);

@@ -27,9 +27,13 @@ use std::{
 use colored::{Color, Colorize};
 
 use crate::{
-    atom::Atom, domains::{
-        atom::AtomField, integer::Z, rational::{Rational, Q}, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing
-    }, poly::Variable, printer::{PrintOptions, PrintState}
+    domains::{
+        integer::Z,
+        rational::{Rational, Q},
+        Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+    },
+    poly::Variable,
+    printer::{PrintOptions, PrintState},
 };
 
 /// An n-dimensional vector.
@@ -1719,7 +1723,8 @@ impl<F: Field> Matrix<F> {
     }
 }
 
-impl <F: Field> Matrix<F> {  // TODO: find domain that supports `sqrt`?
+impl<F: Field> Matrix<F> {
+    // TODO: find domain that supports `sqrt`?
     /// Perform a full QR decomposition of the matrix.
     ///
     /// Decomposes the matrix `A [m x n]` into an orthogonal matrix `Q [m x m]`
@@ -1782,7 +1787,7 @@ mod test {
     use crate::{
         atom::Atom,
         domains::{atom::AtomField, integer::Z, rational::Q, SelfRing},
-        symb,
+        parse, symbol,
         tensors::matrix::{Matrix, Vector},
     };
 
@@ -2062,18 +2067,22 @@ mod test {
     fn jacobian() {
         let a = Vector::new(
             vec![
-                Atom::parse("x^2+y+z").unwrap(),
-                Atom::parse("y+z").unwrap(),
-                Atom::parse("z+x").unwrap(),
+                parse!("x^2+y+z").unwrap(),
+                parse!("y+z").unwrap(),
+                parse!("z+x").unwrap(),
             ],
             AtomField::new(),
         );
 
-        let b = a.jacobian(&[symb!("x").into(), symb!("y").into(), symb!("z").into()]);
+        let b = a.jacobian(&[
+            symbol!("x").into(),
+            symbol!("y").into(),
+            symbol!("z").into(),
+        ]);
         assert_eq!(
             b.data,
             [
-                Atom::parse("2*x").unwrap(),
+                parse!("2*x").unwrap(),
                 Atom::new_num(1),
                 Atom::new_num(1),
                 Atom::new_num(0),
@@ -2134,13 +2143,8 @@ mod test {
 
     #[test]
     fn qr_decompose() {
-        let matrix = Matrix::from_linear(
-            vec![1.into(), 2.into(), 3.into(), 4.into()],
-            2,
-            2,
-            Q,
-        )
-        .unwrap();
+        let matrix =
+            Matrix::from_linear(vec![1.into(), 2.into(), 3.into(), 4.into()], 2, 2, Q).unwrap();
         let (q, r) = matrix.qr_decompose().unwrap();
 
         println!("{}", q);

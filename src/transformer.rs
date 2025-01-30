@@ -874,10 +874,12 @@ impl Transformer {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, FunctionBuilder, Symbol},
-        id::{Condition, Match, MatchSettings, Pattern, WildcardRestriction},
+        atom::{Atom, AtomCore, FunctionBuilder},
+        id::{Condition, Match, MatchSettings, WildcardRestriction},
+        parse,
         printer::PrintOptions,
         state::Workspace,
+        symbol,
         transformer::StatsOptions,
     };
 
@@ -885,15 +887,15 @@ mod test {
 
     #[test]
     fn expand_derivative() {
-        let p = Atom::parse("(1+v1)^2").unwrap();
+        let p = parse!("(1+v1)^2").unwrap();
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             Transformer::execute_chain(
                 p.as_view(),
                 &[
-                    Transformer::Expand(Some(Atom::new_var(Symbol::new("v1"))), false),
-                    Transformer::Derivative(Symbol::new("v1")),
+                    Transformer::Expand(Some(Atom::new_var(symbol!("v1"))), false),
+                    Transformer::Derivative(symbol!("v1")),
                 ],
                 ws,
                 &mut out,
@@ -901,13 +903,13 @@ mod test {
             .unwrap()
         });
 
-        let r = Atom::parse("2+2*v1").unwrap();
+        let r = parse!("2+2*v1").unwrap();
         assert_eq!(out, r);
     }
 
     #[test]
     fn split_argcount() {
-        let p = Atom::parse("v1+v2+v3").unwrap();
+        let p = parse!("v1+v2+v3").unwrap();
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
@@ -920,13 +922,13 @@ mod test {
             .unwrap()
         });
 
-        let r = Atom::parse("3").unwrap();
+        let r = parse!("3").unwrap();
         assert_eq!(out, r);
     }
 
     #[test]
     fn product_series() {
-        let p = Atom::parse("arg(v1,v1+1,3)").unwrap();
+        let p = parse!("arg(v1,v1+1,3)").unwrap();
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
@@ -934,7 +936,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::Series(Symbol::new("v1"), Atom::new_num(1), 3.into(), true),
+                    Transformer::Series(symbol!("v1"), Atom::new_num(1), 3.into(), true),
                 ],
                 ws,
                 &mut out,
@@ -942,13 +944,13 @@ mod test {
             .unwrap()
         });
 
-        let r = Atom::parse("3*(v1-1)^2+9*(v1-1)+6").unwrap();
+        let r = parse!("3*(v1-1)^2+9*(v1-1)+6").unwrap();
         assert_eq!(out, r);
     }
 
     #[test]
     fn sort_deduplicate() {
-        let p = Atom::parse("f1(3,2,1,3)").unwrap();
+        let p = parse!("f1(3,2,1,3)").unwrap();
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
@@ -956,15 +958,15 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::ReplaceAll(
-                        Pattern::parse("f1(x__)").unwrap(),
-                        Pattern::parse("x__").unwrap().into(),
+                        parse!("f1(x__)").unwrap().to_pattern(),
+                        parse!("x__").unwrap().to_pattern().into(),
                         Condition::default(),
                         MatchSettings::default(),
                     ),
                     Transformer::Sort,
                     Transformer::Deduplicate,
                     Transformer::Map(Box::new(|x, out| {
-                        let mut f = FunctionBuilder::new(Symbol::new("f1"));
+                        let mut f = FunctionBuilder::new(symbol!("f1"));
                         f = f.add_arg(x);
                         *out = f.finish();
                         Ok(())
@@ -976,13 +978,13 @@ mod test {
             .unwrap()
         });
 
-        let r = Atom::parse("f1(1,2,3)").unwrap();
+        let r = parse!("f1(1,2,3)").unwrap();
         assert_eq!(out, r);
     }
 
     #[test]
     fn deep_nesting() {
-        let p = Atom::parse("arg(3,2,1,3)").unwrap();
+        let p = parse!("arg(3,2,1,3)").unwrap();
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
@@ -997,10 +999,10 @@ mod test {
                     vec![Transformer::ForEach(vec![
                         Transformer::Print(PrintOptions::default()),
                         Transformer::ReplaceAll(
-                            Pattern::parse("x_").unwrap(),
-                            Pattern::parse("x_-1").unwrap().into(),
+                            parse!("x_").unwrap().to_pattern(),
+                            parse!("x_-1").unwrap().to_pattern().into(),
                             (
-                                Symbol::new("x_"),
+                                symbol!("x_"),
                                 WildcardRestriction::Filter(Box::new(|x| {
                                     x != &Match::Single(Atom::new_num(0).as_view())
                                 })),
@@ -1016,30 +1018,30 @@ mod test {
             .unwrap()
         });
 
-        let r = Atom::parse("arg(0,0,0,0)").unwrap();
+        let r = parse!("arg(0,0,0,0)").unwrap();
         assert_eq!(out, r);
     }
 
     #[test]
     fn linearize() {
-        let p = Atom::parse("f1(v1+v2,4*v3*v4+3*v4/v3)").unwrap();
+        let p = parse!("f1(v1+v2,4*v3*v4+3*v4/v3)").unwrap();
 
-        let out = Transformer::Linearize(Some(vec![Symbol::new("v3")]))
+        let out = Transformer::Linearize(Some(vec![symbol!("v3")]))
             .execute(p.as_view())
             .unwrap();
 
-        let r = Atom::parse("4*v3*f1(v1,v4)+4*v3*f1(v2,v4)+3*v3^-1*f1(v1,v4)+3*v3^-1*f1(v2,v4)")
-            .unwrap();
+        let r =
+            parse!("4*v3*f1(v1,v4)+4*v3*f1(v2,v4)+3*v3^-1*f1(v1,v4)+3*v3^-1*f1(v2,v4)").unwrap();
         assert_eq!(out, r);
     }
 
     #[test]
     fn cycle_symmetrize() {
-        let p = Atom::parse("f1(1,2,3,5,1,2,3,4)").unwrap();
+        let p = parse!("f1(1,2,3,5,1,2,3,4)").unwrap();
 
         let out = Transformer::CycleSymmetrize.execute(p.as_view()).unwrap();
 
-        let r = Atom::parse("f1(1,2,3,4,1,2,3,5)").unwrap();
+        let r = parse!("f1(1,2,3,4,1,2,3,5)").unwrap();
         assert_eq!(out, r);
     }
 }

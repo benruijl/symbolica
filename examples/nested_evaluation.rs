@@ -1,52 +1,45 @@
 use symbolica::{
-    atom::{Atom, AtomCore, Symbol},
+    atom::{Atom, AtomCore},
     domains::rational::Rational,
     evaluate::{CompileOptions, FunctionMap, InlineASM, OptimizationSettings},
+    parse, symbol,
 };
 
 fn main() {
-    let e1 = Atom::parse("x + pi + cos(x) + f(g(x+1),h(x*2)) + p(1,x)").unwrap();
-    let e2 = Atom::parse("x + h(x*2) + cos(x)").unwrap();
-    let f = Atom::parse("y^2 + z^2*y^2").unwrap();
-    let g = Atom::parse("i(y+7)+x*i(y+7)*(y-1)").unwrap();
-    let h = Atom::parse("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
-    let i = Atom::parse("y - 1").unwrap();
-    let p1 = Atom::parse("3*z^3 + 4*z^2 + 6*z +8").unwrap();
+    let e1 = parse!("x + pi + cos(x) + f(g(x+1),h(x*2)) + p(1,x)").unwrap();
+    let e2 = parse!("x + h(x*2) + cos(x)").unwrap();
+    let f = parse!("y^2 + z^2*y^2").unwrap();
+    let g = parse!("i(y+7)+x*i(y+7)*(y-1)").unwrap();
+    let h = parse!("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
+    let i = parse!("y - 1").unwrap();
+    let p1 = parse!("3*z^3 + 4*z^2 + 6*z +8").unwrap();
 
     let mut fn_map = FunctionMap::new();
 
-    fn_map.add_constant(
-        Atom::new_var(Symbol::new("pi")),
-        Rational::from((22, 7)).into(),
-    );
+    fn_map.add_constant(Atom::new_var(symbol!("pi")), Rational::from((22, 7)).into());
     fn_map
         .add_tagged_function(
-            Symbol::new("p"),
+            symbol!("p"),
             vec![Atom::new_num(1).into()],
             "p1".to_string(),
-            vec![Symbol::new("z")],
+            vec![symbol!("z")],
             p1,
         )
         .unwrap();
     fn_map
-        .add_function(
-            Symbol::new("f"),
-            "f".to_string(),
-            vec![Symbol::new("y"), Symbol::new("z")],
-            f,
-        )
+        .add_function(symbol!("f"), "f".to_string(), vec![symbol!("y"), symbol!("z")], f)
         .unwrap();
     fn_map
-        .add_function(Symbol::new("g"), "g".to_string(), vec![Symbol::new("y")], g)
+        .add_function(symbol!("g"), "g".to_string(), vec![symbol!("y")], g)
         .unwrap();
     fn_map
-        .add_function(Symbol::new("h"), "h".to_string(), vec![Symbol::new("y")], h)
+        .add_function(symbol!("h"), "h".to_string(), vec![symbol!("y")], h)
         .unwrap();
     fn_map
-        .add_function(Symbol::new("i"), "i".to_string(), vec![Symbol::new("y")], i)
+        .add_function(symbol!("i"), "i".to_string(), vec![symbol!("y")], i)
         .unwrap();
 
-    let params = vec![Atom::parse("x").unwrap()];
+    let params = vec![parse!("x").unwrap()];
 
     let evaluator = Atom::evaluator_multiple(
         &[e1.as_view(), e2.as_view()],

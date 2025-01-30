@@ -1533,32 +1533,38 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::atom::Atom;
+    use crate::{
+        atom::{Atom, AtomCore},
+        parse,
+        printer::PrintOptions,
+    };
 
     #[test]
     fn pow_apart() {
-        let res = Atom::parse("v1*(v1*v2*v3)^-5").unwrap();
-        let refr = Atom::parse("v1^-4*v2^-5*v3^-5").unwrap();
+        let res = parse!("v1*(v1*v2*v3)^-5").unwrap();
+        let refr = parse!("v1^-4*v2^-5*v3^-5").unwrap();
         assert_eq!(res, refr);
     }
 
     #[test]
     fn pow_simplify() {
-        assert_eq!(Atom::parse("1^(1/2)"), Atom::parse("1"));
+        assert_eq!(parse!("1^(1/2)"), parse!("1"));
         assert_eq!(
-            format!("{}", Atom::parse("(v1^2)^v2").unwrap()),
-            "(v1^2)^v2"
+            format!(
+                "{}",
+                parse!("(v1^2)^v2").unwrap().printer(PrintOptions::file())
+            ),
+            "(symbolica::v1^2)^symbolica::v2"
         );
-        assert_eq!(Atom::parse("(v1^v2)^2"), Atom::parse("v1^(2*v2)"));
-        assert_eq!(Atom::parse("(v1^(1/2))^2"), Atom::parse("v1"));
+        assert_eq!(parse!("(v1^v2)^2"), parse!("v1^(2*v2)"));
+        assert_eq!(parse!("(v1^(1/2))^2"), parse!("v1"));
     }
 
     #[test]
     fn linear_symmetric() {
-        let res = Atom::parse("fsl1(v2+2*v3,v1+3*v2-v3)").unwrap();
+        let res = parse!("fsl1(v2+2*v3,v1+3*v2-v3)").unwrap();
         let refr =
-            Atom::parse("fsl1(v1,v2)+2*fsl1(v1,v3)+3*fsl1(v2,v2)+5*fsl1(v2,v3)-2*fsl1(v3,v3)")
-                .unwrap();
+            parse!("fsl1(v1,v2)+2*fsl1(v1,v3)+3*fsl1(v2,v2)+5*fsl1(v2,v3)-2*fsl1(v3,v3)").unwrap();
         assert_eq!(res, refr);
     }
 
@@ -1571,14 +1577,14 @@ mod test {
 
     #[test]
     fn coeff_flag() {
-        let a = Atom::parse("-v1*v2").unwrap();
+        let a = parse!("-v1*v2").unwrap();
 
         if let Atom::Mul(m) = &a {
             assert_eq!(m.to_mul_view().has_coefficient(), true);
             assert_eq!(m.to_mul_view().is_normalized(), true);
         }
 
-        let b = a * &Atom::parse("-v3").unwrap();
+        let b = a * &parse!("-v3").unwrap();
 
         if let Atom::Mul(m) = &b {
             assert_eq!(m.to_mul_view().has_coefficient(), false);
@@ -1599,16 +1605,16 @@ mod test {
 
     #[test]
     fn add_normalized() {
-        let a = Atom::parse("v1 + v2 + v3").unwrap();
-        let b = Atom::parse("1 + v2 + v4 + v5").unwrap();
-        assert_eq!(a + b, Atom::parse("v1+2*v2+v3+v4+v5+1").unwrap());
+        let a = parse!("v1 + v2 + v3").unwrap();
+        let b = parse!("1 + v2 + v4 + v5").unwrap();
+        assert_eq!(a + b, parse!("v1+2*v2+v3+v4+v5+1").unwrap());
 
-        let a = Atom::parse("v1 + v2 + v3").unwrap();
-        let b = Atom::parse("v4").unwrap();
-        assert_eq!(a + b, Atom::parse("v1+v2+v3+v4").unwrap());
+        let a = parse!("v1 + v2 + v3").unwrap();
+        let b = parse!("v4").unwrap();
+        assert_eq!(a + b, parse!("v1+v2+v3+v4").unwrap());
 
-        let a = Atom::parse("v2 + v3 + v4").unwrap();
-        let b = Atom::parse("v1").unwrap();
-        assert_eq!(a + b, Atom::parse("v1+v2+v3+v4").unwrap());
+        let a = parse!("v2 + v3 + v4").unwrap();
+        let b = parse!("v1").unwrap();
+        assert_eq!(a + b, parse!("v1+v2+v3+v4").unwrap());
     }
 }

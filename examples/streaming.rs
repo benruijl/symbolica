@@ -1,14 +1,15 @@
 use brotli::CompressorWriter;
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::AtomCore,
     id::Pattern,
+    parse,
     streaming::{TermStreamer, TermStreamerConfig},
 };
 
 fn main() {
-    let input = Atom::parse("x+ f(x) + 2*f(y) + 7*f(z)").unwrap();
-    let pattern = Pattern::parse("f(x_)").unwrap();
-    let rhs = Pattern::parse("f(x) + x").unwrap();
+    let input = parse!("x+ f(x) + 2*f(y) + 7*f(z)").unwrap();
+    let pattern = parse!("f(x_)").unwrap().to_pattern();
+    let rhs = parse!("f(x) + x").unwrap().to_pattern();
 
     let mut stream = TermStreamer::<CompressorWriter<_>>::new(TermStreamerConfig {
         n_cores: 4,

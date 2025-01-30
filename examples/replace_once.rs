@@ -1,10 +1,10 @@
-use symbolica::atom::{Atom, AtomCore};
+use symbolica::{atom::AtomCore, parse};
 
 fn main() {
-    let expr = Atom::parse("f(z)*f(f(x))*f(y)").unwrap();
-    let pat_expr = Atom::parse("f(x_)").unwrap();
+    let expr = parse!("f(z)*f(f(x))*f(y)").unwrap();
+    let pat_expr = parse!("f(x_)").unwrap();
 
-    let rhs_expr = Atom::parse("g(x_)").unwrap();
+    let rhs_expr = parse!("g(x_)").unwrap();
     let rhs = rhs_expr.as_view().to_pattern();
 
     let pattern = pat_expr.as_view().to_pattern();

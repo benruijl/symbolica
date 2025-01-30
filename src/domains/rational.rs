@@ -1155,12 +1155,13 @@ impl<'a> std::iter::Sum<&'a Self> for Rational {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::AtomCore,
         domains::{
             integer::Z,
             rational::{FractionField, Rational, Q},
             Field, Ring,
         },
+        parse,
         poly::polynomial::PolynomialRing,
     };
 
@@ -1201,7 +1202,7 @@ mod test {
 
     #[test]
     fn fraction_poly() {
-        let poly = Atom::parse("-3/2*x^2+1/5x+4")
+        let poly = parse!("-3/2*x^2+1/5x+4")
             .unwrap()
             .to_polynomial::<_, u8>(&Q, None);
 
@@ -1219,10 +1220,10 @@ mod test {
         let c = f.add(&rat, &b);
         let d = f.div(&c, &rat);
 
-        let num = Atom::parse("-10-2*x+15*x^2")
+        let num = parse!("-10-2*x+15*x^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None);
-        let den = Atom::parse("-40-2*x+15*x^2")
+        let den = parse!("-40-2*x+15*x^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None);
 

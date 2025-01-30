@@ -1799,11 +1799,11 @@ impl ExpressionEvaluator {
     /// ```
     /// can be represented by:
     /// ```
-    /// # use symbolica::atom::{Atom, Symbol};
+    /// # use symbolica::{atom::Atom, parse, symbol};
     /// vec![
-    ///       vec![(Symbol::new("x0"), vec![Atom::parse("p1"), Atom::parse("p2")])],
-    ///       vec![(Symbol::new("x1"), vec![Atom::parse("x0(0) * x0(1) + 2")])],
-    ///       vec![(Symbol::new("x2"), vec![Atom::parse("x1(0) * 2 * x0(1)")])]
+    ///       vec![(symbol!("x0"), vec![parse!("p1"), parse!("p2")])],
+    ///       vec![(symbol!("x1"), vec![parse!("x0(0) * x0(1) + 2")])],
+    ///       vec![(symbol!("x2"), vec![parse!("x1(0) * 2 * x0(1)")])]
     /// ];
     /// ```
     ///
@@ -1961,8 +1961,9 @@ auto 𝑖 = 1i;\n",
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::AtomCore,
         domains::{float::Complex, rational::Q},
+        parse,
         poly::{
             evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
             polynomial::MultivariatePolynomial,
@@ -2023,8 +2024,7 @@ a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
 
     #[test]
     fn res_53() {
-        let poly: MultivariatePolynomial<_, u8> =
-            Atom::parse(RES_53).unwrap().to_polynomial(&Q, None);
+        let poly: MultivariatePolynomial<_, u8> = parse!(RES_53).unwrap().to_polynomial(&Q, None);
 
         let (h, _ops, scheme) = poly.optimize_horner_scheme(1000);
         let mut i = h.to_instr(poly.nvars());

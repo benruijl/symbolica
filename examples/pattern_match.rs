@@ -1,12 +1,9 @@
-use symbolica::{
-    atom::{Atom, AtomCore},
-    id::Match,
-};
+use symbolica::{atom::AtomCore, id::Match, parse};
 
 fn main() {
-    let expr = Atom::parse("x*y*w*z*f(x,y,x*y,z)").unwrap();
+    let expr = parse!("x*y*w*z*f(x,y,x*y,z)").unwrap();
 
-    let pat_expr = Atom::parse("z*x_*y___*g___(z___,x_,w___)").unwrap();
+    let pat_expr = parse!("z*x_*y___*g___(z___,x_,w___)").unwrap();
 
     let pattern = pat_expr.to_pattern();
 

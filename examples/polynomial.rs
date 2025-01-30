@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::Symbol,
     domains::{
         finite_field::{FiniteFieldCore, Zp},
         rational::Q,
     },
     poly::polynomial::MultivariatePolynomial,
+    symbol,
 };
 
 fn main() {
-    let x = Symbol::new("x");
-    let y = Symbol::new("y");
-    let z = Symbol::new("z");
+    let x = symbol!("x");
+    let y = symbol!("y");
+    let z = symbol!("z");
     let vars = Arc::new(vec![x.into(), y.into(), z.into()]);
     let mut a = MultivariatePolynomial::<_, u8>::new(&Q, Some(3), vars.clone());
     a.append_monomial((3, 4).into(), &[1, 0, 0]);

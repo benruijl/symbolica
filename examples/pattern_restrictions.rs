@@ -1,19 +1,20 @@
 use symbolica::{
-    atom::{Atom, AtomCore, AtomView, Symbol},
+    atom::{AtomCore, AtomView},
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, WildcardRestriction},
+    parse, symbol,
 };
 fn main() {
-    let expr = Atom::parse("f(1,2,3,4,5,6,7)").unwrap();
-    let pat_expr = Atom::parse("f(x__,y__,z__,w__)").unwrap();
+    let expr = parse!("f(1,2,3,4,5,6,7)").unwrap();
+    let pat_expr = parse!("f(x__,y__,z__,w__)").unwrap();
 
     let pattern = pat_expr.as_view().to_pattern();
 
-    let x = Symbol::new("x__");
-    let y = Symbol::new("y__");
-    let z = Symbol::new("z__");
-    let w = Symbol::new("w__");
+    let x = symbol!("x__");
+    let y = symbol!("y__");
+    let z = symbol!("z__");
+    let w = symbol!("w__");
 
     let conditions = Condition::from((x, WildcardRestriction::Length(0, Some(2))))
         & (y, WildcardRestriction::Length(0, Some(4)))

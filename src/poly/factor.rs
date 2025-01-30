@@ -3747,7 +3747,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore, Symbol},
+        atom::AtomCore,
         domains::{
             algebraic_number::AlgebraicExtension,
             finite_field::{Zp, Z2},
@@ -3755,13 +3755,15 @@ mod test {
             rational::Q,
             InternalOrdering,
         },
+        parse,
         poly::factor::Factorize,
+        symbol,
     };
 
     #[test]
     fn factor_ff_square_free() {
         let field = Zp::new(3);
-        let poly = Atom::parse("(1+v1)*(1+v1^2)^2*(v1^4+1)^3")
+        let poly = parse!("(1+v1)*(1+v1^2)^2*(v1^4+1)^3")
             .unwrap()
             .to_polynomial::<_, u8>(&field, None);
 
@@ -3771,7 +3773,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&field, poly.variables.clone().into()),
@@ -3789,7 +3791,7 @@ mod test {
     #[test]
     fn factor_ff_bivariate() {
         let field = Zp::new(997);
-        let poly = Atom::parse("((v2+1)*v1^2+v1*v2+1)*((v2^2+2)*v1^2+v2+1)")
+        let poly = parse!("((v2+1)*v1^2+v1*v2+1)*((v2^2+2)*v1^2+v2+1)")
             .unwrap()
             .to_polynomial::<_, u8>(&field, None);
 
@@ -3799,7 +3801,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&field, poly.variables.clone().into()),
@@ -3816,7 +3818,7 @@ mod test {
 
     #[test]
     fn factor_square_free() {
-        let poly = Atom::parse("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)")
+        let poly = parse!("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None);
 
@@ -3832,7 +3834,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -3849,7 +3851,7 @@ mod test {
 
     #[test]
     fn factor_univariate_1() {
-        let poly = Atom::parse("2*(4 + 3*v1)*(3 + 2*v1 + 3*v1^2)*(3 + 8*v1^2)*(4 + v1 + v1^16)")
+        let poly = parse!("2*(4 + 3*v1)*(3 + 2*v1 + 3*v1^2)*(3 + 8*v1^2)*(4 + v1 + v1^16)")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None);
 
@@ -3865,7 +3867,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -3882,11 +3884,10 @@ mod test {
 
     #[test]
     fn factor_univariate_2() {
-        let poly = Atom::parse(
-            "(v1+1)(v1+2)(v1+3)^3(v1+4)(v1+5)(v1^2+6)(v1^3+7)(v1+8)^2(v1^4+9)(v1^5+v1+10)",
-        )
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None);
+        let poly =
+            parse!("(v1+1)(v1+2)(v1+3)^3(v1+4)(v1+5)(v1^2+6)(v1^3+7)(v1+8)^2(v1^4+9)(v1^5+v1+10)")
+                .unwrap()
+                .to_polynomial::<_, u8>(&Z, None);
 
         let res = [
             ("5+v1", 1),
@@ -3905,7 +3906,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -3923,7 +3924,7 @@ mod test {
     #[test]
     fn factor_bivariate() {
         let input = "(v1^2+v2+v1+1)(3*v1+v2^2+4)*(6*v1*(v2+1)+v2+5)*(7*v1*v2+4)";
-        let poly = Atom::parse(input).unwrap().to_polynomial::<_, u8>(&Z, None);
+        let poly = parse!(input).unwrap().to_polynomial::<_, u8>(&Z, None);
 
         let res = [
             ("(1+v2+v1+v1^2)", 1),
@@ -3936,7 +3937,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -3954,7 +3955,7 @@ mod test {
     #[test]
     fn factor_multivariate() {
         let input = "(v1*(2+2*v2+2*v3)+1)*(v1*(4+v3^2)+v2+3)*(v1*(v4+v4^2+4+v2)+v4+5)";
-        let poly = Atom::parse(input).unwrap().to_polynomial::<_, u8>(&Z, None);
+        let poly = parse!(input).unwrap().to_polynomial::<_, u8>(&Z, None);
 
         let res = [
             ("5+v4+4*v1+v1*v4+v1*v4^2+v1*v2", 1),
@@ -3966,7 +3967,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -3983,14 +3984,14 @@ mod test {
 
     #[test]
     fn factor_overall_minus() {
-        let poly = Atom::parse("-v1*v3^2-v1*v2*v3^2")
+        let poly = parse!("-v1*v3^2-v1*v2*v3^2")
             .unwrap()
             .to_polynomial::<_, u8>(
                 &Z,
                 Some(Arc::new(vec![
-                    Symbol::new("v1").into(),
-                    Symbol::new("v2").into(),
-                    Symbol::new("v3").into(),
+                    symbol!("v1").into(),
+                    symbol!("v2").into(),
+                    symbol!("v3").into(),
                 ])),
             );
 
@@ -4000,7 +4001,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -4017,14 +4018,14 @@ mod test {
 
     #[test]
     fn factor_multivariate_2() {
-        let poly = Atom::parse("v2^2*v3-v1*v2*v3+v1*v2*v3^2+v1*v2^2-v1^2*v3^2+v1^2*v2*v3")
+        let poly = parse!("v2^2*v3-v1*v2*v3+v1*v2*v3^2+v1*v2^2-v1^2*v3^2+v1^2*v2*v3")
             .unwrap()
             .to_polynomial::<_, u8>(
                 &Z,
                 Some(Arc::new(vec![
-                    Symbol::new("v1").into(),
-                    Symbol::new("v2").into(),
-                    Symbol::new("v3").into(),
+                    symbol!("v1").into(),
+                    symbol!("v2").into(),
+                    symbol!("v3").into(),
                 ])),
             );
 
@@ -4034,7 +4035,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    Atom::parse(f)
+                    parse!(f)
                         .unwrap()
                         .expand()
                         .to_polynomial(&Z, poly.variables.clone().into()),
@@ -4051,32 +4052,29 @@ mod test {
 
     #[test]
     fn galois_upgrade() {
-        let a = Atom::parse(
-            "x^7(y^5+y^4+y^3+y^2)+x^5(y^3+y)+x^4(y^4+y)+x^3(y^2+y)+x^2y+x*y^2+x*y+x+y+1",
-        )
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z2, None);
+        let a =
+            parse!("x^7(y^5+y^4+y^3+y^2)+x^5(y^3+y)+x^4(y^4+y)+x^3(y^2+y)+x^2y+x*y^2+x*y+x+y+1")
+                .unwrap()
+                .to_polynomial::<_, u8>(&Z2, None);
 
         assert_eq!(a.factor().len(), 2)
     }
 
     #[test]
     fn algebraic_extension() {
-        let a = Atom::parse("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
+        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
             .unwrap()
             .to_polynomial::<_, u8>(&Q, None);
-        let f = Atom::parse("a^4-3")
-            .unwrap()
-            .to_polynomial::<_, u16>(&Q, None);
+        let f = parse!("a^4-3").unwrap().to_polynomial::<_, u16>(&Q, None);
         let f = AlgebraicExtension::new(f);
 
         let mut factors = a.to_number_field(&f).factor();
 
-        let f1 = Atom::parse("(1-a^2)+(1-a)*z+z^2")
+        let f1 = parse!("(1-a^2)+(1-a)*z+z^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
             .to_number_field(&f);
-        let f2 = Atom::parse("(1+a^2)+(a)*z+z^2")
+        let f2 = parse!("(1+a^2)+(a)*z+z^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
             .to_number_field(&f);

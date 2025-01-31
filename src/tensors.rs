@@ -125,18 +125,18 @@ impl<'a> AtomView<'a> {
             } else if !f.is_empty() && !used {
                 used_indices[i] = (true, 0);
 
-for ff in f {
-                let mut data = g.node(*ff).data.clone();
+                for ff in f {
+                    let mut data = g.node(*ff).data.clone();
 
-                if let TensorGraphNode::Slot(d) = &mut data {
-                    *d = Some(indices[i].0);
-                } else {
-                    unreachable!()
+                    if let TensorGraphNode::Slot(d) = &mut data {
+                        *d = Some(indices[i].0);
+                    } else {
+                        unreachable!()
+                    }
+
+                    // set the open index in the graph
+                    g.set_node_data(*ff, data);
                 }
-
-                // set the open index in the graph
-                g.set_node_data(*ff, data);
-}
             }
         }
 
@@ -532,17 +532,16 @@ for ff in f {
                     subgraphs.push((node, sub_connections));
                 }
 
-// FIXME: check used instead
-                /*                if subgraphs.iter().any(|x| {
+                if subgraphs.iter().any(|x| {
                     x.1.iter()
                         .zip(&subgraphs[0].1)
-                        .any(|(a, b)| a.0.len() != b.0.len())
+                        .any(|(a, b)| a.0.is_empty() != b.0.is_empty())
                 }) {
                     return Err(format!(
                         "All components of {} must have the same open indices",
                         self.printer(PrintOptions::file())
                     ));
-                }*/
+                }
 
                 let node = g.add_node(TensorGraphNode::Add);
 

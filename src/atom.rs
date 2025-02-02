@@ -31,11 +31,11 @@
 //! Define a function with attributes and use it in an expression:
 //!
 //! ```
-//! use symbolica::{fun, parse, symbol};
+//! use symbolica::{function, parse, symbol};
 //! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 //!
 //! let f = symbol!("f"; Symmetric).unwrap();
-//! let expr = fun!(f, 3, 2) + (1, 4);
+//! let expr = function!(f, 3, 2) + (1, 4);
 //! let p = parse!("f(2,3) + 1/4").unwrap();
 //! assert_eq!(expr, p);
 //! ```
@@ -638,6 +638,19 @@ pub enum AtomType {
     Fun,
 }
 
+impl std::fmt::Display for AtomType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtomType::Num => write!(f, "Num"),
+            AtomType::Var => write!(f, "Var"),
+            AtomType::Add => write!(f, "Add"),
+            AtomType::Mul => write!(f, "Mul"),
+            AtomType::Pow => write!(f, "Pow"),
+            AtomType::Fun => write!(f, "Fun"),
+        }
+    }
+}
+
 /// The type (variant) of a slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SliceType {
@@ -1020,11 +1033,11 @@ impl<'a> AtomView<'a> {
 /// Define a function with attributes and use it in an expression:
 ///
 /// ```
-/// use symbolica::{fun, parse, symbol};
+/// use symbolica::{function, parse, symbol};
 /// use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 ///
 /// let f = symbol!("f"; Symmetric).unwrap();
-/// let expr = fun!(f, 3, 2) + (1, 4);
+/// let expr = function!(f, 3, 2) + (1, 4);
 /// let p = parse!("f(2,3) + 1/4").unwrap();
 /// assert_eq!(expr, p);
 /// ```
@@ -1402,6 +1415,7 @@ impl Atom {
 /// println!("{}", a);
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct FunctionBuilder {
     handle: RecycledAtom,
 }
@@ -1498,12 +1512,17 @@ impl<'a, T: Into<Coefficient> + Clone> FunctionArgument for T {
 /// # Examples
 ///
 /// ```
-/// use symbolica::{atom::Atom, atom::Symbol, fun, symbol, parse};
+/// use symbolica::{atom::Atom, atom::Symbol, function, symbol, parse};
 /// let f_id = symbol!("f");
-/// let f = fun!(f_id, Atom::new_num(3), parse!("x").unwrap());
+/// let f = function!(symbol!("f"), 3, parse!("x").unwrap());
 /// ```
 #[macro_export]
-macro_rules! fun {
+macro_rules! function {
+    ($name: expr) => {
+        {
+            $crate::atom::FunctionBuilder::new($name).finish()
+        }
+    };
     ($name: expr, $($id: expr),*) => {
         {
             let mut f = $crate::atom::FunctionBuilder::new($name);
@@ -2249,7 +2268,7 @@ impl AsRef<Atom> for Atom {
 mod test {
     use crate::{
         atom::{Atom, AtomCore},
-        fun,
+        function,
     };
 
     #[test]
@@ -2282,7 +2301,7 @@ mod test {
         let v2 = parse!("v2").unwrap();
         let f1_id = symbol!("f1");
 
-        let f1 = fun!(f1_id, v1, v2, Atom::new_num(2));
+        let f1 = function!(f1_id, v1, v2, Atom::new_num(2));
 
         let r = (-(&v2 + &v1 + 2) * &v2 * 6).npow(5) / &v2.pow(&v1) * &f1 / 4;
 

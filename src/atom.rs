@@ -31,11 +31,11 @@
 //! Define a function with attributes and use it in an expression:
 //!
 //! ```
-//! use symbolica::fun;
+//! use symbolica::function;
 //! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 //!
 //! let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
-//! let expr = fun!(f, 3, 2) + (1, 4);
+//! let expr = function!(f, 3, 2) + (1, 4);
 //! let p = Atom::parse("f(2,3) + 1/4").unwrap();
 //! assert_eq!(expr, p);
 //! ```
@@ -366,6 +366,19 @@ pub enum AtomType {
     Mul,
     Pow,
     Fun,
+}
+
+impl std::fmt::Display for AtomType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtomType::Num => write!(f, "Num"),
+            AtomType::Var => write!(f, "Var"),
+            AtomType::Add => write!(f, "Add"),
+            AtomType::Mul => write!(f, "Mul"),
+            AtomType::Pow => write!(f, "Pow"),
+            AtomType::Fun => write!(f, "Fun"),
+        }
+    }
 }
 
 /// The type (variant) of a slice.
@@ -1066,6 +1079,7 @@ impl Atom {
 /// println!("{}", a);
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct FunctionBuilder {
     handle: RecycledAtom,
 }
@@ -1162,12 +1176,17 @@ impl<'a, T: Into<Coefficient> + Clone> FunctionArgument for T {
 /// # Examples
 ///
 /// ```
-/// use symbolica::{atom::Atom, atom::Symbol, fun};
+/// use symbolica::{atom::Atom, atom::Symbol, function};
 /// let f_id = Symbol::new("f");
-/// let f = fun!(f_id, Atom::new_num(3), &Atom::parse("x").unwrap());
+/// let f = function!(f_id, Atom::new_num(3), &Atom::parse("x").unwrap());
 /// ```
 #[macro_export]
-macro_rules! fun {
+macro_rules! function {
+    ($name: expr) => {
+        {
+            $crate::atom::FunctionBuilder::new($name).finish()
+        }
+    };
     ($name: expr, $($id: expr),*) => {
         {
             let mut f = $crate::atom::FunctionBuilder::new($name);
@@ -1776,7 +1795,7 @@ impl AsRef<Atom> for Atom {
 mod test {
     use crate::{
         atom::{Atom, AtomCore, Symbol},
-        fun,
+        function,
     };
 
     #[test]
@@ -1801,7 +1820,7 @@ mod test {
         let v2 = Atom::parse("v2").unwrap();
         let f1_id = Symbol::new("f1");
 
-        let f1 = fun!(f1_id, v1, v2, Atom::new_num(2));
+        let f1 = function!(f1_id, v1, v2, Atom::new_num(2));
 
         let r = (-(&v2 + &v1 + 2) * &v2 * 6).npow(5) / &v2.pow(&v1) * &f1 / 4;
 

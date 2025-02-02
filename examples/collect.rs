@@ -1,6 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore, Symbol},
-    fun,
+    function,
 };
 
 fn main() {
@@ -31,11 +31,11 @@ fn main() {
         &x,
         Some(Box::new(move |a, out| {
             out.set_from_view(&a);
-            *out = fun!(key, out);
+            *out = function!(key, out);
         })),
         Some(Box::new(move |a, out| {
             out.set_from_view(&a);
-            *out = fun!(coeff, out);
+            *out = function!(coeff, out);
         })),
     );
     println!("\t{}", out);

@@ -575,7 +575,7 @@ impl<'a> AtomView<'a> {
 mod test {
     use crate::{
         atom::{representation::InlineVar, Atom, AtomCore, Symbol},
-        fun,
+        function,
     };
 
     #[test]
@@ -652,11 +652,11 @@ mod test {
             x.into(),
             Some(Box::new(move |a, out| {
                 out.set_from_view(&a);
-                *out = fun!(key, out);
+                *out = function!(key, out);
             })),
             Some(Box::new(move |a, out| {
                 out.set_from_view(&a);
-                *out = fun!(coeff, out);
+                *out = function!(coeff, out);
             })),
         );
 

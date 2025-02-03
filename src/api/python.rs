@@ -53,7 +53,7 @@ use crate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
         InlineASM, OptimizationSettings,
     },
-    graph::Graph,
+    graph::{GenerationSettings, Graph},
     id::{
         Condition, ConditionResult, Evaluate, Match, MatchSettings, MatchStack, Pattern,
         PatternAtomTreeIterator, PatternOrMap, PatternRestriction, Relation, ReplaceIterator,
@@ -11513,7 +11513,8 @@ impl PythonGraph {
     /// of vertex connections.
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
-    #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None, max_bridges = None, allow_self_loops = None))]
+    #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None,
+        max_bridges = None, allow_self_loops = None, filter_fn = None))]
     #[classmethod]
     fn generate(
         _cls: &Bound<'_, PyType>,
@@ -11526,6 +11527,7 @@ impl PythonGraph {
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
         allow_self_loops: Option<bool>,
+        filter_fn: Option<PyObject>,
     ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
         if max_vertices.is_none() && max_loops.is_none() {
             return Err(exceptions::PyValueError::new_err(
@@ -11546,17 +11548,63 @@ impl PythonGraph {
             })
             .collect();
 
-        Ok(Graph::generate(
-            &external_edges,
-            &vertex_signatures,
-            max_vertices,
-            max_loops,
-            max_bridges,
-            allow_self_loops.unwrap_or(false),
+        let mut settings = GenerationSettings::new();
+        if let Some(max_vertices) = max_vertices {
+            settings = settings.max_vertices(max_vertices);
+        }
+
+        if let Some(max_loops) = max_loops {
+            settings = settings.max_loops(max_loops);
+        }
+
+        if let Some(max_bridges) = max_bridges {
+            settings = settings.max_loops(max_bridges);
+        }
+
+        if let Some(allow_self_loops) = allow_self_loops {
+            settings = settings.allow_self_loops(allow_self_loops);
+        }
+
+        let abort = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        if let Some(filter_fn) = filter_fn {
+            let abort = abort.clone();
+            settings = settings.filter_fn(Box::new(move |g, v| {
+                Python::with_gil(|py| {
+                    match filter_fn.call(py, (Self { graph: g.clone() }, v), None) {
+                        Ok(r) => r
+                            .extract::<bool>(py)
+                            .expect("Match map does not return a boolean"),
+                        Err(e) => {
+                            if e.is_instance_of::<exceptions::PyKeyboardInterrupt>(py) {
+                                abort.store(true, std::sync::atomic::Ordering::Relaxed);
+                                false
+                            } else {
+                                panic!("Bad callback function: {}", e);
+                            }
+                        }
+                    }
+                })
+            }));
+        }
+
+        settings = settings.abort_check(Box::new(move || {
+            if abort.load(std::sync::atomic::Ordering::Relaxed) {
+                true
+            } else {
+                Python::with_gil(|py| py.check_signals())
+                    .map(|_| false)
+                    .unwrap_or(true)
+            }
+        }));
+
+        Ok(
+            Graph::generate(&external_edges, &vertex_signatures, &settings)
+                .unwrap_or_else(|e| e)
+                .into_iter()
+                .map(|(k, v)| (Self { graph: k }, Atom::new_num(v).into()))
+                .collect(),
         )
-        .into_iter()
-        .map(|(k, v)| (Self { graph: k }, Atom::new_num(v).into()))
-        .collect())
     }
 
     /// Convert the graph to a graphviz dot string.

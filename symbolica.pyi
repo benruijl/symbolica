@@ -3861,12 +3861,15 @@ class Graph:
                  max_vertices: Optional[int] = None,
                  max_loops: Optional[int] = None,
                  max_bridges: Optional[int] = None,
-                 allow_self_loops: bool = False,) -> dict[Graph, Expression]:
+                 allow_self_loops: bool = False,
+                 filter_fn: Optional[Callable[[Graph, int], bool]] = None) -> dict[Graph, Expression]:
         """Generate all connected graphs with `external_edges` half-edges and the given allowed list
         of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
         there is no direction) and edge data.
 
         Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+        If `KeyboardInterrupt` is triggered during the generation, the generation will stop and will yield the currently generated
+        graphs.
 
         Examples
         --------
@@ -3897,6 +3900,12 @@ class Graph:
             The maximum number of bridges in the graph.
         allow_self_loops: bool, optional
             Whether self-edges are allowed.
+        filter_fn: Optional[Callable[[Graph, int], bool]], optional
+            Set a filter function that is called during the graph generation.
+            The first argument is the graph `g` and the second argument the vertex count `n`
+            that specifies that the first `n` vertices are completed (no new edges will) be
+            assigned to them. The filter function should return `true` if the current
+            incomplete graph is allowed, else it should return `false` and the graph is discarded.
         """
 
     def to_dot(self) -> str:

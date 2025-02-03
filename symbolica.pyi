@@ -3861,7 +3861,8 @@ class Graph:
                  max_vertices: Optional[int] = None,
                  max_loops: Optional[int] = None,
                  max_bridges: Optional[int] = None,
-                 allow_self_loops: bool = False,) -> dict[Graph, Expression]:
+                 allow_self_loops: bool = False,
+                 filter_fn: Optional[Callable[[Graph, int], bool]] = None) -> dict[Graph, Expression]:
         """Generate all connected graphs with `external_edges` half-edges and the given allowed list
         of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
         there is no direction) and edge data.

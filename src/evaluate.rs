@@ -1421,7 +1421,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
                                 let rest = dest - (coeff << shift);
-                                second_pos = 0;
+                                second_index = 0;
                                 *out += &format!(
                                     "\t\t\"add x8, %2, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -1437,7 +1437,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
                                 let rest = dest - (coeff << shift);
-                                second_pos = 0;
+                                second_index = 0;
                                 *out += &format!(
                                     "\t\t\"add x8, %1, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -1449,12 +1449,12 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         } else {
                             // TODO: subtract reserved indices
                             let dest = $i * 8;
-                            if dest > 32760 && dest.abs_diff(second_pos) > 32760 {
+                            if dest > 32760 && dest.abs_diff(second_index) > 32760 {
                                 let d = dest.ilog2();
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
-                                second_pos = coeff << shift;
-                                let rest = dest - second_pos;
+                                second_index = coeff << shift;
+                                let rest = dest - second_index;
                                 *out += &format!(
                                     "\t\t\"add x8, %0, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -1463,7 +1463,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             } else if dest <= 32760 {
                                 format!("[%0, {}]", dest)
                             } else {
-                                let offset = dest - second_pos;
+                                let offset = dest - second_index;
                                 format!("[x8, {}]", offset)
                             }
                         }

@@ -50,6 +50,22 @@ pub enum Pattern {
     Transformer(Box<(Option<Pattern>, Vec<Transformer>)>),
 }
 
+impl From<Symbol> for Pattern {
+    /// Convert the symbol to a pattern.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::{symbol, id::Pattern};
+    ///
+    /// let p = symbol!("x_").into();
+    /// assert!(matches!(p, Pattern::Wildcard(_)));
+    /// ```
+    fn from(symbol: Symbol) -> Pattern {
+        InlineVar::new(symbol).to_pattern()
+    }
+}
+
 impl From<Atom> for Pattern {
     fn from(atom: Atom) -> Self {
         Pattern::new(atom)
@@ -163,6 +179,27 @@ pub struct Replacement {
     rhs: PatternOrMap,
     conditions: Option<Condition<PatternRestriction>>,
     settings: Option<MatchSettings>,
+}
+
+impl std::fmt::Display for Replacement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.pat, self.rhs)?;
+
+        if let Some(c) = &self.conditions {
+            write!(f, "; {}", c)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for PatternOrMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatternOrMap::Pattern(p) => write!(f, "{}", p),
+            PatternOrMap::Map(_) => write!(f, "Map"),
+        }
+    }
 }
 
 impl Replacement {
@@ -1738,6 +1775,20 @@ pub enum WildcardRestriction {
     NotGreedy,
 }
 
+impl std::fmt::Display for WildcardRestriction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WildcardRestriction::Length(min, Some(max)) => write!(f, "length={}-{}", min, max),
+            WildcardRestriction::Length(min, None) => write!(f, "length > {}", min),
+            WildcardRestriction::IsAtomType(t) => write!(f, "type = {}", t),
+            WildcardRestriction::IsLiteralWildcard(s) => write!(f, "= {}", s),
+            WildcardRestriction::Filter(_) => write!(f, "filter"),
+            WildcardRestriction::Cmp(s, _) => write!(f, "cmp with {}", s),
+            WildcardRestriction::NotGreedy => write!(f, "not greedy"),
+        }
+    }
+}
+
 pub type WildcardAndRestriction = (Symbol, WildcardRestriction);
 
 /// A restriction on a wildcard or wildcards.
@@ -1747,6 +1798,15 @@ pub enum PatternRestriction {
     /// A function that checks if the restriction is met based on the currently matched wildcards.
     /// If more information is needed to test the restriction, the function should return `Inconclusive`.
     MatchStack(Box<dyn MatchStackFn>),
+}
+
+impl std::fmt::Display for PatternRestriction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatternRestriction::Wildcard((s, r)) => write!(f, "{}: {}", s, r),
+            PatternRestriction::MatchStack(_) => write!(f, "match_function"),
+        }
+    }
 }
 
 impl Clone for PatternRestriction {
@@ -1977,12 +2037,12 @@ impl Evaluate for Relation {
                 | Relation::Lt(a, b)
                 | Relation::Le(a, b)
                 | Relation::Contains(a, b) => {
-                    a.replace_wildcards_with_matches_impl(ws, &mut out1, &m, false, pat.as_ref())
+                    a.replace_wildcards_with_matches_impl(ws, &mut out1, &m, true, pat.as_ref())
                         .map_err(|e| match e {
                             TransformerError::Interrupt => "Interrupted by user".into(),
                             TransformerError::ValueError(v) => v,
                         })?;
-                    b.replace_wildcards_with_matches_impl(ws, &mut out2, &m, false, pat.as_ref())
+                    b.replace_wildcards_with_matches_impl(ws, &mut out2, &m, true, pat.as_ref())
                         .map_err(|e| match e {
                             TransformerError::Interrupt => "Interrupted by user".into(),
                             TransformerError::ValueError(v) => v,
@@ -2000,7 +2060,7 @@ impl Evaluate for Relation {
                     }
                 }
                 Relation::Matches(a, pattern, cond, settings) => {
-                    a.replace_wildcards_with_matches_impl(ws, &mut out1, &m, false, pat.as_ref())
+                    a.replace_wildcards_with_matches_impl(ws, &mut out1, &m, true, pat.as_ref())
                         .map_err(|e| match e {
                             TransformerError::Interrupt => "Interrupted by user".into(),
                             TransformerError::ValueError(v) => v,
@@ -2011,7 +2071,7 @@ impl Evaluate for Relation {
                         .is_some()
                 }
                 Relation::IsType(a, b) => {
-                    a.replace_wildcards_with_matches_impl(ws, &mut out1, &m, false, pat.as_ref())
+                    a.replace_wildcards_with_matches_impl(ws, &mut out1, &m, true, pat.as_ref())
                         .map_err(|e| match e {
                             TransformerError::Interrupt => "Interrupted by user".into(),
                             TransformerError::ValueError(v) => v,

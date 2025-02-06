@@ -122,18 +122,21 @@ impl<'a> AtomView<'a> {
                     "Index {} is contracted more than once",
                     ii.0.as_atom_view()
                 ));
-            } else if f.len() == 1 && !used {
+            } else if !f.is_empty() && !used {
                 used_indices[i] = (true, 0);
 
-                let mut data = g.node(f[0]).data.clone();
-                if let TensorGraphNode::Slot(d) = &mut data {
-                    *d = Some(indices[i].0);
-                } else {
-                    unreachable!()
-                }
+                for ff in f {
+                    let mut data = g.node(*ff).data.clone();
 
-                // set the open index in the graph
-                g.set_node_data(f[0], data);
+                    if let TensorGraphNode::Slot(d) = &mut data {
+                        *d = Some(indices[i].0);
+                    } else {
+                        unreachable!()
+                    }
+
+                    // set the open index in the graph
+                    g.set_node_data(*ff, data);
+                }
             }
         }
 
@@ -532,7 +535,7 @@ impl<'a> AtomView<'a> {
                 if subgraphs.iter().any(|x| {
                     x.1.iter()
                         .zip(&subgraphs[0].1)
-                        .any(|(a, b)| a.0.len() != b.0.len())
+                        .any(|(a, b)| a.0.is_empty() != b.0.is_empty())
                 }) {
                     return Err(format!(
                         "All components of {} must have the same open indices",

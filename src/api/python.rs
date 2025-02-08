@@ -74,6 +74,21 @@ use crate::{
     LicenseManager,
 };
 
+const DEFAULT_PRINT_OPTIONS: PrintOptions = PrintOptions {
+    hide_namespace: Some("python"),
+    ..PrintOptions::new()
+};
+
+const PLAIN_PRINT_OPTIONS: PrintOptions = PrintOptions {
+    hide_namespace: Some("python"),
+    ..PrintOptions::file()
+};
+
+const LATEX_PRINT_OPTIONS: PrintOptions = PrintOptions {
+    hide_namespace: Some("python"),
+    ..PrintOptions::latex()
+};
+
 /// Create a Symbolica Python module.
 pub fn create_symbolica_module<'a, 'b>(
     m: &'b Bound<'a, PyModule>,
@@ -2839,7 +2854,7 @@ impl PythonExpression {
 
     /// Convert the expression into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(self.to_string())
+        Ok(format!("{}", self.printer(PLAIN_PRINT_OPTIONS)))
     }
 
     /// Convert the expression into a human-readable string.
@@ -2929,7 +2944,7 @@ impl PythonExpression {
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            AtomPrinter::new_with_options(self.expr.as_view(), PrintOptions::latex(),)
+            AtomPrinter::new_with_options(self.expr.as_view(), LATEX_PRINT_OPTIONS,)
         ))
     }
 
@@ -5520,11 +5535,15 @@ impl PythonSeries {
 
     /// Convert the series into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.series))
+        Ok(self
+            .series
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.series))
+        Ok(self
+            .series
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the series into a LaTeX string.
@@ -5532,7 +5551,7 @@ impl PythonSeries {
         Ok(format!(
             "$${}$$",
             self.series
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -6068,14 +6087,14 @@ impl PythonPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -6083,7 +6102,7 @@ impl PythonPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -6918,14 +6937,14 @@ impl PythonFiniteFieldPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -6933,7 +6952,7 @@ impl PythonFiniteFieldPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -7513,14 +7532,14 @@ impl PythonPrimeTwoPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -7528,7 +7547,7 @@ impl PythonPrimeTwoPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -8059,14 +8078,14 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -8074,7 +8093,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -8609,14 +8628,14 @@ impl PythonGaloisFieldPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -8624,7 +8643,7 @@ impl PythonGaloisFieldPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -9160,14 +9179,14 @@ impl PythonNumberFieldPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -9175,7 +9194,7 @@ impl PythonNumberFieldPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -9703,14 +9722,14 @@ impl PythonRationalPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the rational polynomial into a LaTeX string.
@@ -9718,7 +9737,7 @@ impl PythonRationalPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -10033,14 +10052,14 @@ impl PythonFiniteFieldRationalPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the rational polynomial into a LaTeX string.
@@ -10048,7 +10067,7 @@ impl PythonFiniteFieldRationalPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -10952,7 +10971,7 @@ impl PythonMatrix {
         Ok(format!(
             "$${}$$",
             self.matrix
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -10976,12 +10995,16 @@ impl PythonMatrix {
 
     /// Convert the matrix into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.matrix))
+        Ok(self
+            .matrix
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the matrix into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.matrix))
+        Ok(self
+            .matrix
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Add this matrix to `rhs`, returning the result.

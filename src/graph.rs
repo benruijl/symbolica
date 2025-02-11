@@ -288,6 +288,7 @@ impl SpanningTree {
                 x.chain_id.is_none()
                     && !self.nodes[x.parent].external
                     && !x.external
+                    && x.parent != *n // exclude the root
                     && !self.nodes[x.parent].back_edges.iter().any(|end| n == end)
             })
             .count()

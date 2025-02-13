@@ -4689,8 +4689,10 @@ impl<'a> AtomView<'a> {
                 is_zero
             }
             AtomView::Add(_) => {
-                // an expanded polynomial is only zero if it is a literal zero
-                if self.is_polynomial(false, true).is_some() {
+                // an expanded polynomial with more than zero indeterminates is only zero if it is a literal zero
+                if self.is_polynomial(false, true).is_some()
+                    && self.get_all_indeterminates(true).len() > 0
+                {
                     ConditionResult::False
                 } else {
                     self.zero_test_impl(iterations, tolerance)

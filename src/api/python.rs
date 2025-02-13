@@ -3638,7 +3638,7 @@ impl PythonExpression {
                         filter_fn
                             .call(py, (data,), None)
                             .expect("Bad callback function")
-                            .extract::<bool>(py)
+                            .is_truthy(py)
                             .expect("Pattern filter does not return a boolean")
                     })
                 })),
@@ -3801,7 +3801,7 @@ impl PythonExpression {
                             cmp_fn
                                 .call(py, (data1, data2), None)
                                 .expect("Bad callback function")
-                                .extract::<bool>(py)
+                                .is_truthy(py)
                                 .expect("Pattern comparison does not return a boolean")
                         })
                     }),
@@ -11591,7 +11591,7 @@ impl PythonGraph {
                 Python::with_gil(|py| {
                     match filter_fn.call(py, (Self { graph: g.clone() }, v), None) {
                         Ok(r) => r
-                            .extract::<bool>(py)
+                            .is_truthy(py)
                             .expect("Match map does not return a boolean"),
                         Err(e) => {
                             if e.is_instance_of::<exceptions::PyKeyboardInterrupt>(py) {

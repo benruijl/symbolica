@@ -1429,7 +1429,15 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                a.set_normalized(true);
+                if a.get_nargs() == 0 {
+                    out.to_num(Coefficient::zero());
+                } else if a.get_nargs() == 1 {
+                    let mut b = ws.new_atom();
+                    b.set_from_view(&a.to_add_view().iter().next().unwrap());
+                    out.set_from_view(&b.as_view());
+                } else {
+                    a.set_normalized(true);
+                }
                 return;
             }
         }
@@ -1517,7 +1525,13 @@ impl<'a> AtomView<'a> {
                 }
             }
 
-            a.set_normalized(true);
+            if a.get_nargs() == 1 {
+                let mut b = ws.new_atom();
+                b.set_from_view(&a.to_add_view().iter().next().unwrap());
+                out.set_from_view(&b.as_view());
+            } else {
+                a.set_normalized(true);
+            }
         } else if let AtomView::Add(_) = rhs {
             rhs.add_normalized(*self, ws, out);
         } else {

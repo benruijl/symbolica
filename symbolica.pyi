@@ -331,7 +331,7 @@ class Expression:
         """
 
     @classmethod
-    def load(_cls, filename: str, conflict_fn: Callable[[str], str]) -> Expression:
+    def load(_cls, filename: str, conflict_fn: Optional[Callable[[str], str]] = None) -> Expression:
         """Load an expression and its state from a file. The state will be merged
         with the current one. If a symbol has conflicting attributes, the conflict
         can be resolved using the renaming function `conflict_fn`.
@@ -587,7 +587,7 @@ class Expression:
 
     def req(
         self,
-        filter_fn: Callable[[Expression], bool],
+        filter_fn: Callable[[Expression], bool | Condition],
     ) -> PatternRestriction:
         """
         Create a new pattern restriction that calls the function `filter_fn` with the matched
@@ -605,7 +605,7 @@ class Expression:
     def req_cmp(
         self,
         other: Expression | int | float | Decimal,
-        cmp_fn: Callable[[Expression, Expression], bool],
+        cmp_fn: Callable[[Expression, Expression], bool | Condition],
     ) -> PatternRestriction:
         """
         Create a new pattern restriction that calls the function `cmp_fn` with another the matched
@@ -1445,16 +1445,16 @@ class Expression:
         """
 
     def canonize_tensors(self,
-                         contracted_indices: Sequence[Tuple[Expression | int,Expression | int]]) -> Expression:
+                         contracted_indices: Sequence[Tuple[Expression | int, Expression | int]]) -> Expression:
         """Canonize (products of) tensors in the expression by relabeling repeated indices.
         The tensors must be written as functions, with its indices as the arguments.
         Subexpressions, constants and open indices are supported.
-    
+
         If the contracted indices are distinguishable (for example in their dimension),
         you can provide a group marker as the second element in the tuple of the index
         specification.
         This makes sure that an index will not be renamed to an index from a different group.
-    
+
         Examples
         --------
         >>> g = Expression.symbol('g', is_symmetric=True)
@@ -1462,7 +1462,8 @@ class Expression:
         >>> mu1, mu2, mu3, mu4, k1 = Expression.symbol('mu1', 'mu2', 'mu3', 'mu4', 'k1')
         >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
         >>> print(e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]))
-        yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
+
+        yields `g(mu1, mu2)*fc(mu1, mu3, mu2, k1, mu3, k1)`.
         """
 
 
@@ -2157,6 +2158,7 @@ class Transformer:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
+        show_namespaces: bool = False,
     ) -> Transformer:
         """
         Create a transformer that prints the expression.

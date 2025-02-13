@@ -3591,7 +3591,7 @@ impl PythonExpression {
                         filter_fn
                             .call(py, (data,), None)
                             .expect("Bad callback function")
-                            .extract::<bool>(py)
+                            .is_truthy(py)
                             .expect("Pattern filter does not return a boolean")
                     })
                 })),
@@ -3754,7 +3754,7 @@ impl PythonExpression {
                             cmp_fn
                                 .call(py, (data1, data2), None)
                                 .expect("Bad callback function")
-                                .extract::<bool>(py)
+                                .is_truthy(py)
                                 .expect("Pattern comparison does not return a boolean")
                         })
                     }),

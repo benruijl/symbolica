@@ -29,7 +29,7 @@ use crate::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
             Zp64,
         },
-        float::{Float, NumericalFloatLike, Real, SingleFloat, Powf},
+        float::{Float, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, Q},
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},

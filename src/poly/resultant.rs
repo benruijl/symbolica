@@ -38,7 +38,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
                     let a = self.ring.pow(&neg_lc, deg);
                     let psi_old = self.ring.pow(&psi, deg - 1);
                     let (q, r) = self.ring.quot_rem(&a, &psi_old);
-                    debug_assert!(F::is_zero(&r));
+                    debug_assert!(self.ring.is_zero(&r));
                     q
                 };
 
@@ -123,7 +123,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         }
 
         let r = a_new.lcoeff();
-        if F::is_zero(&r) {
+        if self.ring.is_zero(&r) {
             return r;
         }
 
@@ -153,7 +153,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         }
 
         let (q, r) = self.ring.quot_rem(&self.ring.mul(&num, &res), &den);
-        assert!(F::is_zero(&r));
+        assert!(self.ring.is_zero(&r));
         q
     }
 }
@@ -176,7 +176,7 @@ impl<F: Field> UnivariatePolynomial<F> {
         }
 
         let r = a_new.lcoeff();
-        if F::is_zero(&r) {
+        if self.ring.is_zero(&r) {
             return r;
         }
 

@@ -1150,7 +1150,7 @@ where
                     let r = self
                         .ring
                         .sample(&mut rng, (0, characteristic.to_i64().unwrap_or(i64::MAX)));
-                    if !F::is_zero(&r) {
+                    if !self.ring.is_zero(&r) {
                         exp[var] = E::from_u32(i as u32);
                         random_poly.append_monomial(r, &exp);
                     }
@@ -1366,7 +1366,7 @@ where
 
         let mut d = self.degree(interpolation_var).to_u32();
 
-        let shifted_poly = if !F::is_zero(&sample_point) {
+        let shifted_poly = if !self.ring.is_zero(&sample_point) {
             self.shift_var_cached(interpolation_var, &sample_point)
         } else {
             self.clone()
@@ -1435,7 +1435,7 @@ where
 
         rec_factors.push(rest);
 
-        if !F::is_zero(&sample_point) {
+        if !self.ring.is_zero(&sample_point) {
             for x in &mut rec_factors {
                 // shift the polynomial to y - sample
                 *x = x.shift_var_cached(interpolation_var, &self.ring.neg(&sample_point));

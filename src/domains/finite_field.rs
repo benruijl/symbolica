@@ -374,7 +374,7 @@ impl Ring for Zp {
     }
 
     #[inline]
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.0 == 0
     }
 
@@ -396,7 +396,7 @@ impl Ring for Zp {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if Self::is_zero(b) {
+        if self.is_zero(b) {
             None
         } else {
             Some(self.div(a, b))
@@ -681,7 +681,7 @@ impl Ring for Zp64 {
     }
 
     #[inline]
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.0 == 0
     }
 
@@ -703,7 +703,7 @@ impl Ring for Zp64 {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if Self::is_zero(b) {
+        if self.is_zero(b) {
             None
         } else {
             Some(self.div(a, b))
@@ -960,7 +960,7 @@ impl Ring for FiniteField<Two> {
     }
 
     #[inline]
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         *a == 0
     }
 
@@ -1218,7 +1218,7 @@ impl Ring for FiniteField<Mersenne64> {
     }
 
     #[inline]
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         *a == 0
     }
 
@@ -1240,7 +1240,7 @@ impl Ring for FiniteField<Mersenne64> {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if Self::is_zero(b) {
+        if self.is_zero(b) {
             None
         } else {
             Some(self.div(a, b))
@@ -1491,7 +1491,7 @@ impl Ring for FiniteField<Integer> {
         b.pow(e).symmetric_mod(&self.p)
     }
 
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.is_zero()
     }
 

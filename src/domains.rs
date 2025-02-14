@@ -143,7 +143,7 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     /// Return the nth element by computing `n * 1`.
     fn nth(&self, n: Integer) -> Self::Element;
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element;
-    fn is_zero(a: &Self::Element) -> bool;
+    fn is_zero(&self, a: &Self::Element) -> bool;
     fn is_one(&self, a: &Self::Element) -> bool;
     /// Should return `true` iff `gcd(1,x)` returns `1` for any `x`.
     fn one_is_gcd_unit() -> bool;
@@ -317,8 +317,8 @@ impl<R: Ring, C: Clone + Borrow<R>> Ring for WrappedRingElement<R, C> {
         }
     }
 
-    fn is_zero(a: &Self::Element) -> bool {
-        R::is_zero(&a.element)
+    fn is_zero(&self, a: &Self::Element) -> bool {
+        self.ring().is_zero(&a.element)
     }
 
     fn is_one(&self, a: &Self::Element) -> bool {
@@ -410,7 +410,7 @@ impl<R: Ring, C: Clone + Borrow<R>> InternalOrdering for WrappedRingElement<R, C
 
 impl<R: Ring, C: Clone + Borrow<R>> SelfRing for WrappedRingElement<R, C> {
     fn is_zero(&self) -> bool {
-        R::is_zero(&self.element)
+        self.ring().is_zero(&self.element)
     }
 
     fn is_one(&self) -> bool {

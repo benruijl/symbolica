@@ -20,6 +20,7 @@
 //! ```
 
 use ahash::{HashMap, HashSet};
+use dyn_clone::DynClone;
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -32,7 +33,7 @@ use crate::{
 };
 
 /// A node in a graph, with arbitrary data.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Node<NodeData = Empty> {
     /// Arbitrary data associated with the node.
     pub data: NodeData,
@@ -41,7 +42,7 @@ pub struct Node<NodeData = Empty> {
 }
 
 /// An edge in a graph, with arbitrary data.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge<EdgeData = Empty> {
     /// Indices of the vertices connected by the edge.
     pub vertices: (usize, usize),
@@ -129,7 +130,7 @@ impl<T: Ord, U> Ord for HiddenData<T, U> {
 ///
 /// assert_eq!(g.node(0).edges, [0, 1, 2]);
 /// ```
-#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct Graph<NodeData = Empty, EdgeData = Empty> {
     nodes: Vec<Node<NodeData>>,
     edges: Vec<Edge<EdgeData>>,
@@ -288,6 +289,7 @@ impl SpanningTree {
                 x.chain_id.is_none()
                     && !self.nodes[x.parent].external
                     && !x.external
+                    && x.parent != *n // exclude the root
                     && !self.nodes[x.parent].back_edges.iter().any(|end| n == end)
             })
             .count()
@@ -535,15 +537,101 @@ impl<N, E: Eq + Ord + Hash> Graph<N, E> {
     }
 }
 
-struct GenerationSettings<'a, E> {
+struct GenerationSettingsAndInput<'a, N, E> {
     vertex_signatures: &'a [Vec<(Option<bool>, E)>],
     allowed_structures: &'a HashSet<Vec<(Option<bool>, E)>>,
+    min_degree: usize,
+    max_degree: usize,
+    settings: &'a GenerationSettings<N, E>,
+}
+
+pub trait FilterFn<N, E>: Fn(&Graph<N, E>, usize) -> bool + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(<N, E> FilterFn<N,E>);
+impl<N, E, T: Clone + Send + Sync + Fn(&Graph<N, E>, usize) -> bool> FilterFn<N, E> for T {}
+
+pub trait AbortCheck: Fn() -> bool + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(AbortCheck);
+impl<T: Clone + Send + Sync + Fn() -> bool> AbortCheck for T {}
+
+#[derive(Clone)]
+pub struct GenerationSettings<N, E> {
+    filter_fn: Option<Box<dyn FilterFn<N, E>>>,
+    abort_check: Option<Box<dyn AbortCheck>>,
     max_vertices: Option<usize>,
     max_loops: Option<usize>,
     max_bridges: Option<usize>,
     allow_self_loops: bool,
-    min_degree: usize,
-    max_degree: usize,
+}
+
+impl<N, E> Default for GenerationSettings<N, E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<N, E> GenerationSettings<N, E> {
+    /// Create a new settings object with default values.
+    /// These are:
+    /// ```text
+    /// filter_fn: None
+    /// abort_check: None
+    /// max_vertices: None
+    /// max_loops: None
+    /// max_bridges: None
+    /// allow_self_loops: false
+    /// ```
+    pub const fn new() -> Self {
+        Self {
+            filter_fn: None,
+            abort_check: None,
+            max_vertices: None,
+            max_loops: None,
+            max_bridges: None,
+            allow_self_loops: false,
+        }
+    }
+
+    /// Set the maximum number of vertices in the generated graphs.
+    pub fn max_vertices(mut self, max_vertices: usize) -> Self {
+        self.max_vertices = Some(max_vertices);
+        self
+    }
+
+    /// Set the maximum number of loops in the generated graphs.
+    pub fn max_loops(mut self, max_loops: usize) -> Self {
+        self.max_loops = Some(max_loops);
+        self
+    }
+
+    /// Set the maximum number of bridges in the generated graphs.
+    pub fn max_bridges(mut self, max_bridges: usize) -> Self {
+        self.max_bridges = Some(max_bridges);
+        self
+    }
+
+    /// Allow self-loops in the generated graphs.
+    pub fn allow_self_loops(mut self, allow_self_loops: bool) -> Self {
+        self.allow_self_loops = allow_self_loops;
+        self
+    }
+
+    /// Set a filter function that is called during the graph generation.
+    /// The first argument is the graph `g` and the second argument the vertex count `n`
+    /// that specifies that the first `n` vertices are completed (no new edges will) be
+    /// assigned to them. The filter function should return `true` if the current
+    /// incomplete graph is allowed, else it should return `false` and the graph is discarded.
+    pub fn filter_fn(mut self, filter_fn: Box<dyn FilterFn<N, E>>) -> Self {
+        self.filter_fn = Some(filter_fn);
+        self
+    }
+
+    /// A function that is called during graph generation to see if the graph
+    /// generation should be aborted. The graphs that were generated at this stage
+    /// are returned.
+    pub fn abort_check(mut self, abort_check: Box<dyn AbortCheck>) -> Self {
+        self.abort_check = Some(abort_check);
+        self
+    }
 }
 
 impl<
@@ -555,15 +643,13 @@ impl<
     /// of vertex connections.
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+    /// If the graph generation was aborted, all currently generated graphs are returned in the `Err` argument.
     pub fn generate(
         external_edges: &[(N, (Option<bool>, E))],
         vertex_signatures: &[Vec<(Option<bool>, E)>],
-        max_vertices: Option<usize>,
-        max_loops: Option<usize>,
-        max_bridges: Option<usize>,
-        allow_self_loops: bool,
-    ) -> HashMap<Graph<N, E>, Integer> {
-        if max_vertices.is_none() && max_loops.is_none() {
+        settings: &GenerationSettings<N, E>,
+    ) -> Result<HashMap<Graph<N, E>, Integer>, HashMap<Graph<N, E>, Integer>> {
+        if settings.max_vertices.is_none() && settings.max_loops.is_none() {
             panic!("At least one of max_vertices or max_loops must be set");
         }
 
@@ -604,37 +690,36 @@ impl<
             }
         }
 
-        let settings = GenerationSettings {
+        let settings = GenerationSettingsAndInput {
             vertex_signatures: &vertex_sorted,
             allowed_structures: &allowed_structures,
-            max_vertices,
-            max_loops,
-            max_bridges,
-            allow_self_loops,
             min_degree: vertex_sorted.iter().map(|x| x.len()).min().unwrap_or(0),
             max_degree: vertex_sorted.iter().map(|x| x.len()).max().unwrap_or(0),
+            settings,
         };
 
         let mut out = HashMap::default();
-        g.generate_impl(external_edges, 0, &settings, &mut edge_signatures, &mut out);
-        out
+        match g.generate_impl(external_edges, 0, &settings, &mut edge_signatures, &mut out) {
+            Ok(()) => Ok(out),
+            Err(()) => Err(out),
+        }
     }
 
     fn generate_impl(
         &mut self,
         external_edges: &[(N, (Option<bool>, E))],
         cur_vertex: usize,
-        settings: &GenerationSettings<E>,
+        settings: &GenerationSettingsAndInput<N, E>,
         edge_signatures: &mut Vec<Vec<(Option<bool>, E)>>,
         out: &mut HashMap<Graph<N, E>, Integer>,
-    ) {
-        if let Some(max_vertices) = settings.max_vertices {
+    ) -> Result<(), ()> {
+        if let Some(max_vertices) = settings.settings.max_vertices {
             if self.nodes.len() > max_vertices {
-                return;
+                return Ok(());
             }
         }
 
-        if let Some(max_loops) = settings.max_loops {
+        if let Some(max_loops) = settings.settings.max_loops {
             // filter based on an underestimate of the loop count
             // determine the minimal number of additional edges
             // and assume that we create one connected component
@@ -657,7 +742,13 @@ impl<
 
             let e = self.edges.len() + extra_edges + 1;
             if e > max_loops + self.nodes.len() {
-                return;
+                return Ok(());
+            }
+        }
+
+        if let Some(f) = &settings.settings.filter_fn {
+            if !f(self, cur_vertex) {
+                return Ok(());
             }
         }
 
@@ -665,19 +756,25 @@ impl<
             let mut spanning_tree = self.get_spanning_tree(0);
 
             if !spanning_tree.is_connected() {
-                return;
+                return Ok(());
             }
 
-            if let Some(max_bridges) = settings.max_bridges {
+            if let Some(abort_check) = &settings.settings.abort_check {
+                if abort_check() {
+                    return Err(());
+                }
+            }
+
+            if let Some(max_bridges) = settings.settings.max_bridges {
                 spanning_tree.chain_decomposition();
                 if spanning_tree.count_bridges() > max_bridges {
-                    return;
+                    return Ok(());
                 }
             }
 
             let c = self.canonize();
             out.insert(c.graph, c.automorphism_group_size);
-            return;
+            return Ok(());
         }
 
         // find completions for the current vertex
@@ -697,7 +794,7 @@ impl<
                     0,
                     settings,
                     out,
-                );
+                )?;
             } else if n == 1 {
                 self.generate_impl(
                     external_edges,
@@ -705,10 +802,10 @@ impl<
                     settings,
                     edge_signatures,
                     out,
-                );
+                )?;
             }
 
-            return;
+            return Ok(());
         }
 
         let mut cur_edges: Vec<_> = self
@@ -742,7 +839,7 @@ impl<
                     settings,
                     edge_signatures,
                     out,
-                );
+                )?;
                 continue;
             }
 
@@ -783,8 +880,10 @@ impl<
                 0,
                 settings,
                 out,
-            );
+            )?;
         }
+
+        Ok(())
     }
 
     fn distribute_edges<'a>(
@@ -795,9 +894,9 @@ impl<
         external_edges: &[(N, (Option<bool>, E))],
         edge_count: &mut [((Option<bool>, E), usize)],
         cur_edge_count_group_index: usize,
-        settings: &'a GenerationSettings<E>,
+        settings: &'a GenerationSettingsAndInput<N, E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
-    ) {
+    ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
             return self.generate_impl(external_edges, source + 1, settings, edge_signatures, out);
         }
@@ -817,12 +916,12 @@ impl<
                 0,
                 settings,
                 out,
-            );
+            )?;
         }
 
         if source == cur_target {
-            if !settings.allow_self_loops {
-                return;
+            if !settings.settings.allow_self_loops {
+                return Ok(());
             }
 
             for p1 in cur_edge_count_group_index..edge_count.len() {
@@ -855,7 +954,7 @@ impl<
                                 p1,
                                 settings,
                                 out,
-                            );
+                            )?;
 
                             self.delete_last_edge();
 
@@ -882,7 +981,7 @@ impl<
                         p1,
                         settings,
                         out,
-                    );
+                    )?;
 
                     self.delete_last_edge();
 
@@ -890,7 +989,7 @@ impl<
                 }
             }
 
-            return;
+            return Ok(());
         }
 
         let max_degree = if cur_target < external_edges.len() {
@@ -900,7 +999,7 @@ impl<
         };
 
         if self.node(cur_target).edges.len() + 1 > max_degree {
-            return;
+            return Ok(());
         }
 
         for p in cur_edge_count_group_index..edge_count.len() {
@@ -953,7 +1052,7 @@ impl<
                 p,
                 settings,
                 out,
-            );
+            )?;
 
             edge_signatures[cur_target].pop();
             self.delete_last_edge(); // TODO: cache edge data
@@ -965,6 +1064,8 @@ impl<
             edge_signatures.pop();
             self.delete_last_empty_node().unwrap();
         }
+
+        Ok(())
     }
 }
 
@@ -1576,7 +1677,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::graph::{Graph, SearchTreeNode};
+    use crate::graph::{GenerationSettings, Graph, SearchTreeNode};
 
     #[test]
     fn directed() {
@@ -1695,11 +1796,12 @@ mod test {
                 vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
                 vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
             ],
-            None,
-            Some(3),
-            Some(0),
-            true,
-        );
+            &GenerationSettings::new()
+                .max_loops(3)
+                .max_bridges(0)
+                .allow_self_loops(true),
+        )
+        .unwrap();
 
         assert_eq!(gs.len(), 210);
     }
@@ -1720,12 +1822,50 @@ mod test {
         let graphs = Graph::generate(
             &external_edges,
             &vertex_signatures,
-            None,
-            Some(2),
-            Some(0),
-            true,
-        );
+            &GenerationSettings::new()
+                .max_loops(2)
+                .max_bridges(0)
+                .allow_self_loops(true),
+        )
+        .unwrap();
 
         assert_eq!(graphs.len(), 278);
+    }
+
+    #[test]
+    fn generate_with_filter() {
+        let graphs = Graph::<_, &str>::generate(
+            &[(1, (None, "g")), (2, (None, "g"))],
+            &[
+                vec![(None, "g"), (None, "g"), (None, "g")],
+                vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
+                vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
+            ],
+            &GenerationSettings::new()
+                .max_loops(4)
+                .max_bridges(0)
+                .allow_self_loops(true)
+                .filter_fn(Box::new(|g, c| {
+                    // each graph must have at most one node of type g-g-g
+                    let mut count = 0;
+                    for n in 0..c {
+                        // loop only through frozen nodes
+                        let node = g.node(n);
+                        if node.edges.len() == 3
+                            && node.edges.iter().all(|e| g.edge(*e).data == "g")
+                        {
+                            count += 1;
+                            if count == 2 {
+                                return false;
+                            }
+                        }
+                    }
+
+                    true
+                })),
+        )
+        .unwrap();
+
+        assert_eq!(graphs.len(), 845);
     }
 }

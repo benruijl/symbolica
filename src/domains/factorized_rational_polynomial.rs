@@ -166,15 +166,16 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
         mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, Error> {
-        let has_numer_coeff = !self.numerator.ring.is_one(&self.numer_coeff);
-        let has_denom_coeff = !self.numerator.ring.is_one(&self.denom_coeff);
+        let ring = &self.numerator.ring;
+        let has_numer_coeff = !ring.is_one(&self.numer_coeff);
+        let has_denom_coeff = !ring.is_one(&self.denom_coeff);
 
         if opts.explicit_rational_polynomial {
             if state.in_sum {
                 f.write_char('+')?;
             }
 
-            if !R::is_zero(&self.numer_coeff) && has_numer_coeff {
+            if !ring.is_zero(&self.numer_coeff) && has_numer_coeff {
                 f.write_char('[')?;
                 self.numerator
                     .ring
@@ -218,7 +219,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
             return Ok(false);
         }
 
-        if R::is_zero(&self.numer_coeff) {
+        if ring.is_zero(&self.numer_coeff) {
             if state.in_sum {
                 f.write_str("+0")?;
             } else {
@@ -834,7 +835,7 @@ where
         poly
     }
 
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.numerator.is_zero()
     }
 

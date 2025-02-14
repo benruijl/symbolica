@@ -336,9 +336,16 @@ impl<'a> AtomView<'a> {
             depth.clone()
         };
 
+        // do not do an expensive statistical zero check during the series expansion
+        // TODO: do such a check on the result of the series expansion?
+        let field = AtomField {
+            statistical_zero_test: false,
+            ..Default::default()
+        };
+
         loop {
             let info = Series::new(
-                &AtomField::new(),
+                &field,
                 None,
                 Arc::new(Variable::Symbol(x)),
                 expansion_point.to_owned(),
@@ -472,7 +479,7 @@ impl<'a> AtomView<'a> {
                             let mut current_depth = info.relative_order();
                             while base_series.is_zero() && current_depth < 1000.into() {
                                 let info = Series::new(
-                                    &AtomField::new(),
+                                    info.get_field(),
                                     None,
                                     info.get_variable().clone(),
                                     info.get_expansion_point().clone(),
@@ -557,7 +564,7 @@ impl Mul<&Atom> for &Series<AtomField> {
 
         loop {
             let info = Series::new(
-                &AtomField::new(),
+                self.get_field(),
                 None,
                 self.get_variable().clone(),
                 expansion_point.to_owned(),
@@ -619,7 +626,7 @@ impl Add<&Atom> for &Series<AtomField> {
 
         loop {
             let info = Series::new(
-                &AtomField::new(),
+                self.get_field(),
                 None,
                 self.get_variable().clone(),
                 expansion_point.to_owned(),
@@ -681,7 +688,7 @@ impl Div<&Atom> for &Series<AtomField> {
 
         loop {
             let info = Series::new(
-                &AtomField::new(),
+                self.get_field(),
                 None,
                 self.get_variable().clone(),
                 expansion_point.to_owned(),

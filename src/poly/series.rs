@@ -136,7 +136,7 @@ impl<F: Ring> Series<F> {
     /// inheriting the field and variable from `self`.
     #[inline]
     pub fn constant(&self, coeff: F::Element) -> Self {
-        if F::is_zero(&coeff) {
+        if self.field.is_zero(&coeff) {
             return self.zero();
         }
 
@@ -183,7 +183,7 @@ impl<F: Ring> Series<F> {
     /// Constructs a series with a single term.
     #[inline]
     pub fn monomial(&self, coeff: F::Element, exponent: Rational) -> Self {
-        if F::is_zero(&coeff) {
+        if self.field.is_zero(&coeff) {
             return self.zero();
         }
 
@@ -209,7 +209,7 @@ impl<F: Ring> Series<F> {
     /// Constructs a series that is `x+a`, where `a` is a constant.
     #[inline]
     pub fn shifted_variable(&self, coeff: F::Element) -> Self {
-        if F::is_zero(&coeff) {
+        if self.field.is_zero(&coeff) {
             return self.monomial(self.field.one(), (1, 1).into());
         }
 
@@ -222,6 +222,12 @@ impl<F: Ring> Series<F> {
             order: self.order,
             ramification: 1,
         }
+    }
+
+    /// Get the field of the series coefficients.
+    #[inline]
+    pub fn get_field(&self) -> &F {
+        &self.field
     }
 
     // Map an index in the coefficient array to its power.
@@ -444,7 +450,7 @@ impl<F: Ring> Series<F> {
 
     pub fn mul_coeff(mut self, coeff: &F::Element) -> Self {
         for c in &mut self.coefficients {
-            if !F::is_zero(c) {
+            if !self.field.is_zero(c) {
                 self.field.mul_assign(c, coeff);
             }
         }
@@ -464,7 +470,7 @@ impl<F: Ring> Series<F> {
             .coefficients
             .iter_mut()
             .rev()
-            .position(|c| !F::is_zero(c))
+            .position(|c| !self.field.is_zero(c))
             .unwrap_or(self.coefficients.len());
 
         self.coefficients.truncate(self.coefficients.len() - d);
@@ -478,7 +484,7 @@ impl<F: Ring> Series<F> {
         let d = self
             .coefficients
             .iter_mut()
-            .position(|c| !F::is_zero(c))
+            .position(|c| !self.field.is_zero(c))
             .unwrap_or(self.coefficients.len());
 
         self.shift += d as isize;
@@ -546,7 +552,7 @@ impl<F: Ring> SelfRing for Series<F> {
         let in_product = state.in_product;
 
         for (e, c) in self.coefficients.iter().enumerate() {
-            if F::is_zero(c) {
+            if self.field.is_zero(c) {
                 continue;
             }
 
@@ -803,7 +809,7 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
             vec![self.field.zero(); self.coefficients.len().max(rhs.coefficients.len())];
 
         for (e1, c1) in self.coefficients.iter().enumerate() {
-            if F::is_zero(c1) {
+            if self.field.is_zero(c1) {
                 continue;
             }
 
@@ -812,7 +818,7 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
             for (e2, c2) in rhs.coefficients.iter().enumerate() {
                 let p = &p1 + &rhs.get_exponent(e2);
 
-                if !F::is_zero(c2) {
+                if !self.field.is_zero(c2) {
                     let index = res.get_index(p);
                     if index < res.order {
                         if index >= res.coefficients.len() {
@@ -878,7 +884,7 @@ impl<F: EuclideanDomain> Series<F> {
     pub fn div_coeff(mut self, other: &F::Element) -> Self {
         for c in &mut self.coefficients {
             let (quot, rem) = self.field.quot_rem(c, other);
-            debug_assert!(F::is_zero(&rem));
+            debug_assert!(self.field.is_zero(&rem));
             *c = quot;
         }
         self

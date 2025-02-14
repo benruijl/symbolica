@@ -170,6 +170,11 @@ impl PrintOptions {
         }
         self
     }
+
+    pub const fn hide_namespace(mut self, namespace: &'static str) -> Self {
+        self.hide_namespace = Some(namespace);
+        self
+    }
 }
 
 impl Default for PrintOptions {

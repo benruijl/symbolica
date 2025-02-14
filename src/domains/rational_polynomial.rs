@@ -653,7 +653,7 @@ where
         poly
     }
 
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.numerator.is_zero()
     }
 
@@ -1181,7 +1181,7 @@ where
             prs.push(b.clone().make_monic());
             while !prs.last().unwrap().is_zero() {
                 let r = prs[prs.len() - 2].rem(&prs[prs.len() - 1]);
-                if RationalPolynomialField::is_zero(&r.lcoeff()) {
+                if r.lcoeff().is_zero() {
                     break;
                 }
                 prs.push(r.make_monic());

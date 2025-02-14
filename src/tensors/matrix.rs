@@ -163,7 +163,7 @@ impl<F: Ring> SelfRing for Vector<F> {
     }
 
     fn is_zero(&self) -> bool {
-        self.data.iter().all(F::is_zero)
+        self.data.iter().all(|x| self.field.is_zero(x))
     }
 
     fn format<W: std::fmt::Write>(
@@ -315,10 +315,10 @@ impl<F: EuclideanDomain> Matrix<F> {
     pub fn partial_row_reduce_fraction_free(&mut self, max_col: u32) -> u32 {
         let mut i = 0;
         for j in 0..max_col.min(self.ncols) {
-            if F::is_zero(&self[(i, j)]) {
+            if self.field.is_zero(&self[(i, j)]) {
                 // Select a non-zero pivot.
                 for k in i + 1..self.nrows {
-                    if !F::is_zero(&self[(k, j)]) {
+                    if !self.field.is_zero(&self[(k, j)]) {
                         // Swap i-th row and k-th row.
                         for l in j..self.ncols {
                             self.data
@@ -329,7 +329,7 @@ impl<F: EuclideanDomain> Matrix<F> {
                 }
 
                 // zero column found
-                if F::is_zero(&self[(i, j)]) {
+                if self.field.is_zero(&self[(i, j)]) {
                     continue;
                 }
             }
@@ -350,7 +350,7 @@ impl<F: EuclideanDomain> Matrix<F> {
 
             let x = self[(i, j)].clone();
             for k in i + 1..self.nrows {
-                if !F::is_zero(&self[(k, j)]) {
+                if !self.field.is_zero(&self[(k, j)]) {
                     let g = self.field.gcd(&x, &self[(k, j)]);
                     let scale_pivot = self.field.try_div(&self[(k, j)], &g).unwrap();
                     let scale_row = self.field.try_div(&x, &g).unwrap();
@@ -378,7 +378,7 @@ impl<F: EuclideanDomain> Matrix<F> {
     pub fn back_substitution_fraction_free(&mut self, mut max_col: u32) {
         max_col = max_col.min(self.ncols);
         for i in (0..self.nrows).rev() {
-            if let Some(j) = (0..max_col).find(|&j| !F::is_zero(&self[(i, j)])) {
+            if let Some(j) = (0..max_col).find(|&j| !self.field.is_zero(&self[(i, j)])) {
                 // strip content from pivot row to prevent number growth
                 let mut g = self[(i, j)].clone();
                 for l in j + 1..self.ncols {
@@ -394,7 +394,7 @@ impl<F: EuclideanDomain> Matrix<F> {
                 }
 
                 for k in 0..i {
-                    if !F::is_zero(&self[(k, j)]) {
+                    if !self.field.is_zero(&self[(k, j)]) {
                         let g = self.field.gcd(&self[(i, j)], &self[(k, j)]);
 
                         let scale_pivot = self.field.try_div(&self[(k, j)], &g).unwrap();
@@ -402,7 +402,7 @@ impl<F: EuclideanDomain> Matrix<F> {
 
                         if !self.field.is_one(&scale_row) {
                             for l in 0..self.ncols {
-                                if !F::is_zero(&self[(k, l)]) {
+                                if !self.field.is_zero(&self[(k, l)]) {
                                     self[(k, l)] = self.field.mul(&self[(k, l)], &scale_row);
                                 }
                             }
@@ -436,7 +436,7 @@ impl<F: EuclideanDomain> Matrix<F> {
         let rank = m.partial_row_reduce_fraction_free(nvars);
 
         for k in rank..neqs {
-            if !F::is_zero(&m[(k, nvars)]) {
+            if !self.field.is_zero(&m[(k, nvars)]) {
                 return Err(MatrixError::Inconsistent);
             }
         }
@@ -875,7 +875,7 @@ impl<F: Ring> Matrix<F> {
 
     /// Return true iff every entry in the matrix is zero.
     pub fn is_zero(&self) -> bool {
-        self.data.iter().all(|e| F::is_zero(e))
+        self.data.iter().all(|e| self.field.is_zero(e))
     }
 
     /// Return true iff every non- main diagonal entry in the matrix is zero.
@@ -883,7 +883,7 @@ impl<F: Ring> Matrix<F> {
         self.data
             .iter()
             .enumerate()
-            .all(|(i, e)| i as u32 % self.ncols == i as u32 / self.ncols || F::is_zero(e))
+            .all(|(i, e)| i as u32 % self.ncols == i as u32 / self.ncols || self.field.is_zero(e))
     }
 
     /// Transpose the matrix.
@@ -1074,12 +1074,13 @@ impl<F: Ring> Matrix<F> {
 impl<F: Ring> SelfRing for Matrix<F> {
     fn is_one(&self) -> bool {
         self.data.iter().enumerate().all(|(i, e)| {
-            i as u32 % self.ncols == i as u32 / self.ncols && self.field.is_one(e) || F::is_zero(e)
+            i as u32 % self.ncols == i as u32 / self.ncols && self.field.is_one(e)
+                || self.field.is_zero(e)
         })
     }
 
     fn is_zero(&self) -> bool {
-        self.data.iter().all(F::is_zero)
+        self.data.iter().all(|x| self.field.is_zero(x))
     }
 
     fn format<W: std::fmt::Write>(
@@ -1431,7 +1432,7 @@ impl<F: Field> Matrix<F> {
                 &f.mul(&self.data[1], &self.data[2]),
             );
 
-            if F::is_zero(&d) {
+            if self.field.is_zero(&d) {
                 return Err(MatrixError::Singular);
             }
 
@@ -1487,7 +1488,7 @@ impl<F: Field> Matrix<F> {
                 ),
             );
 
-            if F::is_zero(&d) {
+            if self.field.is_zero(&d) {
                 return Err(MatrixError::Singular);
             }
 
@@ -1598,10 +1599,10 @@ impl<F: Field> Matrix<F> {
 
         let mut i = 0;
         for j in 0..max_col.min(self.ncols) {
-            if F::is_zero(&self[(i, j)]) {
+            if self.field.is_zero(&self[(i, j)]) {
                 // Select a non-zero pivot.
                 for k in i + 1..self.nrows {
-                    if !F::is_zero(&self[(k, j)]) {
+                    if !self.field.is_zero(&self[(k, j)]) {
                         // Swap i-th row and k-th row.
                         for l in j..self.ncols {
                             self.data
@@ -1612,14 +1613,14 @@ impl<F: Field> Matrix<F> {
                 }
 
                 // zero column found
-                if F::is_zero(&self[(i, j)]) {
+                if self.field.is_zero(&self[(i, j)]) {
                     continue;
                 }
             }
             let x = self[(i, j)].clone();
             let inv_x = self.field.inv(&x);
             for k in i + 1..self.nrows {
-                if !F::is_zero(&self[(k, j)]) {
+                if !self.field.is_zero(&self[(k, j)]) {
                     let s = self.field.mul(&self[(k, j)], &inv_x);
                     self[(k, j)] = self.field.zero();
                     for l in j + 1..self.ncols {
@@ -1644,7 +1645,7 @@ impl<F: Field> Matrix<F> {
         max_col = max_col.min(self.ncols);
         let field = self.field.clone();
         for i in (0..self.nrows).rev() {
-            if let Some(j) = (0..max_col).find(|&j| !F::is_zero(&self[(i, j)])) {
+            if let Some(j) = (0..max_col).find(|&j| !self.field.is_zero(&self[(i, j)])) {
                 if !field.is_one(&self[(i, j)]) {
                     let inv_x = field.inv(&self[(i, j)]);
 
@@ -1654,7 +1655,7 @@ impl<F: Field> Matrix<F> {
                 }
 
                 for k in 0..i {
-                    if !F::is_zero(&self[(k, j)]) {
+                    if !self.field.is_zero(&self[(k, j)]) {
                         let scale = std::mem::replace(&mut self[(k, j)], field.zero());
                         for l in j + 1..self.ncols {
                             let mut e = std::mem::replace(&mut self[(k, l)], field.zero());
@@ -1683,7 +1684,7 @@ impl<F: Field> Matrix<F> {
         let rank = m.partial_row_reduce(nvars);
 
         for k in rank..neqs {
-            if !F::is_zero(&m[(k, nvars)]) {
+            if !self.field.is_zero(&m[(k, nvars)]) {
                 return Err(MatrixError::Inconsistent);
             }
         }
@@ -1719,7 +1720,7 @@ impl<F: Field> Matrix<F> {
                 let mut x = Matrix::new(self.ncols, 1, self.field.clone());
                 for r in row_reduced_augmented_matrix.row_iter() {
                     for (i, e) in r.iter().enumerate().take(self.ncols as usize) {
-                        if !F::is_zero(e) {
+                        if !self.field.is_zero(e) {
                             x.data[i] = r.last().unwrap().clone();
                             break;
                         }

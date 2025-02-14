@@ -298,8 +298,8 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
         }
     }
 
-    fn is_zero(a: &Self::Element) -> bool {
-        R::is_zero(&a.numerator)
+    fn is_zero(&self, a: &Self::Element) -> bool {
+        self.ring.is_zero(&a.numerator)
     }
 
     fn is_one(&self, a: &Self::Element) -> bool {
@@ -320,7 +320,7 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if Self::is_zero(b) {
+        if self.is_zero(b) {
             None
         } else {
             Some(self.div(a, b))
@@ -484,7 +484,7 @@ impl<R: EuclideanDomain + FractionNormalization> Field for FractionField<R> {
     }
 
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        if R::is_zero(&a.numerator) {
+        if self.ring.is_zero(&a.numerator) {
             panic!("Division by 0");
         }
 

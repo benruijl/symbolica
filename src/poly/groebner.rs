@@ -927,7 +927,7 @@ macro_rules! echelonize_impl {
                     }
 
                     for i in 0..buffer.len() {
-                        if Self::is_zero(&buffer[i]) {
+                        if field.is_zero(&buffer[i]) {
                             continue;
                         }
 
@@ -948,7 +948,7 @@ macro_rules! echelonize_impl {
                     matrix[r].clear();
 
                     for (col, coeff) in buffer.iter_mut().enumerate() {
-                        if !Self::is_zero(coeff) {
+                        if !field.is_zero(coeff) {
                             matrix[r].push((coeff.clone(), col));
                             *coeff = field.zero();
                         }

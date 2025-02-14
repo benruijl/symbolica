@@ -1,4 +1,4 @@
-name: PyPi MacOS Release
+name: PyPi Release
 
 on:
   workflow_dispatch:

@@ -4685,14 +4685,7 @@ impl<'a> AtomView<'a> {
 
                 is_zero
             }
-            AtomView::Add(_) => {
-                // an expanded polynomial is only zero if it is a literal zero
-                if self.is_polynomial(false, true).is_some() {
-                    ConditionResult::False
-                } else {
-                    self.zero_test_impl(iterations, tolerance)
-                }
-            }
+            AtomView::Add(_) => self.zero_test_impl(iterations, tolerance),
         }
     }
 

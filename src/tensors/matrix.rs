@@ -2182,6 +2182,7 @@ mod test {
                 *out = a.expand().collect_num();
                 true
             })),
+            statistical_zero_test: true,
         };
         let mut system = vec![
             Vector::new(
@@ -2213,6 +2214,7 @@ mod test {
                 *out = a.expand().collect_num();
                 true
             })),
+            statistical_zero_test: true,
         };
         let matrix = Matrix::from_linear(
             vec![
@@ -2232,10 +2234,7 @@ mod test {
         assert_eq!(r.nrows, 2);
         assert_eq!(r.ncols, 2);
         assert!(q.mul(&q.transpose()).is_one());
-        let diff = q.mul(&r).sub(&matrix);
-        for c in diff.into_vec() {
-            assert!(c.zero_test(1, 1e-7).is_true());
-        }
+        assert!(q.mul(&r).sub(&matrix).is_zero());
 
         let matrix = Matrix::from_linear(
             vec![
@@ -2257,10 +2256,7 @@ mod test {
         assert_eq!(r.nrows, 3);
         assert_eq!(r.ncols, 2);
         assert!(q.mul(&q.transpose()).is_one());
-        let diff = q.mul(&r).sub(&matrix);
-        for c in diff.into_vec() {
-            assert!(c.zero_test(1, 1e-7).is_true());
-        }
+        assert!(q.mul(&r).sub(&matrix).is_zero());
 
         let (q, r) = matrix.reduced_qr_decompose().unwrap();
         assert_eq!(q.nrows, 3);
@@ -2268,9 +2264,6 @@ mod test {
         assert_eq!(r.nrows, 2);
         assert_eq!(r.ncols, 2);
         assert!(q.transpose().mul(&q).is_one());
-        let diff = q.mul(&r).sub(&matrix);
-        for c in diff.into_vec() {
-            assert!(c.zero_test(1, 1e-7).is_true());
-        }
+        assert!(q.mul(&r).sub(&matrix).is_zero());
     }
 }

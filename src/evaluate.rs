@@ -1379,6 +1379,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         asm_flavour: InlineASM,
         out: &mut String,
     ) -> bool {
+        let mut second_index = 0;
+
         macro_rules! get_input {
             ($i:expr) => {
                 if $i < self.param_count {
@@ -1400,7 +1402,14 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             ($i:expr) => {
                 match asm_flavour {
                     InlineASM::X64 => {
-                        format_addr!($i)
+                        if $i < self.param_count {
+                            format!("{}(%2)", $i * 8)
+                        } else if $i < self.reserved_indices {
+                            format!("{}(%1)", ($i - self.param_count) * 8)
+                        } else {
+                            // TODO: subtract reserved indices
+                            format!("{}(%0)", $i * 8)
+                        }
                     }
                     InlineASM::AArch64 => {
                         if $i < self.param_count {
@@ -1412,6 +1421,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
                                 let rest = dest - (coeff << shift);
+                                second_index = 0;
                                 *out += &format!(
                                     "\t\t\"add x8, %2, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -1427,6 +1437,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
                                 let rest = dest - (coeff << shift);
+                                second_index = 0;
                                 *out += &format!(
                                     "\t\t\"add x8, %1, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -1438,47 +1449,24 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         } else {
                             // TODO: subtract reserved indices
                             let dest = $i * 8;
-                            if dest > 32760 {
+                            if dest > 32760 && (dest < second_index || dest > 32760 + second_index)
+                            {
                                 let d = dest.ilog2();
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
-                                let rest = dest - (coeff << shift);
+                                second_index = coeff << shift;
+                                let rest = dest - second_index;
                                 *out += &format!(
                                     "\t\t\"add x8, %0, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
                                 );
                                 format!("[x8, {}]", rest)
-                            } else {
+                            } else if dest <= 32760 {
                                 format!("[%0, {}]", dest)
+                            } else {
+                                let offset = dest - second_index;
+                                format!("[x8, {}]", offset)
                             }
-                        }
-                    }
-                    InlineASM::None => unreachable!(),
-                }
-            };
-        }
-
-        macro_rules! format_addr {
-            ($i:expr) => {
-                match asm_flavour {
-                    InlineASM::X64 => {
-                        if $i < self.param_count {
-                            format!("{}(%2)", $i * 8)
-                        } else if $i < self.reserved_indices {
-                            format!("{}(%1)", ($i - self.param_count) * 8)
-                        } else {
-                            // TODO: subtract reserved indices
-                            format!("{}(%0)", $i * 8)
-                        }
-                    }
-                    InlineASM::AArch64 => {
-                        if $i < self.param_count {
-                            format!("[%2, {}]", $i * 8)
-                        } else if $i < self.reserved_indices {
-                            format!("[%1, {}]", ($i - self.param_count) * 8)
-                        } else {
-                            // TODO: subtract reserved indices
-                            format!("[%0, {}]", $i * 8)
                         }
                     }
                     InlineASM::None => unreachable!(),
@@ -2283,6 +2271,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         asm_flavour: InlineASM,
         out: &mut String,
     ) -> bool {
+        let mut second_index = 0;
+
         macro_rules! get_input {
             ($i:expr) => {
                 if $i < self.param_count {
@@ -2305,7 +2295,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                 match asm_flavour {
                     InlineASM::X64 => {
                         if $i < self.param_count {
-                            (format!("{}(%2)", $i * 16), "NA".to_owned())
+                            (format!("{}(%2)", $i * 16), String::new())
                         } else if $i < self.reserved_indices {
                             (
                                 format!("{}(%1)", ($i - self.param_count) * 16),
@@ -2313,7 +2303,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             )
                         } else {
                             // TODO: subtract reserved indices
-                            (format!("{}(%0)", $i * 16), "NA".to_owned())
+                            (format!("{}(%0)", $i * 16), String::new())
                         }
                     }
                     InlineASM::AArch64 => {
@@ -2326,6 +2316,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
                                 let rest = dest - (coeff << shift);
+                                second_index = 0;
                                 *out += &format!(
                                     "\t\t\"add x8, %2, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -2341,6 +2332,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
                                 let rest = dest - (coeff << shift);
+                                second_index = 0;
                                 *out += &format!(
                                     "\t\t\"add x8, %1, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
@@ -2352,18 +2344,23 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         } else {
                             // TODO: subtract reserved indices
                             let dest = $i * 16;
-                            if dest > 32760 {
+                            if dest > 32760 && (dest < second_index || dest > 32760 + second_index)
+                            {
                                 let d = dest.ilog2();
                                 let shift = d.min(12);
                                 let coeff = dest / (1 << shift);
-                                let rest = dest - (coeff << shift);
+                                second_index = coeff << shift;
+                                let rest = dest - second_index;
                                 *out += &format!(
                                     "\t\t\"add x8, %0, {}, lsl {}\\n\\t\"\n",
                                     coeff, shift
                                 );
                                 (format!("[x8, {}]", rest), format!("[x8, {}]", rest + 8))
-                            } else {
+                            } else if dest <= 32760 {
                                 (format!("[%0, {}]", dest), format!("[%0, {}]", dest + 8))
+                            } else {
+                                let offset = dest - second_index;
+                                (format!("[x8, {}]", offset), format!("[x8, {}]", offset + 8))
                             }
                         }
                     }

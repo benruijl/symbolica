@@ -53,7 +53,7 @@ use crate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
         InlineASM, OptimizationSettings,
     },
-    graph::Graph,
+    graph::{GenerationSettings, Graph},
     id::{
         Condition, ConditionResult, Evaluate, Match, MatchSettings, MatchStack, Pattern,
         PatternAtomTreeIterator, PatternOrMap, PatternRestriction, Relation, ReplaceIterator,
@@ -72,6 +72,21 @@ use crate::{
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError},
     LicenseManager,
+};
+
+const DEFAULT_PRINT_OPTIONS: PrintOptions = PrintOptions {
+    hide_namespace: Some("python"),
+    ..PrintOptions::new()
+};
+
+const PLAIN_PRINT_OPTIONS: PrintOptions = PrintOptions {
+    hide_namespace: Some("python"),
+    ..PrintOptions::file()
+};
+
+const LATEX_PRINT_OPTIONS: PrintOptions = PrintOptions {
+    hide_namespace: Some("python"),
+    ..PrintOptions::latex()
 };
 
 /// Create a Symbolica Python module.
@@ -2309,10 +2324,10 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
 
 impl<'a> FromPyObject<'a> for Complex<f64> {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
-        if let Ok(a) = ob.extract::<f64>() {
-            Ok(Complex::new(a, 0.))
-        } else if let Ok(a) = ob.downcast::<PyComplex>() {
+        if let Ok(a) = ob.downcast::<PyComplex>() {
             Ok(Complex::new(a.real(), a.imag()))
+        } else if let Ok(a) = ob.extract::<f64>() {
+            Ok(Complex::new(a, 0.))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Not a valid complex number",
@@ -2839,7 +2854,7 @@ impl PythonExpression {
 
     /// Convert the expression into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(self.to_string())
+        Ok(format!("{}", self.printer(PLAIN_PRINT_OPTIONS)))
     }
 
     /// Convert the expression into a human-readable string.
@@ -2929,7 +2944,7 @@ impl PythonExpression {
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            AtomPrinter::new_with_options(self.expr.as_view(), PrintOptions::latex(),)
+            AtomPrinter::new_with_options(self.expr.as_view(), LATEX_PRINT_OPTIONS,)
         ))
     }
 
@@ -3623,7 +3638,7 @@ impl PythonExpression {
                         filter_fn
                             .call(py, (data,), None)
                             .expect("Bad callback function")
-                            .extract::<bool>(py)
+                            .is_truthy(py)
                             .expect("Pattern filter does not return a boolean")
                     })
                 })),
@@ -3786,7 +3801,7 @@ impl PythonExpression {
                             cmp_fn
                                 .call(py, (data1, data2), None)
                                 .expect("Bad callback function")
-                                .extract::<bool>(py)
+                                .is_truthy(py)
                                 .expect("Pattern comparison does not return a boolean")
                         })
                     }),
@@ -5520,11 +5535,15 @@ impl PythonSeries {
 
     /// Convert the series into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.series))
+        Ok(self
+            .series
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.series))
+        Ok(self
+            .series
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the series into a LaTeX string.
@@ -5532,7 +5551,7 @@ impl PythonSeries {
         Ok(format!(
             "$${}$$",
             self.series
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -6068,14 +6087,14 @@ impl PythonPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -6083,7 +6102,7 @@ impl PythonPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -6918,14 +6937,14 @@ impl PythonFiniteFieldPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -6933,7 +6952,7 @@ impl PythonFiniteFieldPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -7513,14 +7532,14 @@ impl PythonPrimeTwoPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -7528,7 +7547,7 @@ impl PythonPrimeTwoPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -8059,14 +8078,14 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -8074,7 +8093,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -8609,14 +8628,14 @@ impl PythonGaloisFieldPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -8624,7 +8643,7 @@ impl PythonGaloisFieldPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -9160,14 +9179,14 @@ impl PythonNumberFieldPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
@@ -9175,7 +9194,7 @@ impl PythonNumberFieldPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -9703,14 +9722,14 @@ impl PythonRationalPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the rational polynomial into a LaTeX string.
@@ -9718,7 +9737,7 @@ impl PythonRationalPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -10033,14 +10052,14 @@ impl PythonFiniteFieldRationalPolynomial {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::file(), PrintState::new()))
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(self
             .poly
-            .format_string(&PrintOptions::default(), PrintState::new()))
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the rational polynomial into a LaTeX string.
@@ -10048,7 +10067,7 @@ impl PythonFiniteFieldRationalPolynomial {
         Ok(format!(
             "$${}$$",
             self.poly
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -10338,19 +10357,17 @@ impl PythonCompiledExpressionEvaluator {
         inputs: Vec<Complex<f64>>,
     ) -> Vec<Bound<'py, PyComplex>> {
         let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![PyComplex::from_doubles(py, 0., 0.); self.output_len * n_inputs];
-        let mut tmp = vec![Complex::new_zero(); self.output_len];
+        let mut res = vec![Complex::new(0., 0.); self.output_len * n_inputs];
         for (r, s) in res
             .chunks_mut(self.output_len)
             .zip(inputs.chunks(self.input_len))
         {
-            self.eval.evaluate(s, &mut tmp);
-            for (rr, t) in r.iter_mut().zip(&tmp) {
-                *rr = PyComplex::from_doubles(py, t.re, t.im);
-            }
+            self.eval.evaluate(s, r);
         }
 
-        res
+        res.into_iter()
+            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+            .collect()
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
@@ -10410,20 +10427,17 @@ impl PythonExpressionEvaluator {
     ) -> Vec<Bound<'py, PyComplex>> {
         let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
         let n_inputs = inputs.len() / self.eval.get_input_len();
-        let mut res =
-            vec![PyComplex::from_doubles(py, 0., 0.); self.eval.get_output_len() * n_inputs];
-        let mut tmp = vec![Complex::new_zero(); self.eval.get_output_len()];
+        let mut res = vec![Complex::new(0., 0.); self.eval.get_output_len() * n_inputs];
         for (r, s) in res
             .chunks_mut(self.eval.get_output_len())
-            .zip(inputs.chunks(self.eval.get_input_len()))
+            .zip(inputs.chunks(self.eval.get_output_len()))
         {
-            eval.evaluate(s, &mut tmp);
-            for (rr, t) in r.iter_mut().zip(&tmp) {
-                *rr = PyComplex::from_doubles(py, t.re, t.im);
-            }
+            eval.evaluate(s, r);
         }
 
-        res
+        res.into_iter()
+            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+            .collect()
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
@@ -10970,7 +10984,7 @@ impl PythonMatrix {
         Ok(format!(
             "$${}$$",
             self.matrix
-                .format_string(&PrintOptions::latex(), PrintState::new())
+                .format_string(&LATEX_PRINT_OPTIONS, PrintState::new())
         ))
     }
 
@@ -10994,12 +11008,16 @@ impl PythonMatrix {
 
     /// Convert the matrix into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.matrix))
+        Ok(self
+            .matrix
+            .format_string(&PLAIN_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Convert the matrix into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.matrix))
+        Ok(self
+            .matrix
+            .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
     /// Add this matrix to `rhs`, returning the result.
@@ -11531,7 +11549,8 @@ impl PythonGraph {
     /// of vertex connections.
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
-    #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None, max_bridges = None, allow_self_loops = None))]
+    #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None,
+        max_bridges = None, allow_self_loops = None, filter_fn = None))]
     #[classmethod]
     fn generate(
         _cls: &Bound<'_, PyType>,
@@ -11544,6 +11563,7 @@ impl PythonGraph {
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
         allow_self_loops: Option<bool>,
+        filter_fn: Option<PyObject>,
     ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
         if max_vertices.is_none() && max_loops.is_none() {
             return Err(exceptions::PyValueError::new_err(
@@ -11564,17 +11584,63 @@ impl PythonGraph {
             })
             .collect();
 
-        Ok(Graph::generate(
-            &external_edges,
-            &vertex_signatures,
-            max_vertices,
-            max_loops,
-            max_bridges,
-            allow_self_loops.unwrap_or(false),
+        let mut settings = GenerationSettings::new();
+        if let Some(max_vertices) = max_vertices {
+            settings = settings.max_vertices(max_vertices);
+        }
+
+        if let Some(max_loops) = max_loops {
+            settings = settings.max_loops(max_loops);
+        }
+
+        if let Some(max_bridges) = max_bridges {
+            settings = settings.max_loops(max_bridges);
+        }
+
+        if let Some(allow_self_loops) = allow_self_loops {
+            settings = settings.allow_self_loops(allow_self_loops);
+        }
+
+        let abort = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        if let Some(filter_fn) = filter_fn {
+            let abort = abort.clone();
+            settings = settings.filter_fn(Box::new(move |g, v| {
+                Python::with_gil(|py| {
+                    match filter_fn.call(py, (Self { graph: g.clone() }, v), None) {
+                        Ok(r) => r
+                            .is_truthy(py)
+                            .expect("Match map does not return a boolean"),
+                        Err(e) => {
+                            if e.is_instance_of::<exceptions::PyKeyboardInterrupt>(py) {
+                                abort.store(true, std::sync::atomic::Ordering::Relaxed);
+                                false
+                            } else {
+                                panic!("Bad callback function: {}", e);
+                            }
+                        }
+                    }
+                })
+            }));
+        }
+
+        settings = settings.abort_check(Box::new(move || {
+            if abort.load(std::sync::atomic::Ordering::Relaxed) {
+                true
+            } else {
+                Python::with_gil(|py| py.check_signals())
+                    .map(|_| false)
+                    .unwrap_or(true)
+            }
+        }));
+
+        Ok(
+            Graph::generate(&external_edges, &vertex_signatures, &settings)
+                .unwrap_or_else(|e| e)
+                .into_iter()
+                .map(|(k, v)| (Self { graph: k }, Atom::new_num(v).into()))
+                .collect(),
         )
-        .into_iter()
-        .map(|(k, v)| (Self { graph: k }, Atom::new_num(v).into()))
-        .collect())
     }
 
     /// Convert the graph to a graphviz dot string.

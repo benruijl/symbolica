@@ -1139,7 +1139,7 @@ impl Ring for IntegerRing {
     }
 
     #[inline]
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         match a {
             Integer::Natural(r) => *r == 0,
             Integer::Double(_) => false,
@@ -2236,7 +2236,7 @@ impl Ring for MultiPrecisionIntegerRing {
     }
 
     #[inline]
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.is_zero()
     }
 

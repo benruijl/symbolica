@@ -141,7 +141,7 @@ impl<R: Ring, E: PositiveExponent> MultivariatePolynomial<R, E> {
                 let exp = t.exponents[*n].to_u32() as usize;
                 if exp > 0 {
                     if exp < cache[*n].len() {
-                        if R::is_zero(&cache[*n][exp]) {
+                        if self.ring.is_zero(&cache[*n][exp]) {
                             cache[*n][exp] = self.ring.pow(v, exp as u64);
                         }
 
@@ -168,7 +168,7 @@ impl<R: Ring, E: PositiveExponent> MultivariatePolynomial<R, E> {
         let mut new_exp = vec![E::zero(); self.nvars()];
         for (aa, e) in self.into_iter().zip(exp_evals) {
             if aa.exponents[main_var] != new_exp[main_var] {
-                if !R::is_zero(&c) {
+                if !self.ring.is_zero(&c) {
                     out.coefficients.push(c);
                     out.exponents.extend_from_slice(&new_exp);
 
@@ -181,7 +181,7 @@ impl<R: Ring, E: PositiveExponent> MultivariatePolynomial<R, E> {
             self.ring.add_mul_assign(&mut c, aa.coefficient, e);
         }
 
-        if !R::is_zero(&c) {
+        if !self.ring.is_zero(&c) {
             out.coefficients.push(c);
             out.exponents.extend_from_slice(&new_exp);
         }
@@ -241,7 +241,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                 let exp = mv.exponents[*n].to_u32() as usize;
                 if exp > 0 {
                     if exp < cache[*n].len() {
-                        if F::is_zero(&cache[*n][exp]) {
+                        if self.ring.is_zero(&cache[*n][exp]) {
                             cache[*n][exp] = self.ring.pow(vv, exp as u64);
                         }
 
@@ -260,7 +260,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
         let mut res = self.zero();
         let mut e = vec![E::zero(); self.nvars()];
         for (k, c) in tm.drain() {
-            if !F::is_zero(&c) {
+            if !self.ring.is_zero(&c) {
                 e[v] = k;
                 res.append_monomial(c, &e);
                 e[v] = E::zero();
@@ -542,7 +542,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                         let exp = t.exponents[*n].to_u32() as usize;
                         if exp > 0 {
                             if exp < cache[*n].len() {
-                                if F::is_zero(&cache[*n][exp]) {
+                                if a.ring.is_zero(&cache[*n][exp]) {
                                     cache[*n][exp] = a.ring.pow(v, exp as u64);
                                 }
 
@@ -762,7 +762,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                         let exp = t.exponents[*n].to_u32() as usize;
                         if exp > 0 {
                             if exp < cache[*n].len() {
-                                if F::is_zero(&cache[*n][exp]) {
+                                if a.ring.is_zero(&cache[*n][exp]) {
                                     cache[*n][exp] = a.ring.pow(v, exp as u64);
                                 }
 
@@ -1000,8 +1000,8 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                             );
 
                             for x in row_reduced_augmented_matrix.row_iter() {
-                                if x[..vars_second].iter().all(F::is_zero)
-                                    && x.iter().any(|y| !F::is_zero(y))
+                                if x[..vars_second].iter().all(|x| a.ring.is_zero(x))
+                                    && x.iter().any(|y| !a.ring.is_zero(y))
                                 {
                                     scaling_var_relations.push(x[vars_second..].to_vec());
                                 }
@@ -1948,7 +1948,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                         c -= xi;
                     }
 
-                    if !IntegerRing::is_zero(&c) {
+                    if !c.is_zero() {
                         g_i.append_monomial(c, m.exponents);
                     }
                 }
@@ -2244,7 +2244,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
             let mut finite_field = FiniteField::<UField>::new(p.clone());
             let mut gammap = gamma.to_finite_field(&finite_field);
 
-            if FiniteField::<UField>::is_zero(&gammap) {
+            if finite_field.is_zero(&gammap) {
                 continue 'newfirstprime;
             }
 
@@ -2357,7 +2357,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                     gammap = gamma.to_finite_field(&finite_field);
 
-                    if !FiniteField::<UField>::is_zero(&gammap) {
+                    if !finite_field.is_zero(&gammap) {
                         break;
                     }
                 }
@@ -2818,7 +2818,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
 
             let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
 
-            if Zp::is_zero(&a_lcoeff_p) {
+            if finite_field.is_zero(&a_lcoeff_p) {
                 continue 'newfirstprime;
             }
 
@@ -2928,7 +2928,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
 
                     let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
 
-                    if !Zp::is_zero(&a_lcoeff_p) {
+                    if !finite_field.is_zero(&a_lcoeff_p) {
                         break;
                     }
                 }

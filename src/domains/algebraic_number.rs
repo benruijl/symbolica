@@ -511,7 +511,7 @@ impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
         result
     }
 
-    fn is_zero(a: &Self::Element) -> bool {
+    fn is_zero(&self, a: &Self::Element) -> bool {
         a.poly.is_zero()
     }
 

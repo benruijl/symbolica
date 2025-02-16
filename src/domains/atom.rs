@@ -28,9 +28,9 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 /// };
 ///
 /// let field = AtomField {
+///     statistical_zero_test: false,
 ///     cancel_check_on_division: true,
 ///     custom_normalization: None,
-///     statistical_zero_test: true,
 /// };
 ///
 /// let r = field.div(

@@ -980,8 +980,9 @@ impl<F: Ring> Matrix<F> {
         for row_index in pv {
             if row_index.ge(&Integer::from(self.nrows)) {
                 return Err(MatrixError::IndexOutOfBounds {
-                    indices: vec![row_index.clone()],
-                    shape: vec![self.nrows],
+                    row: Some(row_index.clone()),
+                    col: None,
+                    shape: (self.nrows, self.ncols),
                 });
             }
             let start = row_index * self.ncols;
@@ -1269,12 +1270,17 @@ pub enum MatrixError<F: Ring> {
     Inconsistent,
     NotSquare,
     Singular,
+    RankDeficient {
+        rank: u32,
+        expected: u32,
+    },
     ShapeMismatch,
     RightHandSideIsNotVector,
     ResultNotInDomain,
     IndexOutOfBounds {
-        indices: Vec<u32>,
-        shape: Vec<u32>,
+        row: Option<u32>,
+        col: Option<u32>,
+        shape: (u32, u32),
     },
 }
 
@@ -1295,6 +1301,11 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
             MatrixError::Inconsistent => write!(f, "The system is inconsistent"),
             MatrixError::NotSquare => write!(f, "The matrix is not square"),
             MatrixError::Singular => write!(f, "The matrix is singular"),
+            MatrixError::RankDeficient { rank, expected } => write!(
+                f,
+                "The matrix is rank-deficient: rank = {}, expected at least {}",
+                rank, expected
+            ),
             MatrixError::ShapeMismatch => write!(f, "The shape of the matrix is not compatible"),
             MatrixError::RightHandSideIsNotVector => {
                 write!(f, "The right-hand side is not a vector")
@@ -1303,12 +1314,15 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
                 f,
                 "The result does not belong to the same domain as the matrix."
             ),
-            MatrixError::IndexOutOfBounds { indices, shape } => write!(
-                f,
-                "Index out of bounds: tried to access element at {:?}, but the matrix has shape {:?}.",
-                indices,
-                shape
-            ),
+            MatrixError::IndexOutOfBounds { row, col, shape } => {
+                let row = row.map_or("?".to_string(), |r| r.to_string());
+                let col = col.map_or("?".to_string(), |c| c.to_string());
+                write!(
+                    f,
+                    "Index out of bounds: tried to access element at ({}, {}), but the matrix has shape {:?}.",
+                    row, col, shape
+                )
+            }
         }
     }
 }
@@ -1738,7 +1752,10 @@ impl<F: Field> Matrix<F> {
         let (swaps, multipliers) = history.unwrap();
 
         if rank < m.min(n) {
-            return Err(MatrixError::Singular);
+            return Err(MatrixError::RankDeficient {
+                rank: rank,
+                expected: m.min(n),
+            });
         }
 
         let mut pv: Vec<u32> = (0..m).collect();
@@ -1753,7 +1770,7 @@ impl<F: Field> Matrix<F> {
         for r in 0..m {
             for i in 0..r {
                 let val = &multipliers[r as usize][i as usize];
-                if !F::is_zero(val) {
+                if !self.field.is_zero(val) {
                     l[(r, i)] = val.clone();
                 }
             }
@@ -2152,6 +2169,7 @@ mod test {
                 *out = a.expand().collect_num();
                 true
             })),
+            statistical_zero_test: true,
         };
         let zero = &field.zero();
         let m3 = Matrix::from_nested_vec(

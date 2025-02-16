@@ -1033,13 +1033,18 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                         }
                         Err(
                             MatrixError::IndexOutOfBounds {
-                                indices: _,
+                                row: _,
+                                col: _,
                                 shape: _,
                             }
                             | MatrixError::NotSquare
                             | MatrixError::ShapeMismatch
                             | MatrixError::RightHandSideIsNotVector
                             | MatrixError::Singular
+                            | MatrixError::RankDeficient {
+                                rank: _,
+                                expected: _,
+                            }
                             | MatrixError::ResultNotInDomain,
                         ) => {
                             unreachable!()

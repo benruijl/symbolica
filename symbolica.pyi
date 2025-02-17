@@ -44,7 +44,61 @@ def S(name: str,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
       custom_normalization: Optional[Transformer] = None) -> Expression:
-    """Shorthand notation for :func:`Expression.symbol`"""
+    """
+    Create new symbols from `names`. Symbols can have attributes,
+    such as symmetries. If no attributes
+    are specified and the symbol was previously defined, the attributes are inherited.
+    Once attributes are defined on a symbol, they cannot be redefined later.
+
+    Examples
+    --------
+    Define a regular symbol and use it as a variable:
+    >>> x = S('x')
+    >>> e = x**2 + 5
+    >>> print(e)
+    x**2 + 5
+
+    Define a regular symbol and use it as a function:
+    >>> f = S('f')
+    >>> e = f(1,2)
+    >>> print(e)
+    f(1,2)
+
+
+    Define a symmetric function:
+    >>> f = S('f', is_symmetric=True)
+    >>> e = f(2,1)
+    >>> print(e)
+    f(1,2)
+
+
+    Define a linear and symmetric function:
+    >>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+    >>> dot = S('dot', is_symmetric=True, is_linear=True)
+    >>> e = dot(p2+2*p3,p1+3*p2-p3)
+    dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
+
+    Define a custom normalization function:
+    >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
+    >>> E("real_log(exp(x)) + real_log(5)")
+
+    Parameters
+    ----------
+    name : str
+        The name of the symbol
+    is_symmetric : Optional[bool]
+        Set to true if the symbol is symmetric.
+    is_antisymmetric : Optional[bool]
+        Set to true if the symbol is antisymmetric.
+    is_cyclesymmetric : Optional[bool]
+        Set to true if the symbol is cyclesymmetric.
+    is_linear : Optional[bool]
+        Set to true if the symbol is linear.
+    custom_normalization : Optional[Transformer]
+        A transformer that is called after every normalization. Note that the symbol
+        name cannot be used in the transformer as this will lead to a definition of the 
+        symbol. Use a wildcard with the same attributes instead.
+    """
 
 
 @overload
@@ -54,15 +108,84 @@ def S(*names: str,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
       custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
-    """Shorthand notation for :func:`Expression.symbol`"""
+    """
+    Create new symbols from `names`. Symbols can have attributes,
+    such as symmetries. If no attributes
+    are specified and the symbol was previously defined, the attributes are inherited.
+    Once attributes are defined on a symbol, they cannot be redefined later.
+
+    Examples
+    --------
+    Define two regular symbols:
+    >>> x, y = S('x', 'y')
+
+    Define two symmetric functions:
+    >>> f, g = S('f', 'g', is_symmetric=True)
+    >>> e = f(2,1)
+    >>> print(e)
+    f(1,2)
+
+    Parameters
+    ----------
+    name : str
+        The name of the symbol
+    is_symmetric : Optional[bool]
+        Set to true if the symbol is symmetric.
+    is_antisymmetric : Optional[bool]
+        Set to true if the symbol is antisymmetric.
+    is_cyclesymmetric : Optional[bool]
+        Set to true if the symbol is cyclesymmetric.
+    is_linear : Optional[bool]
+        Set to true if the symbol is multilinear.
+    custom_normalization : Optional[Transformer]
+        A transformer that is called after every normalization. Note that the symbol
+        name cannot be used in the transformer as this will lead to a definition of the 
+        symbol. Use a wildcard with the same attributes instead.
+    """
 
 
 def N(num: int | float | str | Decimal, relative_error: Optional[float] = None) -> Expression:
-    """Shorthand notation for :func:`Expression.num`"""
+    """Create a new Symbolica number from an int, a float, or a string.
+    A floating point number is kept as a float with the same precision as the input,
+    but it can also be converted to the smallest rational number given a `relative_error`.
+
+    Examples
+    --------
+    >>> e = N(1) / 2
+    >>> print(e)
+    1/2
+
+    >>> print(N(1/3))
+    >>> print(N(0.33, 0.1))
+    >>> print(N('0.333`3'))
+    >>> print(N(Decimal('0.1234')))
+    3.3333333333333331e-1
+    1/3
+    3.33e-1
+    1.2340e-1
+    """
 
 
 def E(input: str, default_namespace: str = "python") -> Expression:
-    """Shorthand notation for :func:`Expression.parse`"""
+    """
+    Parse a Symbolica expression from a string.
+
+    Parameters
+    ----------
+    input: str
+        An input string. UTF-8 character are allowed.
+
+    Examples
+    --------
+    >>> e = E('x^2+y+y*4')
+    >>> print(e)
+    x^2+5*y
+
+    Raises
+    ------
+    ValueError
+        If the input is not a valid Symbolica expression.
+    """
 
 
 class AtomType(Enum):
@@ -150,64 +273,9 @@ class Expression:
                is_linear: Optional[bool] = None,
                custom_normalization: Optional[Transformer] = None) -> Expression:
         """
-        Create a new symbol from a `name`. Symbols carry information about their attributes.
-        The symbol can signal that it is symmetric if it is used as a function
-        using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`,
-        cyclesymmetric using `is_cyclesymmetric=True`, and
-        multilinear using `is_linear=True`. If no attributes
-        are specified, the attributes are inherited from the symbol if it was already defined,
-        otherwise all attributes are set to `false`.
-
-        Once attributes are defined on a symbol, they cannot be redefined later.
-
-        Examples
-        --------
-        Define a regular symbol and use it as a variable:
-        >>> x = Expression.symbol('x')
-        >>> e = x**2 + 5
-        >>> print(e)
-        x**2 + 5
-
-        Define a regular symbol and use it as a function:
-        >>> f = Expression.symbol('f')
-        >>> e = f(1,2)
-        >>> print(e)
-        f(1,2)
-
-
-        Define a symmetric function:
-        >>> f = Expression.symbol('f', is_symmetric=True)
-        >>> e = f(2,1)
-        >>> print(e)
-        f(1,2)
-
-
-        Define a linear and symmetric function:
-        >>> p1, p2, p3, p4 = Expression.symbol('p1', 'p2', 'p3', 'p4')
-        >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
-        >>> e = dot(p2+2*p3,p1+3*p2-p3)
-        dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
-        """
-
-    @overload
-    @classmethod
-    def symbol(_cls,
-               *names: str,
-               is_symmetric: Optional[bool] = None,
-               is_antisymmetric: Optional[bool] = None,
-               is_cyclesymmetric: Optional[bool] = None,
-               is_linear: Optional[bool] = None,
-               custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
-        """
-        Create new symbols from `names`. Symbols carry information about their attributes.
-        The symbol can signal that it is symmetric if it is used as a function
-        using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`,
-        cyclesymmetric using `is_cyclesymmetric=True`, and
-        multilinear using `is_linear=True`. If no attributes
-        are specified, the attributes are inherited from the symbol if it was already defined,
-        otherwise all attributes are set to `false`. A transformer that is executed
-        after normalization can be defined with `custom_normalization`.
-
+        Create new symbols from `names`. Symbols can have attributes,
+        such as symmetries. If no attributes
+        are specified and the symbol was previously defined, the attributes are inherited.
         Once attributes are defined on a symbol, they cannot be redefined later.
 
         Examples
@@ -241,6 +309,67 @@ class Expression:
         Define a custom normalization function:
         >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
         >>> E("real_log(exp(x)) + real_log(5)")
+
+        Parameters
+        ----------
+        name : str
+            The name of the symbol
+        is_symmetric : Optional[bool]
+            Set to true if the symbol is symmetric.
+        is_antisymmetric : Optional[bool]
+            Set to true if the symbol is antisymmetric.
+        is_cyclesymmetric : Optional[bool]
+            Set to true if the symbol is cyclesymmetric.
+        is_linear : Optional[bool]
+            Set to true if the symbol is linear.
+        custom_normalization : Optional[Transformer]
+            A transformer that is called after every normalization. Note that the symbol
+            name cannot be used in the transformer as this will lead to a definition of the 
+            symbol. Use a wildcard with the same attributes instead.
+        """
+
+    @overload
+    @classmethod
+    def symbol(_cls,
+               *names: str,
+               is_symmetric: Optional[bool] = None,
+               is_antisymmetric: Optional[bool] = None,
+               is_cyclesymmetric: Optional[bool] = None,
+               is_linear: Optional[bool] = None,
+               custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
+        """
+        Create new symbols from `names`. Symbols can have attributes,
+        such as symmetries. If no attributes
+        are specified and the symbol was previously defined, the attributes are inherited.
+        Once attributes are defined on a symbol, they cannot be redefined later.
+
+        Examples
+        --------
+        Define two regular symbols:
+        >>> x, y = Expression.symbol('x', 'y')
+
+        Define two symmetric functions:
+        >>> f, g = Expression.symbol('f', 'g', is_symmetric=True)
+        >>> e = f(2,1)
+        >>> print(e)
+        f(1,2)
+
+        Parameters
+        ----------
+        name : str
+            The name of the symbol
+        is_symmetric : Optional[bool]
+            Set to true if the symbol is symmetric.
+        is_antisymmetric : Optional[bool]
+            Set to true if the symbol is antisymmetric.
+        is_cyclesymmetric : Optional[bool]
+            Set to true if the symbol is cyclesymmetric.
+        is_linear : Optional[bool]
+            Set to true if the symbol is multilinear.
+        custom_normalization : Optional[Transformer]
+            A transformer that is called after every normalization. Note that the symbol
+            name cannot be used in the transformer as this will lead to a definition of the 
+            symbol. Use a wildcard with the same attributes instead.
         """
 
     @overload

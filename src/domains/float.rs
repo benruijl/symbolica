@@ -13,7 +13,9 @@ use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
 
-use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
+use super::{
+    rational::Rational, EuclideanDomain, EuclideanNormRing, Field, InternalOrdering, Ring, SelfRing
+};
 use rug::{
     ops::{CompleteRound, Pow},
     Assign, Float as MultiPrecisionFloat,
@@ -252,7 +254,7 @@ impl SelfRing for Float {
     }
 }
 
-impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> EuclideanDomain
+impl<T: SingleFloat + Hash + Eq + InternalOrdering> EuclideanDomain
     for FloatField<T>
 {
     #[inline(always)]
@@ -271,7 +273,7 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Euclide
     }
 }
 
-impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field for FloatField<T> {
+impl<T: SingleFloat + Hash + Eq + InternalOrdering> Field for FloatField<T> {
     #[inline(always)]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a.clone() / b
@@ -285,6 +287,18 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field f
     #[inline(always)]
     fn inv(&self, a: &Self::Element) -> Self::Element {
         a.inv()
+    }
+}
+
+impl<T: Real + SingleFloat + Hash + Eq + InternalOrdering> EuclideanNormRing
+    for FloatField<T>
+{
+    fn euclidean_norm(&self, values: &[Self::Element]) -> Self::Element {
+        let mut sum = self.zero();
+        for value in values {
+            sum += value.pow(2);
+        }
+        sum.powf(&self.inv(&(self.one().add(self.one()))))
     }
 }
 
@@ -365,7 +379,7 @@ pub trait ConstructibleFloat: NumericalFloatLike {
 
 /// A number that behaves like a real number, with constants like π and e
 /// and functions like sine and cosine.
-pub trait Real: NumericalFloatLike + Powf {
+pub trait Real: NumericalFloatLike {
     /// The constant π, 3.1415926535...
     fn pi(&self) -> Self;
     /// Euler's number, 2.7182818...
@@ -393,6 +407,7 @@ pub trait Real: NumericalFloatLike + Powf {
     fn asinh(&self) -> Self;
     fn acosh(&self) -> Self;
     fn atanh(&self) -> Self;
+    fn powf(&self, e: &Self) -> Self;
 }
 
 impl NumericalFloatLike for f64 {
@@ -526,13 +541,6 @@ impl ConstructibleFloat for f64 {
     }
 }
 
-impl Powf for f64 {
-    #[inline]
-    fn powf(&self, e: &f64) -> Self {
-        (*self).powf(*e)
-    }
-}
-
 impl Real for f64 {
     #[inline(always)]
     fn pi(&self) -> Self {
@@ -637,6 +645,11 @@ impl Real for f64 {
     #[inline(always)]
     fn atanh(&self) -> Self {
         (*self).atanh()
+    }
+
+    #[inline]
+    fn powf(&self, e: &f64) -> Self {
+        (*self).powf(*e)
     }
 }
 
@@ -926,13 +939,6 @@ impl ConstructibleFloat for F64 {
     }
 }
 
-impl Powf for F64 {
-    #[inline(always)]
-    fn powf(&self, e: &Self) -> Self {
-        self.0.powf(e.0).into()
-    }
-}
-
 impl Real for F64 {
     #[inline(always)]
     fn pi(&self) -> Self {
@@ -1037,6 +1043,11 @@ impl Real for F64 {
     #[inline(always)]
     fn atanh(&self) -> Self {
         self.0.atanh().into()
+    }
+
+    #[inline(always)]
+    fn powf(&self, e: &Self) -> Self {
+        self.0.powf(e.0).into()
     }
 }
 
@@ -1960,9 +1971,7 @@ impl Real for Float {
     fn atanh(&self) -> Self {
         self.0.clone().atanh().into()
     }
-}
 
-impl Powf for Float {
     #[inline]
     fn powf(&self, e: &Self) -> Self {
         let mut c = self.0.clone();
@@ -2510,28 +2519,6 @@ impl<T: RealNumberLike> RealNumberLike for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: Real + RealNumberLike> Powf for ErrorPropagatingFloat<T> {
-    fn powf(&self, e: &Self) -> Self {
-        let i = self.to_f64().abs();
-
-        if i == 0. {
-            return ErrorPropagatingFloat {
-                value: self.value.powf(&e.value),
-                abs_err: 0.,
-            };
-        }
-
-        let r = self.value.powf(&e.value);
-        ErrorPropagatingFloat {
-            abs_err: (self.abs_err * e.value.to_f64() + i * e.abs_err * i.ln().abs())
-                * r.to_f64().abs()
-                / i,
-            value: r,
-        }
-        .truncate()
-    }
-}
-
 impl<T: Real + RealNumberLike> Real for ErrorPropagatingFloat<T> {
     fn pi(&self) -> Self {
         let v = self.value.pi();
@@ -2729,6 +2716,26 @@ impl<T: Real + RealNumberLike> Real for ErrorPropagatingFloat<T> {
         }
         .truncate()
     }
+
+    fn powf(&self, e: &Self) -> Self {
+        let i = self.to_f64().abs();
+
+        if i == 0. {
+            return ErrorPropagatingFloat {
+                value: self.value.powf(&e.value),
+                abs_err: 0.,
+            };
+        }
+
+        let r = self.value.powf(&e.value);
+        ErrorPropagatingFloat {
+            abs_err: (self.abs_err * e.value.to_f64() + i * e.abs_err * i.ln().abs())
+                * r.to_f64().abs()
+                / i,
+            value: r,
+        }
+        .truncate()
+    }
 }
 
 macro_rules! simd_impl {
@@ -2798,13 +2805,6 @@ macro_rules! simd_impl {
 
             fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
                 Self::from(rng.gen::<f64>())
-            }
-        }
-
-        impl Powf for $t {
-            #[inline(always)]
-            fn powf(&self, e: &Self) -> Self {
-                (*self).$p(*e)
             }
         }
 
@@ -2912,6 +2912,11 @@ macro_rules! simd_impl {
             #[inline(always)]
             fn atanh(&self) -> Self {
                 unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn powf(&self, e: &Self) -> Self {
+                (*self).$p(*e)
             }
         }
 
@@ -3758,20 +3763,6 @@ impl<T: NumericalFloatLike> NumericalFloatLike for Complex<T> {
     }
 }
 
-impl<T: Real> Powf for Complex<T> {
-    #[inline]
-    fn powf(&self, e: &Self) -> Self {
-        if e.re == self.re.zero() && e.im == self.im.zero() {
-            self.one()
-        } else if e.im == self.im.zero() {
-            let (r, phi) = self.clone().to_polar_coordinates();
-            Self::from_polar_coordinates(r.powf(&e.re), phi * e.re.clone())
-        } else {
-            (e * self.log()).exp()
-        }
-    }
-}
-
 /// Following the same conventions and formulas as num::Complex.
 impl<T: Real> Real for Complex<T> {
     #[inline]
@@ -3910,6 +3901,18 @@ impl<T: Real> Real for Complex<T> {
         // TODO: add edge cases
         ((&one + self).log() - (one - self).log()) / two
     }
+
+    #[inline]
+    fn powf(&self, e: &Self) -> Self {
+        if e.re == self.re.zero() && e.im == self.im.zero() {
+            self.one()
+        } else if e.im == self.im.zero() {
+            let (r, phi) = self.clone().to_polar_coordinates();
+            Self::from_polar_coordinates(r.powf(&e.re), phi * e.re.clone())
+        } else {
+            (e * self.log()).exp()
+        }
+    }
 }
 
 impl<T: NumericalFloatLike> From<T> for Complex<T> {
@@ -3925,11 +3928,6 @@ impl<'a, T: NumericalFloatLike + From<&'a Rational>> From<&'a Rational> for Comp
         let zero = c.zero();
         Complex::new(c, zero)
     }
-}
-
-// FIXME: find a better place for this trait
-pub trait Powf {
-    fn powf(&self, e: &Self) -> Self;
 }
 
 #[cfg(test)]

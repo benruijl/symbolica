@@ -173,7 +173,7 @@ def E(input: str, default_namespace: str = "python") -> Expression:
     Parameters
     ----------
     input: str
-        An input string. UTF-8 character are allowed.
+        An input string. UTF-8 characters are allowed.
 
     Examples
     --------
@@ -432,7 +432,7 @@ class Expression:
         Parameters
         ----------
         input: str
-            An input string. UTF-8 character are allowed.
+            An input string. UTF-8 characters are allowed.
 
         Examples
         --------
@@ -1016,6 +1016,56 @@ class Expression:
             A function to be applied to the quantity collected in
         coeff_map
             A function to be applied to the coefficient
+        """
+
+    def collect_symbol(
+        self,
+        x: Expression,
+        key_map: Optional[Callable[[Expression], Expression]] = None,
+        coeff_map: Optional[Callable[[Expression], Expression]] = None,
+    ) -> Expression:
+        """
+        Collect terms involving the same power of variables or functions with the name `x`.
+
+        Both the *key* (the quantity collected in) and its coefficient can be mapped using
+        `key_map` and `coeff_map` respectively.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x, f = Expression.symbol('x', 'f')
+        >>> e = f(1,2) + x*f(1,2)
+        >>>
+        >>> print(e.collect_symbol(f))
+
+        yields `(1+x)*f(1,2)`.
+
+        Parameters
+        ----------
+        x: Expression
+            The symbol to collect in
+        key_map
+            A function to be applied to the quantity collected in
+        coeff_map
+            A function to be applied to the coefficient
+        """
+
+    def collect_factors(self) -> Expression:
+        """Collect common factors from (nested) sums.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> e = E('x*(x+y*x+x^2+y*(x+x^2))')
+        >>> e.collect_factors()
+
+        yields
+
+        ```
+        v1^2*(1+v1+v2+v2*(1+v1))
+        ```
         """
 
     def collect_num(self) -> Expression:
@@ -2150,7 +2200,57 @@ class Transformer:
             A transformer to be applied to the coefficient
         """
 
-    def collect_num(self) -> Expression:
+    def collect_symbol(
+        self,
+        x: Expression,
+        key_map: Optional[Callable[[Expression], Expression]] = None,
+        coeff_map: Optional[Callable[[Expression], Expression]] = None,
+    ) -> Transformer:
+        """
+        Create a transformer that collects terms involving the same power of variables or functions with the name `x`.
+
+        Both the *key* (the quantity collected in) and its coefficient can be mapped using
+        `key_map` and `coeff_map` respectively.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x, f = Expression.symbol('x', 'f')
+        >>> e = f(1,2) + x*f(1,2)
+        >>>
+        >>> print(e.transform().collect_symbol(x).execute())
+
+        yields `(1+x)*f(1,2)`.
+
+        Parameters
+        ----------
+        x: Expression
+            The symbol to collect in
+        key_map: Transformer
+            A transformer to be applied to the quantity collected in
+        coeff_map: Transformer
+            A transformer to be applied to the coefficient
+        """
+
+    def collect_factors(self) -> Transformer:
+        """Create a transformer that collects common factors from (nested) sums.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> e = E('x*(x+y*x+x^2+y*(x+x^2))')
+        >>> e.transform().collect_factors().execute()
+
+        yields
+
+        ```
+        v1^2*(1+v1+v2+v2*(1+v1))
+        ```
+        """
+
+    def collect_num(self) -> Transformer:
         """Create a transformer that collects numerical factors by removing the content from additions.
         For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
 

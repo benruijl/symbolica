@@ -832,6 +832,13 @@ impl<'a> From<&AtomView<'a>> for AtomOrView<'a> {
 }
 
 impl<'a> AtomOrView<'a> {
+    pub fn into_owned(self) -> Atom {
+        match self {
+            AtomOrView::Atom(a) => a,
+            AtomOrView::View(a) => a.to_owned(),
+        }
+    }
+
     pub fn as_view(&'a self) -> AtomView<'a> {
         match self {
             AtomOrView::Atom(a) => a.as_view(),

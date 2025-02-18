@@ -589,18 +589,21 @@ impl<'a> AtomView<'a> {
     /// Replace part of an expression by calling the map `m` on each subexpression.
     /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub(crate) fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
+    pub(crate) fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(
+        &self,
+        mut m: F,
+    ) -> Atom {
         let mut out = Atom::new();
-        self.replace_map_into(m, &mut out);
+        self.replace_map_into(&mut m, &mut out);
         out
     }
 
     /// Replace part of an expression by calling the map `m` on each subexpression.
     /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub(crate) fn replace_map_into<F: Fn(AtomView, &Context, &mut Atom) -> bool>(
+    pub(crate) fn replace_map_into<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(
         &self,
-        m: &F,
+        mut m: F,
         out: &mut Atom,
     ) {
         let context = Context {
@@ -609,14 +612,14 @@ impl<'a> AtomView<'a> {
             index: 0,
         };
         Workspace::get_local().with(|ws| {
-            self.replace_map_impl(ws, m, context, out);
+            self.replace_map_impl(ws, &mut m, context, out);
         });
     }
 
-    fn replace_map_impl<F: Fn(AtomView, &Context, &mut Atom) -> bool>(
+    fn replace_map_impl<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(
         &self,
         ws: &Workspace,
-        m: &F,
+        m: &mut F,
         mut context: Context,
         out: &mut Atom,
     ) -> bool {
@@ -3939,7 +3942,7 @@ mod test {
     fn replace_map() {
         let a = parse!("v1 + f1(1,2, f1((1+v1)^2), (v1+v2)^2)").unwrap();
 
-        let r = a.replace_map(&|arg, context, out| {
+        let r = a.replace_map(|arg, context, out| {
             if context.function_level > 0 {
                 arg.expand_into(None, out)
             } else {

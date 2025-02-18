@@ -1336,6 +1336,99 @@ impl PythonTransformer {
         return append_transformer!(self, Transformer::Collect(xs, key_map, coeff_map));
     }
 
+    /// Create a transformer that collects terms involving the same power of variables or functions with the name `x`.
+    ///
+    /// Both the key (the quantity collected in) and its coefficient can be mapped using
+    /// `key_map` and `coeff_map` transformers respectively.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x, f = Expression.symbol('x', 'f')
+    /// >>> e = f(1,2) + x*f(1,2)
+    /// >>>
+    /// >>> print(e.transform().collect_symbol(x).execute())
+    ///
+    /// yields `(1+x)*f(1,2)`.
+    ///
+    /// Parameters
+    /// ----------
+    /// x: Expression
+    ///      The symbol to collect in
+    /// key_map: Transformer
+    ///     A transformer to be applied to the quantity collected in
+    /// coeff_map: Transformer
+    ///     A transformer to be applied to the coefficient
+    #[pyo3(signature = (x, key_map = None, coeff_map = None))]
+    pub fn collect_symbol(
+        &self,
+        x: PythonExpression,
+        key_map: Option<PythonTransformer>,
+        coeff_map: Option<PythonTransformer>,
+    ) -> PyResult<PythonTransformer> {
+        let Some(x) = x.expr.get_symbol() else {
+            return Err(exceptions::PyValueError::new_err(
+                "Collect must be done wrt a variable or function",
+            ));
+        };
+
+        let key_map = if let Some(key_map) = key_map {
+            let Pattern::Transformer(p) = key_map.expr else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Key map must be a transformer",
+                ));
+            };
+
+            if p.0.is_some() {
+                Err(exceptions::PyValueError::new_err(
+                    "Key map must be an unbound transformer",
+                ))?;
+            }
+
+            p.1.clone()
+        } else {
+            vec![]
+        };
+
+        let coeff_map = if let Some(coeff_map) = coeff_map {
+            let Pattern::Transformer(p) = coeff_map.expr else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Key map must be a transformer",
+                ));
+            };
+
+            if p.0.is_some() {
+                Err(exceptions::PyValueError::new_err(
+                    "Key map must be an unbound transformer",
+                ))?;
+            }
+
+            p.1.clone()
+        } else {
+            vec![]
+        };
+
+        return append_transformer!(self, Transformer::CollectSymbol(x, key_map, coeff_map));
+    }
+
+    /// Create a transformer that collects common factors from (nested) sums.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> e = E('x*(x+y*x+x^2+y*(x+x^2))')
+    /// >>> e.transform().collect_factors().execute()
+    ///
+    /// yields
+    ///
+    /// ```log
+    /// v1^2*(1+v1+v2+v2*(1+v1))
+    /// ```
+    pub fn collect_factors(&self) -> PyResult<PythonTransformer> {
+        return append_transformer!(self, Transformer::CollectFactors);
+    }
+
     /// Create a transformer that collects numerical factors by removing the numerical content from additions.
     /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
     ///
@@ -4053,6 +4146,102 @@ impl PythonExpression {
         );
 
         Ok(b.into())
+    }
+
+    /// Collect terms involving the same power of variables or functions with the name `x`, e.g.
+    ///
+    /// ```math
+    /// collect_symbol(f(1,2) + x*f*(1,2), f) = (1+x)*f(1,2)
+    /// ```
+    ///
+    ///
+    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
+    /// `key_map` and `coeff_map` respectively.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x, f = Expression.symbol('x', 'f')
+    /// >>> e = f(1,2) + x*f(1,2)
+    /// >>>
+    /// >>> print(e.collect_symbol(f))
+    ///
+    /// yields `(1+x)*f(1,2)`.
+    #[pyo3(signature = (x, key_map = None, coeff_map = None))]
+    pub fn collect_symbol(
+        &self,
+        x: PythonExpression,
+        key_map: Option<PyObject>,
+        coeff_map: Option<PyObject>,
+    ) -> PyResult<PythonExpression> {
+        let Some(x) = x.expr.get_symbol() else {
+            return Err(exceptions::PyValueError::new_err(
+                "Collect must be done wrt a variable or function",
+            ));
+        };
+
+        let b = self.expr.collect_symbol::<i16>(
+            x,
+            if let Some(key_map) = key_map {
+                Some(Box::new(move |key, out| {
+                    Python::with_gil(|py| {
+                        let key: PythonExpression = key.to_owned().into();
+
+                        out.set_from_view(
+                            &key_map
+                                .call(py, (key,), None)
+                                .expect("Bad callback function")
+                                .extract::<PythonExpression>(py)
+                                .expect("Key map should return an expression")
+                                .expr
+                                .as_view(),
+                        )
+                    });
+                }))
+            } else {
+                None
+            },
+            if let Some(coeff_map) = coeff_map {
+                Some(Box::new(move |coeff, out| {
+                    Python::with_gil(|py| {
+                        let coeff: PythonExpression = coeff.to_owned().into();
+
+                        out.set_from_view(
+                            &coeff_map
+                                .call(py, (coeff,), None)
+                                .expect("Bad callback function")
+                                .extract::<PythonExpression>(py)
+                                .expect("Coeff map should return an expression")
+                                .expr
+                                .as_view(),
+                        )
+                    });
+                }))
+            } else {
+                None
+            },
+        );
+
+        Ok(b.into())
+    }
+
+    /// Collect common factors from (nested) sums.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> e = E('x*(x+y*x+x^2+y*(x+x^2))')
+    /// >>> e.collect_factors()
+    ///
+    /// yields
+    ///
+    /// ```log
+    /// v1^2*(1+v1+v2+v2*(1+v1))
+    /// ```
+    pub fn collect_factors(&self) -> PythonExpression {
+        self.expr.collect_factors().into()
     }
 
     /// Collect numerical factors by removing the numerical content from additions.

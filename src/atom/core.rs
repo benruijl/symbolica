@@ -70,6 +70,8 @@ pub trait AtomCore {
     /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
     /// ```
     ///
+    /// Use [collect_symbol](AtomCore::collect_symbol) to collect using the name of a function only.
+    ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
     ///
@@ -89,6 +91,34 @@ pub trait AtomCore {
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
         self.as_atom_view().collect::<E, T>(x, key_map, coeff_map)
+    }
+
+    /// Collect terms involving the same power of variables or functions with the name `x`, e.g.
+    ///
+    /// ```math
+    /// collect_symbol(f(1,2) + x*f*(1,2), f) = (1+x)*f(1,2)
+    /// ```
+    ///
+    ///
+    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
+    /// `key_map` and `coeff_map` respectively.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse, symbol};
+    /// let expr = parse!("f(1,2) + x*f(1,2)").unwrap();
+    /// let collected = expr.collect_symbol::<u8>(symbol!("f"), None, None);
+    /// assert_eq!(collected, parse!("(1+x)*f(1,2)").unwrap());
+    /// ```
+    fn collect_symbol<E: Exponent>(
+        &self,
+        x: Symbol,
+        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+    ) -> Atom {
+        self.as_atom_view()
+            .collect_symbol::<E>(x, key_map, coeff_map)
     }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
@@ -118,6 +148,20 @@ pub trait AtomCore {
     ) -> Atom {
         self.as_atom_view()
             .collect_multiple::<E, T>(xs, key_map, coeff_map)
+    }
+
+    /// Collect common factors from (nested) sums.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x*(x+y*x+x^2+y*(x+x^2))").unwrap();
+    /// let collected = expr.collect_factors();
+    /// assert_eq!(collected, parse!("x^2*(1+x+y+y*(1+x))").unwrap());
+    /// ```
+    fn collect_factors(&self) -> Atom {
+        self.as_atom_view().collect_factors()
     }
 
     /// Collect terms involving the same power of `x` in `xs`, where `xs` is a list of indeterminates.
@@ -1266,7 +1310,7 @@ pub trait AtomCore {
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
     /// let expr = parse!("x + y").unwrap();
-    /// let result = expr.replace_map(&|term, _ctx, out| {
+    /// let result = expr.replace_map(|term, _ctx, out| {
     ///     if term.to_string() == "symbolica::x" {
     ///         *out = parse!("z").unwrap();
     ///         true
@@ -1276,7 +1320,7 @@ pub trait AtomCore {
     /// });
     /// assert_eq!(result, parse!("z + y").unwrap());
     /// ```
-    fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
+    fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(&self, m: F) -> Atom {
         self.as_atom_view().replace_map(m)
     }
 

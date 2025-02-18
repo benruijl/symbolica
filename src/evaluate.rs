@@ -4685,7 +4685,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 is_zero
-            }
+            },
             AtomView::Add(_) => self.zero_test_impl(iterations, tolerance),
         }
     }

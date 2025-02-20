@@ -1,5 +1,17 @@
 """
-Symbolica Python API.
+Symbolica is a blazing fast computer algebra system.
+
+It can be used to perform mathematical operations,
+such as symbolic differentiation, integration, simplification,
+pattern matching and solving equations.
+
+Examples
+--------
+
+>>> from symbolica import *
+>>> e = E('x^2*log(2*x + y) + exp(3*x)')
+>>> a = e.derivative(S('x'))
+>>> print("d/dx {} = {}".format(e, a))
 """
 
 from __future__ import annotations
@@ -520,6 +532,7 @@ class Expression:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = 100,
     ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
@@ -530,6 +543,18 @@ class Expression:
         >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+        """
+
+    def format_plain(self) -> str:
+        """
+        Convert the expression into a plain string, useful for importing and exporting.
+
+        Examples
+        --------
+        >>> a = Expression.parse('5 + x^2')
+        >>> print(a.format_plain())
+
+        Yields `5 + x^2`, without any coloring.
         """
 
     def to_latex(self) -> str:
@@ -2388,6 +2413,7 @@ class Transformer:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = None,
     ) -> Transformer:
         """
         Create a transformer that prints the expression.
@@ -2525,6 +2551,7 @@ class Series:
         latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = None,
     ) -> str:
         """
         Convert the series into a human-readable string.
@@ -2709,6 +2736,7 @@ class Polynomial:
         latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2751,11 +2779,21 @@ class Polynomial:
     def gcd(self, rhs: Polynomial) -> Polynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
 
+    def extended_gcd(self, rhs: Polynomial) -> Tuple[Polynomial, Polynomial, Polynomial]:
+        """Compute the extended GCD of two polynomials, yielding the GCD and the Bezout coefficients `s` and `t`
+        such that `self * s + rhs * t = gcd(self, rhs)`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> E('(1+x)(20+x)').to_polynomial().extended_gcd(E('x^2+2').to_polynomial())
+
+        yields `(1, 1/67-7/402*x, 47/134+7/402*x)`.
+        """
+
     def resultant(self, rhs: Polynomial, var: Expression) -> Polynomial:
         """Compute the resultant of two polynomials with respect to the variable `var`."""
-
-    def to_integer_polynomial(self) -> IntegerPolynomial:
-        """Convert the polynomial to a polynomial with integer coefficients, if possible."""
 
     def to_finite_field(self, prime: int) -> FiniteFieldPolynomial:
         """Convert the coefficients of the polynomial to a finite field with prime `prime`."""
@@ -2932,189 +2970,6 @@ class Polynomial:
         """
 
 
-class IntegerPolynomial:
-    """A Symbolica polynomial with integer coefficients."""
-
-    @classmethod
-    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> IntegerPolynomial:
-        """
-        Parse a polynomial with integer coefficients from a string.
-        The input must be written in an expanded format and a list of all
-        the variables must be provided.
-
-        If these requirements are too strict, use `Expression.to_polynomial()` or
-        `RationalPolynomial.parse()` instead.
-
-        Examples
-        --------
-        >>> e = IntegerPolynomial.parse('3*x^2+y+y*4', ['x', 'y'])
-
-        Raises
-        ------
-        ValueError
-            If the input is not a valid Symbolica polynomial.
-        """
-
-    def __copy__(self) -> IntegerPolynomial:
-        """Copy the polynomial."""
-
-    def __str__(self) -> str:
-        """Print the polynomial in a human-readable format."""
-
-    def to_latex(self) -> str:
-        """Convert the polynomial into a LaTeX string."""
-
-    def format(
-        self,
-        terms_on_new_line: bool = False,
-        color_top_level_sum: bool = True,
-        color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
-        symmetric_representation_for_finite_field: bool = False,
-        explicit_rational_polynomial: bool = False,
-        number_thousands_separator: Optional[str] = None,
-        multiplication_operator: str = "*",
-        double_star_for_exponentiation: bool = False,
-        square_brackets_for_function: bool = False,
-        num_exp_as_superscript: bool = True,
-        latex: bool = False,
-        precision: Optional[int] = None,
-        show_namespaces: bool = False,
-    ) -> str:
-        """
-        Convert the polynomial into a human-readable string, with tunable settings.
-
-        Examples
-        --------
-        >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-        >>> print(p.format(symmetric_representation_for_finite_field=True))
-
-        Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
-        """
-
-    def nterms(self) -> int:
-        """Get the number of terms in the polynomial."""
-
-    def get_var_list(self) -> Sequence[Expression]:
-        """Get the list of variables in the internal ordering of the polynomial."""
-
-    def __add__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Add two polynomials `self` and `rhs`, returning the result."""
-
-    def __sub__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Subtract polynomials `rhs` from `self`, returning the result."""
-
-    def __mul__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Multiply two polynomials `self` and `rhs`, returning the result."""
-
-    def __truediv__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Divide the polynomial `self` by `rhs` if possible, returning the result."""
-
-    def quot_rem(self, rhs: IntegerPolynomial) -> Tuple[IntegerPolynomial, IntegerPolynomial]:
-        """Divide `self` by `rhs`, returning the quotient and remainder."""
-
-    def __mod__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Compute the remainder of the division of `self` by `rhs`."""
-
-    def __neg__(self) -> IntegerPolynomial:
-        """Negate the polynomial."""
-
-    def gcd(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Compute the greatest common divisor (GCD) of two polynomials."""
-
-    def resultant(self, rhs: IntegerPolynomial, var: Expression) -> IntegerPolynomial:
-        """Compute the resultant of two polynomials with respect to the variable `var`."""
-
-    def factor_square_free(self) -> list[Tuple[IntegerPolynomial, int]]:
-        """Compute the square-free factorization of the polynomial.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial().to_integer_polynomial()
-        >>> print('Square-free factorization of {}:'.format(p))
-        >>> for f, exp in p.factor_square_free():
-        >>>     print('\t({})^{}'.format(f, exp))
-        """
-
-    def factor(self) -> list[Tuple[IntegerPolynomial, int]]:
-        """Factorize the polynomial.
-
-        The polynomial must be univariate.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial().to_integer_polynomial()
-        >>> print('Factorization of {}:'.format(p))
-        >>> for f, exp in p.factor():
-        >>>     print('\t({})^{}'.format(f, exp))
-        """
-
-    def derivative(self, x: Expression) -> IntegerPolynomial:
-        """Take a derivative in `x`.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> x = Expression.symbol('x')
-        >>> p = Expression.parse('x^2+2').to_polynomial().to_integer_polynomial()
-        >>> print(p.derivative(x))
-        """
-
-    def content(self) -> IntegerPolynomial:
-        """Get the content, i.e., the GCD of the coefficients.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> p = Expression.parse('3x^2+6x+9').to_polynomial().to_integer_polynomial()
-        >>> print(p.content())
-        """
-
-    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], IntegerPolynomial]]:
-        """Get the coefficient list, optionally in the variables `xs`.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> x = Expression.symbol('x')
-        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial().to_integer_polynomial()
-        >>> for n, pp in p.coefficient_list(x):
-        >>>     print(n, pp)
-        """
-
-    def to_expression(self) -> Expression:
-        """ Convert the polynomial to an expression.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> e = Expression.parse('x*y+2*x+x^2')
-        >>> p = e.to_polynomial().to_integer_polynomial()
-        >>> print((e - p.to_expression()).expand())
-        """
-
-    def replace(self, x: Expression, v: Polynomial) -> Polynomial:
-        """Replace the variable `x` with a polynomial `v`.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> x = Expression.symbol('x')
-        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-        >>> r = Expression.parse('y+1').to_polynomial())
-        >>> p.replace(x, r)
-        """
-
-
 class NumberFieldPolynomial:
     """A Symbolica polynomial with rational coefficients."""
 
@@ -3143,6 +2998,7 @@ class NumberFieldPolynomial:
         latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3184,6 +3040,11 @@ class NumberFieldPolynomial:
 
     def gcd(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def extended_gcd(self, rhs: NumberFieldPolynomial) -> Tuple[NumberFieldPolynomial, NumberFieldPolynomial, NumberFieldPolynomial]:
+        """Compute the extended GCD of two polynomials, yielding the GCD and the Bezout coefficients `s` and `t`
+        such that `self * s + rhs * t = gcd(self, rhs)`.
+        """
 
     def resultant(self, rhs: NumberFieldPolynomial, var: Expression) -> NumberFieldPolynomial:
         """Compute the resultant of two polynomials with respect to the variable `var`."""
@@ -3355,6 +3216,7 @@ class FiniteFieldPolynomial:
         latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3396,6 +3258,22 @@ class FiniteFieldPolynomial:
 
     def gcd(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def extended_gcd(self, rhs: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial]:
+        """Compute the extended GCD of two polynomials, yielding the GCD and the Bezout coefficients `s` and `t`
+        such that `self * s + rhs * t = gcd(self, rhs)`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> E('(1+x)(20+x)').to_polynomial(modulus=5).extended_gcd(E('x^2+2').to_polynomial(modulus=5))
+
+        yields `(1, 3+4*x, 3+x)`.
+        """
+
+    def to_integer_polynomial(self, symmetric_representation: bool = True) -> Polynomial:
+        """Convert the polynomial to a polynomial with integer coefficients."""
 
     def resultant(self, rhs: FiniteFieldPolynomial, var: Expression) -> FiniteFieldPolynomial:
         """Compute the resultant of two polynomials with respect to the variable `var`."""
@@ -3786,6 +3664,7 @@ class Matrix:
         latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        max_terms: Optional[int] = None,
     ) -> str:
         """
         Convert the matrix into a human-readable string, with tunable settings.
@@ -4198,6 +4077,25 @@ class Integer:
     @classmethod
     def is_prime(_cls, n: int) -> bool:
         """Check if the 64-bit number `n` is a prime number."""
+
+    @classmethod
+    def gcd(_cls, a: int, b: int) -> int:
+        """Compute the greatest common divisor of the numbers `a` and `b`."""
+
+    @classmethod
+    def lcm(_cls, a: int, b: int) -> int:
+        """Compute the least common multiple of the numbers `a` and `b`."""
+
+    @classmethod
+    def extended_gcd(_cls, a: int, b: int) -> tuple[int, int, int]:
+        """Compute the greatest common divisor of the numbers `a` and `b` and the Bézout coefficients."""
+
+    @classmethod
+    def chinese_remainder(_cls, n1: int, m1: int, n2: int, m2: int) -> int:
+        """
+        Solve the Chinese remainder theorem for the equations:
+        `x = n1 mod m1` and `x = n2 mod m2`.
+        """
 
     @classmethod
     def solve_integer_relation(_cls, x: Sequence[int | float | Decimal], tolerance: float | Decimal, max_coeff: Optional[int] = None, gamma: Optional[float | Decimal] = None) -> Sequence[int]:

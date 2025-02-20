@@ -31,6 +31,7 @@ pub struct PrintOptions {
     pub hide_namespace: Option<&'static str>,
     pub hide_all_namespaces: bool,
     pub color_namespace: bool,
+    pub max_terms: Option<usize>,
 }
 
 impl PrintOptions {
@@ -53,6 +54,7 @@ impl PrintOptions {
             hide_namespace: None,
             hide_all_namespaces: true,
             color_namespace: true,
+            max_terms: None,
         }
     }
 
@@ -76,6 +78,7 @@ impl PrintOptions {
             hide_namespace: None,
             hide_all_namespaces: true,
             color_namespace: false,
+            max_terms: None,
         }
     }
 
@@ -99,6 +102,7 @@ impl PrintOptions {
             hide_namespace: None,
             hide_all_namespaces: true,
             color_namespace: false,
+            max_terms: None,
         }
     }
 
@@ -122,6 +126,7 @@ impl PrintOptions {
             hide_namespace: None,
             hide_all_namespaces: false,
             color_namespace: false,
+            max_terms: None,
         }
     }
 
@@ -947,7 +952,14 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
             f.write_char('(')?;
         }
 
+        let mut count = 0;
         for x in self.iter() {
+            if let Some(max_terms) = opts.max_terms {
+                if count >= max_terms {
+                    break;
+                }
+            }
+
             if !first && print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;
             }
@@ -955,6 +967,18 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
 
             x.format(f, opts, print_state)?;
             print_state.in_sum = true;
+            count += 1;
+        }
+
+        if opts.max_terms.is_some() && count < self.get_nargs() {
+            if print_state.top_level_add_child && opts.terms_on_new_line {
+                f.write_char('\n')?;
+            }
+            if print_state.top_level_add_child && opts.color_top_level_sum {
+                f.write_fmt(format_args!("{0}...", "+".yellow()))?;
+            } else {
+                f.write_str("+...")?;
+            }
         }
 
         if add_paren {

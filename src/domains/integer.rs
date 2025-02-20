@@ -699,6 +699,77 @@ impl Integer {
         }
     }
 
+    pub fn extended_gcd(&self, b: &Integer) -> (Integer, Integer, Integer) {
+        match (self, b) {
+            (Integer::Natural(n1), Integer::Natural(n2)) => {
+                let (gcd, t, s) = extended_gcd(*n1, *n2);
+                if gcd == i64::MAX as u64 + 1 {
+                    (
+                        Integer::Double(gcd as i128),
+                        Integer::Natural(t),
+                        Integer::Natural(s),
+                    )
+                } else {
+                    (
+                        Integer::Natural(gcd as i64),
+                        Integer::Natural(t),
+                        Integer::Natural(s),
+                    )
+                }
+            }
+            (Integer::Natural(n1), Integer::Large(r2))
+            | (Integer::Large(r2), Integer::Natural(n1)) => {
+                let r1 = MultiPrecisionInteger::from(*n1);
+                let (g, s, t) = r1.extended_gcd(r2.clone(), MultiPrecisionInteger::new());
+                (Integer::from(g), Integer::from(s), Integer::from(t))
+            }
+            (Integer::Large(r1), Integer::Large(r2)) => {
+                let (g, s, t) = r1
+                    .clone()
+                    .extended_gcd(r2.clone(), MultiPrecisionInteger::new());
+                (Integer::from(g), Integer::from(s), Integer::from(t))
+            }
+            (Integer::Natural(r1), Integer::Double(r2))
+            | (Integer::Double(r2), Integer::Natural(r1)) => {
+                let (gcd, t, s) = extended_gcd_i128(*r1 as i128, *r2);
+                (
+                    Integer::from_double(gcd as i128),
+                    Integer::from_double(t),
+                    Integer::from_double(s),
+                )
+            }
+            (Integer::Double(r1), Integer::Double(r2)) => {
+                let (g, t, s) = extended_gcd_i128(*r1, *r2);
+                if g == i128::MAX as u128 + 1 {
+                    (
+                        Integer::Large(MultiPrecisionInteger::from(g)),
+                        Integer::from_double(t),
+                        Integer::from_double(s),
+                    )
+                } else {
+                    (
+                        Integer::from_double(g as i128),
+                        Integer::from_double(t),
+                        Integer::from_double(s),
+                    )
+                }
+            }
+            (Integer::Double(r1), Integer::Large(r2)) => {
+                let (g, s, t) = MultiPrecisionInteger::from(*r1)
+                    .clone()
+                    .extended_gcd(r2.clone(), MultiPrecisionInteger::new());
+                (Integer::from(g), Integer::from(s), Integer::from(t))
+            }
+            (Integer::Large(r1), Integer::Double(r2)) => {
+                let (g, s, t) = r1.clone().extended_gcd(
+                    MultiPrecisionInteger::from(*r2),
+                    MultiPrecisionInteger::new(),
+                );
+                (Integer::from(g), Integer::from(s), Integer::from(t))
+            }
+        }
+    }
+
     /// Compute the least common multiple of two integers.
     pub fn lcm(&self, b: &Integer) -> Integer {
         let g = self.gcd(b);
@@ -712,7 +783,19 @@ impl Integer {
     /// Use Garner's algorithm for the Chinese remainder theorem
     /// to reconstruct an `x` that satisfies `n1 = x % p1` and `n2 = x % p2`.
     /// The `x` will be in the range `[-p1*p2/2,p1*p2/2]`.
-    pub fn chinese_remainder(n1: Integer, n2: Integer, p1: Integer, p2: Integer) -> Integer {
+    pub fn chinese_remainder(
+        mut n1: Integer,
+        mut n2: Integer,
+        p1: Integer,
+        p2: Integer,
+    ) -> Integer {
+        if n1 < 0 {
+            n1 += &p1;
+        }
+        if n2 < 0 {
+            n2 += &p2;
+        }
+
         // make sure n1 < n2
         if match (&n1, &n2) {
             (Integer::Natural(n1), Integer::Natural(n2)) => n1 > n2,
@@ -2318,6 +2401,66 @@ pub fn gcd_unsigned(mut a: u64, mut b: u64) -> u64 {
     b
 }
 
+/// Compute the extended GCD of two `i64` numbers.
+pub fn extended_gcd(mut a: i64, mut b: i64) -> (u64, i64, i64) {
+    if a.unsigned_abs() < b.unsigned_abs() {
+        let (g, s, t) = extended_gcd(b, a);
+        return (g, t, s);
+    }
+
+    if a == i64::MIN {
+        if b == -1 {
+            return (1, 0, -1);
+        } else if b == i64::MAX {
+            return (1, -1, -1);
+        }
+    }
+
+    let mut s0 = 1;
+    let mut s1 = 0;
+    let mut t0 = 0;
+    let mut t1 = 1;
+
+    while b != 0 {
+        let q = a / b;
+        (a, b) = (b, a - q * b);
+        (s0, s1) = (s1, s0 - q * s1);
+        (t0, t1) = (t1, t0 - q * t1);
+    }
+
+    (a.unsigned_abs(), s0, t0)
+}
+
+/// Compute the extended GCD of two `i128` numbers.
+pub fn extended_gcd_i128(mut a: i128, mut b: i128) -> (u128, i128, i128) {
+    if a.unsigned_abs() < b.unsigned_abs() {
+        let (g, s, t) = extended_gcd_i128(b, a);
+        return (g, t, s);
+    }
+
+    if a == i128::MIN {
+        if b == -1 {
+            return (1, 0, -1);
+        } else if b == i128::MAX {
+            return (1, -1, -1);
+        }
+    }
+
+    let mut s0 = 1;
+    let mut s1 = 0;
+    let mut t0 = 0;
+    let mut t1 = 1;
+
+    while b != 0 {
+        let q = a / b;
+        (a, b) = (b, a - q * b);
+        (s0, s1) = (s1, s0 - q * s1);
+        (t0, t1) = (t1, t0 - q * t1);
+    }
+
+    (a.unsigned_abs(), s0, t0)
+}
+
 /// Compute the signed GCD of two `i64` numbers.
 pub fn gcd_signed(mut a: i64, mut b: i64) -> u64 {
     let mut c;
@@ -2348,7 +2491,10 @@ mod test {
 
     use rug::Complete;
 
-    use crate::domains::float::{Float, F64};
+    use crate::domains::{
+        float::{Float, F64},
+        integer::{extended_gcd, extended_gcd_i128},
+    };
 
     use super::Integer;
 
@@ -2465,5 +2611,23 @@ mod test {
         .unwrap();
 
         assert_eq!(result.iter().last().unwrap().abs(), 1);
+    }
+
+    #[test]
+    fn extended_gcds() {
+        let (g, s, t) = extended_gcd(123, 456);
+        assert_eq!(g, 3);
+        assert_eq!(s, -63);
+        assert_eq!(t, 17);
+
+        let (g2, s2, t2) = extended_gcd(48, 18);
+        assert_eq!(g2, 6);
+        assert_eq!(s2, -1);
+        assert_eq!(t2, 3);
+
+        let (g3, s3, t3) = extended_gcd_i128(101, 147);
+        assert_eq!(g3, 1);
+        assert_eq!(s3, -16);
+        assert_eq!(t3, 11);
     }
 }

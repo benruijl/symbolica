@@ -13,7 +13,9 @@ use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
 
-use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
+use super::{
+    rational::Rational, EuclideanDomain, EuclideanNormRing, Field, InternalOrdering, Ring, SelfRing
+};
 use rug::{
     ops::{CompleteRound, Pow},
     Assign, Float as MultiPrecisionFloat,
@@ -252,7 +254,7 @@ impl SelfRing for Float {
     }
 }
 
-impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> EuclideanDomain
+impl<T: SingleFloat + Hash + Eq + InternalOrdering> EuclideanDomain
     for FloatField<T>
 {
     #[inline(always)]
@@ -271,7 +273,7 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Euclide
     }
 }
 
-impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field for FloatField<T> {
+impl<T: SingleFloat + Hash + Eq + InternalOrdering> Field for FloatField<T> {
     #[inline(always)]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a.clone() / b
@@ -285,6 +287,18 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field f
     #[inline(always)]
     fn inv(&self, a: &Self::Element) -> Self::Element {
         a.inv()
+    }
+}
+
+impl<T: Real + SingleFloat + Hash + Eq + InternalOrdering> EuclideanNormRing
+    for FloatField<T>
+{
+    fn euclidean_norm(&self, values: &[Self::Element]) -> Self::Element {
+        let mut sum = self.zero();
+        for value in values {
+            sum += value.pow(2);
+        }
+        sum.powf(&self.inv(&(self.one().add(self.one()))))
     }
 }
 

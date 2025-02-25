@@ -185,6 +185,7 @@ pub struct EvalTree<T> {
     param_count: usize,
 }
 
+/// A built-in symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BuiltinSymbol(Symbol);
 
@@ -198,6 +199,12 @@ impl<'de> Deserialize<'de> for BuiltinSymbol {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let id: u32 = u32::deserialize(deserializer)?;
         Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
+    }
+}
+
+impl BuiltinSymbol {
+    pub fn get_symbol(&self) -> Symbol {
+        self.0
     }
 }
 
@@ -2681,6 +2688,144 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         in_asm_block
+    }
+}
+
+/// A slot in a list that contains a numerical value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Slot {
+    /// An entry in the list of parameters.
+    Param(usize),
+    /// An entry in the list of constants.
+    Const(usize),
+    /// An entry in the list of temporary storage.
+    Temp(usize),
+    /// An entry in the list of results.
+    Out(usize),
+}
+
+impl std::fmt::Display for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Slot::Param(i) => write!(f, "p{}", i),
+            Slot::Const(i) => write!(f, "c{}", i),
+            Slot::Temp(i) => write!(f, "t{}", i),
+            Slot::Out(i) => write!(f, "o{}", i),
+        }
+    }
+}
+
+/// An evaluation instruction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Instruction {
+    /// `Add(o, [i0,...,i_n])` means `o = i0 + ... + i_n`.
+    Add(Slot, Vec<Slot>),
+    /// `Mul(o, [i0,...,i_n])` means `o = i0 * ... * i_n`.
+    Mul(Slot, Vec<Slot>),
+    /// `Pow(o, b, e)` means `o = b^e`.
+    Pow(Slot, Slot, i64),
+    /// `Powf(o, b, e)` means `o = b^e`.
+    Powf(Slot, Slot, Slot),
+    /// `Fun(o, s, a)` means `o = s(a)`, where `s` is assumed to
+    /// be a built-in function such as `sin`.
+    Fun(Slot, BuiltinSymbol, Slot),
+}
+
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Instruction::Add(o, a) => {
+                write!(
+                    f,
+                    "{} = {}",
+                    o,
+                    a.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("+")
+                )
+            }
+            Instruction::Mul(o, a) => {
+                write!(
+                    f,
+                    "{} = {}",
+                    o,
+                    a.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("*")
+                )
+            }
+            Instruction::Pow(o, b, e) => {
+                write!(f, "{} = {}^{}", o, b, e)
+            }
+            Instruction::Powf(o, b, e) => {
+                write!(f, "{} = {}^{}", o, b, e)
+            }
+            Instruction::Fun(o, s, a) => {
+                write!(f, "{} = {}({})", o, s.0, a)
+            }
+        }
+    }
+}
+
+impl<T: Clone> ExpressionEvaluator<T> {
+    /// Export the instructions, the size of the temporary storage, and the list of constants.
+    /// This function can be used to create an evaluator in a different language.
+    pub fn export_instructions(&self) -> (Vec<Instruction>, usize, Vec<T>) {
+        let mut instr = vec![];
+        let constants: Vec<_> = self.stack[self.param_count..self.reserved_indices]
+            .iter()
+            .cloned()
+            .collect();
+
+        macro_rules! get_slot {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    Slot::Param($i)
+                } else if $i < self.reserved_indices {
+                    Slot::Const($i - self.param_count)
+                } else {
+                    if self.result_indices.contains(&$i) {
+                        Slot::Out(self.result_indices.iter().position(|x| *x == $i).unwrap())
+                    } else {
+                        Slot::Temp($i - self.reserved_indices)
+                    }
+                }
+            };
+        }
+
+        for i in &self.instructions {
+            match i {
+                Instr::Add(o, a) => {
+                    instr.push(Instruction::Add(
+                        get_slot!(*o),
+                        a.iter().map(|x| get_slot!(*x)).collect(),
+                    ));
+                }
+                Instr::Mul(o, a) => {
+                    instr.push(Instruction::Mul(
+                        get_slot!(*o),
+                        a.iter().map(|x| get_slot!(*x)).collect(),
+                    ));
+                }
+                Instr::Pow(o, b, e) => {
+                    instr.push(Instruction::Pow(get_slot!(*o), get_slot!(*b), *e));
+                }
+                Instr::Powf(o, b, e) => {
+                    instr.push(Instruction::Powf(
+                        get_slot!(*o),
+                        get_slot!(*b),
+                        get_slot!(*e),
+                    ));
+                }
+                Instr::BuiltinFun(o, s, a) => {
+                    instr.push(Instruction::Fun(get_slot!(*o), s.clone(), get_slot!(*a)));
+                }
+            }
+        }
+
+        (instr, self.stack.len() - self.reserved_indices, constants)
     }
 }
 

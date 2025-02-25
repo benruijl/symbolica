@@ -3716,6 +3716,46 @@ class Matrix:
 class Evaluator:
     """An optimized evaluator of an expression."""
 
+    def get_instructions(self) -> Tuple[List[Tuple[str, Tuple[str, int], List[Tuple[str, int]]]], int, List[Expression]]:
+        """Return the instructions for efficiently evaluating the expression, the length of the list
+        of temporary variables, and the list of constants. This can be used to generate
+        code for the expression evaluation in any programming language.
+
+        There are four lists that are used in the evaluation instructions:
+        - `param`: the list of input parameters.
+        - `temp`: the list of temporary slots. The size of it is provided as the second return value.
+        - `const`: the list of constants.
+        - `out`: the list of outputs.
+
+        The instructions are of the form:
+        - `('add', ('out', 0), [('const', 1), ('param', 0)])` which means `out[0] = const[1] + param[0]`.
+        - `('mul', ('out', 0), [('temp', 0), ('param', 0)])` which means `out[0] = temp[0] * param[0]`.
+        - `('pow', ('out', 0), ('param', 0), -1)` which means `out[0] = param[0]^-1`.
+        - `('powf', ('out', 0), ('param', 0), ('param', 1))` which means `out[0] = param[0]^param[1]`.
+        - `('fun', ('temp', 1), cos, ('param', 0))` which means `temp[1] = cos(param[0])`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> (ins, m, c) = E('x^2+5/3+cos(x)').evaluator({}, {}, [S('x')]).get_instructions()
+        >>>
+        >>> for x in ins:
+        >>>     print(x)
+        >>> print('temp list length:', m)
+        >>> print('constants:', c)
+
+        yields
+
+        ```
+        ('mul', ('out', 0), [('param', 0), ('param', 0)])
+        ('fun', ('temp', 1), cos, ('param', 0))
+        ('add', ('out', 0), [('const', 0), ('out', 0), ('temp', 1)])
+        temp list length: 2
+        constants: [5/3]
+        ```
+        """
+
     def compile(
         self,
         function_name: str,

@@ -51,7 +51,7 @@ use crate::{
     },
     evaluate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
-        InlineASM, OptimizationSettings,
+        InlineASM, Instruction, OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -5445,9 +5445,14 @@ impl PythonExpression {
                 exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
             })?;
 
-        let eval_f64 = eval.map_coeff(&|x| x.to_f64());
+        let eval_f64 = eval.clone().map_coeff(&|x| x.to_f64());
+        let eval_complex = eval_f64.clone().map_coeff(&|x| Complex::new(*x, 0.));
 
-        Ok(PythonExpressionEvaluator { eval: eval_f64 })
+        Ok(PythonExpressionEvaluator {
+            eval_rat: eval,
+            eval: eval_f64,
+            eval_complex,
+        })
     }
 
     /// Create an evaluator that can jointly evaluate (nested) expressions in an optimized fashion.
@@ -5533,9 +5538,14 @@ impl PythonExpression {
             exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
         })?;
 
-        let eval_f64 = eval.map_coeff(&|x| x.to_f64());
+        let eval_f64 = eval.clone().map_coeff(&|x| x.to_f64());
+        let eval_complex = eval_f64.clone().map_coeff(&|x| Complex::new(*x, 0.));
 
-        Ok(PythonExpressionEvaluator { eval: eval_f64 })
+        Ok(PythonExpressionEvaluator {
+            eval_rat: eval,
+            eval: eval_f64,
+            eval_complex,
+        })
     }
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
@@ -10654,7 +10664,254 @@ impl ConvertibleToRationalPolynomial {
 #[pyclass(name = "Evaluator", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonExpressionEvaluator {
+    pub eval_rat: ExpressionEvaluator<Rational>,
     pub eval: ExpressionEvaluator<f64>,
+    pub eval_complex: ExpressionEvaluator<Complex<f64>>,
+}
+
+#[pymethods]
+impl PythonExpressionEvaluator {
+    /// Return the instructions for efficiently evaluating the expression, the length of the list
+    /// of temporary variables, and the list of constants. This can be used to generate
+    /// code for the expression evaluation in any programming language.
+    ///
+    /// There are four lists that are used in the evaluation instructions:
+    /// - `param`: the list of input parameters.
+    /// - `temp`: the list of temporary slots. The size of it is provided as the second return value.
+    /// - `const`: the list of constants.
+    /// - `out`: the list of outputs.
+    ///
+    /// The instructions are of the form:
+    /// - `('add', ('out', 0), [('const', 1), ('param', 0)])` which means `out[0] = const[1] + param[0]`.
+    /// - `('mul', ('out', 0), [('temp', 0), ('param', 0)])` which means `out[0] = temp[0] * param[0]`.
+    /// - `('pow', ('out', 0), ('param', 0), -1)` which means `out[0] = param[0]^-1`.
+    /// - `('powf', ('out', 0), ('param', 0), ('param', 1))` which means `out[0] = param[0]^param[1]`.
+    /// - `('fun', ('temp', 1), cos, ('param', 0))` which means `temp[1] = cos(param[0])`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> (ins, m, c) = E('x^2+5/3+cos(x)').evaluator({}, {}, [S('x')]).get_instructions()
+    /// >>>
+    /// >>> for x in ins:
+    /// >>>     print(x)
+    /// >>> print('temp list length:', m)
+    /// >>> print('constants:', c)
+    ///
+    /// yields
+    ///
+    /// ```log
+    /// ('mul', ('out', 0), [('param', 0), ('param', 0)])
+    /// ('fun', ('temp', 1), cos, ('param', 0))
+    /// ('add', ('out', 0), [('const', 0), ('out', 0), ('temp', 1)])
+    /// temp list length: 2
+    /// constants: [5/3]
+    /// ```
+    fn get_instructions<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Vec<Bound<'py, PyTuple>>, usize, Vec<PythonExpression>)> {
+        let (instr, max, consts) = self.eval_rat.export_instructions();
+
+        fn slot_to_object(slot: &Slot) -> (&str, usize) {
+            match slot {
+                Slot::Const(x) => ("const", *x),
+                Slot::Param(x) => ("param", *x),
+                Slot::Temp(x) => ("temp", *x),
+                Slot::Out(x) => ("out", *x),
+            }
+        }
+
+        let mut v = vec![];
+        for i in &instr {
+            match i {
+                Instruction::Add(o, s) | Instruction::Mul(o, s) => {
+                    v.push(PyTuple::new(
+                        py,
+                        &[
+                            if matches!(i, Instruction::Add(_, _)) {
+                                "add"
+                            } else {
+                                "mul"
+                            }
+                            .into_pyobject(py)?
+                            .as_any(),
+                            slot_to_object(&o).into_pyobject(py)?.as_any(),
+                            s.iter()
+                                .map(|x| slot_to_object(x))
+                                .collect::<Vec<_>>()
+                                .into_pyobject(py)?
+                                .as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Pow(o, b, e) => {
+                    v.push(PyTuple::new(
+                        py,
+                        &[
+                            "pow".into_pyobject(py)?.as_any(),
+                            slot_to_object(&o).into_pyobject(py)?.as_any(),
+                            slot_to_object(&b).into_pyobject(py)?.as_any(),
+                            e.into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Powf(o, b, e) => {
+                    v.push(PyTuple::new(
+                        py,
+                        &[
+                            "powf".into_pyobject(py)?.as_any(),
+                            slot_to_object(&o).into_pyobject(py)?.as_any(),
+                            slot_to_object(&b).into_pyobject(py)?.as_any(),
+                            slot_to_object(&e).into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Fun(o, f, s) => {
+                    v.push(PyTuple::new(
+                        py,
+                        &[
+                            "fun".into_pyobject(py)?.as_any(),
+                            slot_to_object(&o).into_pyobject(py)?.as_any(),
+                            PythonExpression::from(Atom::new_var(f.get_symbol()))
+                                .into_pyobject(py)?
+                                .as_any(),
+                            slot_to_object(&s).into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+            }
+        }
+        Ok((
+            v,
+            max,
+            consts
+                .into_iter()
+                .map(|x| Atom::new_num(x).into())
+                .collect(),
+        ))
+    }
+
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate`.
+    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
+        let n_inputs = inputs.len() / self.eval.get_input_len();
+        let mut res = vec![0.; self.eval.get_output_len() * n_inputs];
+        for (r, s) in res
+            .chunks_mut(self.eval.get_output_len())
+            .zip(inputs.chunks(self.eval.get_input_len()))
+        {
+            self.eval.evaluate(s, r);
+        }
+
+        res
+    }
+
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate_complex`.
+    fn evaluate_complex_flat<'py>(
+        &mut self,
+        py: Python<'py>,
+        inputs: Vec<Complex<f64>>,
+    ) -> Vec<Bound<'py, PyComplex>> {
+        let n_inputs = inputs.len() / self.eval_complex.get_input_len();
+        let mut res = vec![Complex::new(0., 0.); self.eval_complex.get_output_len() * n_inputs];
+        for (r, s) in res
+            .chunks_mut(self.eval_complex.get_output_len())
+            .zip(inputs.chunks(self.eval_complex.get_output_len()))
+        {
+            self.eval_complex.evaluate(s, r);
+        }
+
+        res.into_iter()
+            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        inputs
+            .iter()
+            .map(|s| {
+                let mut v = vec![0.; self.eval.get_output_len()];
+                self.eval.evaluate(s, &mut v);
+                v
+            })
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate_complex<'py>(
+        &mut self,
+        python: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>,
+    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
+        let mut v = vec![Complex::new_zero(); self.eval_complex.get_output_len()];
+        inputs
+            .iter()
+            .map(|s| {
+                self.eval_complex.evaluate(s, &mut v);
+                v.iter()
+                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+    #[pyo3(signature =
+        (function_name,
+        filename,
+        library_name,
+        inline_asm = "default",
+        optimization_level = 3,
+        compiler_path = None,
+    ))]
+    fn compile(
+        &self,
+        function_name: &str,
+        filename: &str,
+        library_name: &str,
+        inline_asm: &str,
+        optimization_level: u8,
+        compiler_path: Option<&str>,
+    ) -> PyResult<PythonCompiledExpressionEvaluator> {
+        let mut options = CompileOptions::default();
+        options.optimization_level = optimization_level as usize;
+        if let Some(compiler_path) = compiler_path {
+            options.compiler = compiler_path.to_string();
+        }
+
+        let inline_asm = match inline_asm.to_lowercase().as_str() {
+            "default" => InlineASM::default(),
+            "x64" => InlineASM::X64,
+            "aarch64" => InlineASM::AArch64,
+            "none" => InlineASM::None,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid inline assembly type specified.",
+                ))
+            }
+        };
+
+        Ok(PythonCompiledExpressionEvaluator {
+            eval: self
+                .eval
+                .export_cpp(filename, function_name, true, inline_asm)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                .compile(library_name, options)
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                })?
+                .load()
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                })?,
+            input_len: self.eval.get_input_len(),
+            output_len: self.eval.get_output_len(),
+        })
+    }
 }
 
 /// A compiled and optimized evaluator for expressions.
@@ -10749,132 +11006,6 @@ impl PythonCompiledExpressionEvaluator {
                     .collect()
             })
             .collect()
-    }
-}
-
-#[pymethods]
-impl PythonExpressionEvaluator {
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate`.
-    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
-        let n_inputs = inputs.len() / self.eval.get_input_len();
-        let mut res = vec![0.; self.eval.get_output_len() * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.eval.get_output_len())
-            .zip(inputs.chunks(self.eval.get_input_len()))
-        {
-            self.eval.evaluate(s, r);
-        }
-
-        res
-    }
-
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate_complex`.
-    fn evaluate_complex_flat<'py>(
-        &mut self,
-        py: Python<'py>,
-        inputs: Vec<Complex<f64>>,
-    ) -> Vec<Bound<'py, PyComplex>> {
-        let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
-        let n_inputs = inputs.len() / self.eval.get_input_len();
-        let mut res = vec![Complex::new(0., 0.); self.eval.get_output_len() * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.eval.get_output_len())
-            .zip(inputs.chunks(self.eval.get_output_len()))
-        {
-            eval.evaluate(s, r);
-        }
-
-        res.into_iter()
-            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
-            .collect()
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        inputs
-            .iter()
-            .map(|s| {
-                let mut v = vec![0.; self.eval.get_output_len()];
-                self.eval.evaluate(s, &mut v);
-                v
-            })
-            .collect()
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate_complex<'py>(
-        &mut self,
-        python: Python<'py>,
-        inputs: Vec<Vec<Complex<f64>>>,
-    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
-        let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
-
-        let mut v = vec![Complex::new_zero(); self.eval.get_output_len()];
-        inputs
-            .iter()
-            .map(|s| {
-                eval.evaluate(s, &mut v);
-                v.iter()
-                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
-                    .collect()
-            })
-            .collect()
-    }
-
-    /// Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
-    #[pyo3(signature =
-        (function_name,
-        filename,
-        library_name,
-        inline_asm = "default",
-        optimization_level = 3,
-        compiler_path = None,
-    ))]
-    fn compile(
-        &self,
-        function_name: &str,
-        filename: &str,
-        library_name: &str,
-        inline_asm: &str,
-        optimization_level: u8,
-        compiler_path: Option<&str>,
-    ) -> PyResult<PythonCompiledExpressionEvaluator> {
-        let mut options = CompileOptions::default();
-        options.optimization_level = optimization_level as usize;
-        if let Some(compiler_path) = compiler_path {
-            options.compiler = compiler_path.to_string();
-        }
-
-        let inline_asm = match inline_asm.to_lowercase().as_str() {
-            "default" => InlineASM::default(),
-            "x64" => InlineASM::X64,
-            "aarch64" => InlineASM::AArch64,
-            "none" => InlineASM::None,
-            _ => {
-                return Err(exceptions::PyValueError::new_err(
-                    "Invalid inline assembly type specified.",
-                ))
-            }
-        };
-
-        Ok(PythonCompiledExpressionEvaluator {
-            eval: self
-                .eval
-                .export_cpp(filename, function_name, true, inline_asm)
-                .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
-                .compile(library_name, options)
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
-                })?
-                .load()
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
-                })?,
-            input_len: self.eval.get_input_len(),
-            output_len: self.eval.get_output_len(),
-        })
     }
 }
 

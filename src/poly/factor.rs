@@ -997,7 +997,7 @@ where
         // take the pth root
         // the coefficients remain unchanged, since x^1/p = x
         // since the derivative in every var is 0, all powers are divisible by p
-        let p = self.ring.characteristic().to_u64() as usize;
+        let p = self.ring.characteristic().to_u64().unwrap() as usize;
         let mut b = f.clone();
         for es in b.exponents_iter_mut() {
             for e in es {
@@ -1055,7 +1055,7 @@ where
         let mut factors = vec![];
 
         let mut i = 1;
-        while !w.is_constant() && i < self.ring.characteristic().to_u64() as usize {
+        while !w.is_constant() && i < self.ring.characteristic().to_u64().unwrap() as usize {
             let z = v - w.derivative(var);
             let g = w.gcd(&z);
             w = w / &g;
@@ -1335,7 +1335,7 @@ where
             if self.ring.size() == i {
                 let field = self
                     .ring
-                    .upgrade(self.ring.get_extension_degree().to_u64() as usize + 1);
+                    .upgrade(self.ring.get_extension_degree().to_u64().unwrap() as usize + 1);
 
                 debug!(
                     "Upgrading to Galois field with exponent {}",
@@ -1800,7 +1800,7 @@ where
                 // the field is too small, upgrade
                 let field = self
                     .ring
-                    .upgrade(self.ring.get_extension_degree().to_u64() as usize + 1);
+                    .upgrade(self.ring.get_extension_degree().to_u64().unwrap() as usize + 1);
 
                 debug!(
                     "Upgrading to Galois field with exponent {}",
@@ -2344,7 +2344,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let lcoeff_p = lcoeff.to_finite_field(&u.ring);
         let gamma_p = gamma.to_finite_field(&u.ring);
         let field = u.ring.clone();
-        let p = Integer::from(field.get_prime().to_u64());
+        let p = field.get_prime().to_integer();
 
         let a = self.clone().mul_coeff(gamma.clone());
 
@@ -2764,7 +2764,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         // TODO: if bound is less than u64, we may also use Zp64 for the computation
         let bound = shifted_poly.coefficient_bound();
 
-        let p = Integer::from(field.get_prime().to_u64());
+        let p = field.get_prime().to_integer();
         let mut max_p = p.clone();
         let mut k = 1;
         while &max_p * 2 < bound {
@@ -3497,8 +3497,9 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         // can get unlucky with numbers being a multiple of the prime
         let mut prime_iter = PrimeIteratorU64::new(1 << 22);
         let mut field;
+        let mut p;
         'new_prime: loop {
-            let p = prime_iter.next().unwrap();
+            p = prime_iter.next().unwrap();
 
             if p > u32::MAX as u64 {
                 panic!("Ran out of primes during factorization of {}", self);
@@ -3530,8 +3531,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         // TODO: modify bound by taking the shifts into account?
         let bound = self.coefficient_bound();
 
-        let p = field.get_prime().to_u64() as u32;
-        let p_int = Integer::from(field.get_prime().to_u64());
+        let p_int = field.get_prime().to_integer();
         let mut max_p = p_int.clone();
         let mut k = 1;
         while &max_p * 2 < bound {
@@ -3544,7 +3544,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             &sample_points,
             order,
             max_p.clone(),
-            p,
+            p as u32,
             k,
         ) {
             Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
@@ -3587,7 +3587,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             &sorted_biv_factors_ff,
             order,
             &sample_points,
-            p,
+            p as u32,
             k,
         );
 

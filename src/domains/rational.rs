@@ -7,13 +7,14 @@ use std::{
 };
 
 use crate::{
-    poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
+    poly::{polynomial::PolynomialRing, Exponent},
     printer::{PrintOptions, PrintState},
 };
 
 use super::{
     finite_field::{
-        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
+        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField, Two,
+        Zp, Z2,
     },
     integer::{Integer, IntegerRing, Z},
     EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
@@ -917,16 +918,17 @@ impl Rational {
         let mut cur_result = Integer::one();
         let mut prime_accum = Integer::one();
         let mut prime_sample_point = vec![];
-        let mut prime_start = prime_start.unwrap_or(0);
+        let mut primes =
+            PrimeIteratorU64::new(u32::get_large_prime() as u64 + prime_start.unwrap_or(0) as u64);
 
         let mut last_guess = Rational::zero();
         for i in 0..sample.len() {
-            if prime_start + i >= LARGE_U32_PRIMES.len() {
+            let Some(p) = primes.next() else {
                 return Err("Ran out of primes for rational reconstruction");
-            }
-
-            let p = LARGE_U32_PRIMES[prime_start]; // TODO: support u64
-            prime_start += 1;
+            };
+            let Some(p) = u32::try_from_integer(p.into()) else {
+                return Err("Ran out of primes for rational reconstruction");
+            };
 
             let field = FiniteField::<u32>::new(p);
             prime_sample_point.clear();
@@ -936,8 +938,7 @@ impl Rational {
 
             let eval = f(&field, &prime_sample_point);
 
-            // NOTE: check bounds if upgraded to u64 primes!
-            let eval_conv = Integer::Natural(field.from_element(&eval).to_u64() as i64);
+            let eval_conv = field.from_element(&eval).to_integer();
 
             if i == 0 {
                 cur_result = eval_conv;

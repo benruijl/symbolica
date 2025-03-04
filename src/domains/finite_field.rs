@@ -154,10 +154,33 @@ impl<UField: PartialOrd> InternalOrdering for FiniteFieldElement<UField> {
 }
 
 pub trait FiniteFieldWorkspace: Clone + Display + Eq + Hash {
+    /// Get a large prime with the guarantee that there are still many primes above
+    /// this number in `Self`.
+    fn get_large_prime() -> Self;
+
+    fn try_from_integer(n: Integer) -> Option<Self>;
+
+    fn to_integer(&self) -> Integer;
+
     /// Convert to u64.
-    fn to_u64(&self) -> u64;
-    fn to_integer(&self) -> Integer {
-        self.to_u64().into()
+    fn to_u64(&self) -> Option<u64> {
+        match self.to_integer() {
+            Integer::Natural(s) => {
+                if s >= 0 {
+                    Some(s as u64)
+                } else {
+                    None
+                }
+            }
+            Integer::Double(s) => {
+                if s >= 0 && s <= u64::MAX as i128 {
+                    Some(s as u64)
+                } else {
+                    None
+                }
+            }
+            Integer::Large(_) => None,
+        }
     }
 }
 
@@ -226,8 +249,25 @@ impl Zp {
 }
 
 impl FiniteFieldWorkspace for u32 {
-    fn to_u64(&self) -> u64 {
-        *self as u64
+    fn get_large_prime() -> u32 {
+        2147483659
+    }
+
+    fn try_from_integer(n: Integer) -> Option<Self> {
+        match n {
+            Integer::Natural(s) => {
+                if s >= 0 && s <= u32::MAX as i64 {
+                    Some(s as u32)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn to_integer(&self) -> Integer {
+        Integer::Natural(*self as i64)
     }
 }
 
@@ -489,15 +529,39 @@ impl Field for Zp {
 }
 
 impl FiniteFieldWorkspace for u64 {
+    fn get_large_prime() -> u64 {
+        18346744073709552000
+    }
+
+    fn try_from_integer(n: Integer) -> Option<Self> {
+        match n {
+            Integer::Natural(s) => {
+                if s >= 0 {
+                    Some(s as u64)
+                } else {
+                    None
+                }
+            }
+            Integer::Double(d) => {
+                if d >= 0 && d <= u64::MAX as i128 {
+                    Some(d as u64)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     #[inline]
-    fn to_u64(&self) -> u64 {
-        *self
+    fn to_integer(&self) -> Integer {
+        (*self).into()
     }
 }
 
 impl Zp64 {
     /// Create a new finite field. `n` must be a prime larger than 2.
-    fn new(p: u64) -> Zp64 {
+    pub fn new(p: u64) -> Zp64 {
         if p % 2 == 0 {
             panic!("Prime 2 is not supported: use Z2 instead.");
         }
@@ -859,8 +923,24 @@ impl Display for Two {
 }
 
 impl FiniteFieldWorkspace for Two {
-    fn to_u64(&self) -> u64 {
-        self.0 as u64
+    fn get_large_prime() -> Two {
+        Two(2)
+    }
+
+    fn try_from_integer(n: Integer) -> Option<Self> {
+        if n == 0 {
+            Some(Two(0))
+        } else if n == 1 {
+            Some(Two(1))
+        } else if n == 2 {
+            Some(Two(2))
+        } else {
+            None
+        }
+    }
+
+    fn to_integer(&self) -> Integer {
+        self.0.into()
     }
 }
 
@@ -1078,8 +1158,36 @@ impl Display for Mersenne64 {
 }
 
 impl FiniteFieldWorkspace for Mersenne64 {
-    fn to_u64(&self) -> u64 {
-        Self::PRIME
+    fn get_large_prime() -> Mersenne64 {
+        Mersenne64(Self::PRIME)
+    }
+
+    fn try_from_integer(n: Integer) -> Option<Self> {
+        if n <= Self::PRIME {
+            match n {
+                Integer::Natural(s) => {
+                    if s >= 0 {
+                        Some(Mersenne64(s as u64))
+                    } else {
+                        None
+                    }
+                }
+                Integer::Double(d) => {
+                    if d >= 0 && d <= Self::PRIME as i128 {
+                        Some(Mersenne64(d as u64))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn to_integer(&self) -> Integer {
+        self.0.into()
     }
 }
 
@@ -1328,17 +1436,12 @@ impl Field for FiniteField<Mersenne64> {
 }
 
 impl FiniteFieldWorkspace for Integer {
-    /// Panics when the modulus is larger than 2^64.
-    fn to_u64(&self) -> u64 {
-        if self <= &u64::MAX {
-            match self {
-                Integer::Natural(x) => *x as u64,
-                Integer::Double(x) => *x as u64,
-                Integer::Large(_) => unreachable!(),
-            }
-        } else {
-            panic!("Modulus {} is too large to be converted to u64", self)
-        }
+    fn get_large_prime() -> Integer {
+        Integer::Double(85070591730234615865843651857942052871)
+    }
+
+    fn try_from_integer(n: Integer) -> Option<Self> {
+        Some(n)
     }
 
     fn to_integer(&self) -> Integer {

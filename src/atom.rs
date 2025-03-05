@@ -48,11 +48,7 @@ use representation::InlineVar;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    coefficient::Coefficient,
-    parser::Token,
-    printer::{AtomPrinter, PrintOptions},
-    state::{RecycledAtom, State, Workspace},
-    transformer::StatsOptions,
+    coefficient::Coefficient, parser::Token, printer::{AtomPrinter, PrintOptions}, state::{RecycledAtom, State, Workspace}, transformer::StatsOptions
 };
 
 use std::{borrow::Cow, cmp::Ordering, hash::Hash, ops::DerefMut};

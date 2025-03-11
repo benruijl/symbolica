@@ -195,26 +195,38 @@ impl Atom {
         Ok(())
     }
 
-    /// Export the atom and state to a binary stream. It can be loaded
-    /// with [Atom::import].
-    pub fn export<W: Write>(&self, dest: W) -> Result<(), std::io::Error> {
-        self.as_view().export(dest)
-    }
-
     /// Import an expression and its state from a binary stream. The state will be merged
     /// with the current one. If a symbol has conflicting attributes, the conflict
     /// can be resolved using the renaming function `conflict_fn`.
     ///
-    /// Expressions can be exported using [Atom::export].
+    /// Expressions can be exported using [Atom::export](crate::atom::core::AtomCore::export).
     pub fn import<R: Read>(
         mut source: R,
         conflict_fn: Option<Box<dyn Fn(&str) -> String>>,
     ) -> Result<Atom, std::io::Error> {
         let state_map = State::import(&mut source, conflict_fn)?;
 
-        let mut a = Atom::new();
-        a.read(source)?;
-        Ok(a.as_view().rename(&state_map))
+        let mut n_terms_buf = [0; 8];
+        source.read_exact(&mut n_terms_buf)?;
+        let n_terms = u64::from_le_bytes(n_terms_buf);
+
+        if n_terms == 1 {
+            let mut a = Atom::new();
+            a.read(source)?;
+            Ok(a.as_view().rename(&state_map))
+        } else {
+            let mut res = Atom::new();
+            let a = res.to_add();
+
+            let mut tmp = Atom::new();
+
+            for _ in 0..n_terms {
+                tmp.read(&mut source)?;
+                a.extend(tmp.as_view());
+            }
+
+            Ok(res.as_view().rename(&state_map))
+        }
     }
 
     /// Read a stateless expression from a binary stream, renaming the symbols using the provided state map.
@@ -1562,6 +1574,8 @@ impl<'a> AtomView<'a> {
     #[inline(always)]
     pub fn export<W: Write>(&self, mut dest: W) -> Result<(), std::io::Error> {
         State::export(&mut dest)?;
+
+        dest.write_u64::<LittleEndian>(1)?; // export a single expression
 
         let d = self.get_data();
         dest.write_u8(0)?;

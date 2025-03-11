@@ -368,7 +368,7 @@ impl<'a> AtomView<'a> {
         }
 
         match self {
-            AtomView::Num(_) => write!(out, "{}", self).unwrap(),
+            AtomView::Num(_) => write!(out, "{}", self.printer(PrintOptions::file())).unwrap(),
             AtomView::Var(v) => v.get_symbol().format(&PrintOptions::file(), out).unwrap(),
             AtomView::Fun(f) => {
                 f.get_symbol().format(&PrintOptions::file(), out).unwrap();

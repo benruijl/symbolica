@@ -46,6 +46,12 @@ pub trait AtomCore {
     /// Take a view of the atom.
     fn as_atom_view(&self) -> AtomView;
 
+    /// Export the atom and state to a binary stream. It can be loaded
+    /// with [Atom::import].
+    fn export<W: std::io::Write>(&self, dest: W) -> Result<(), std::io::Error> {
+        self.as_atom_view().export(dest)
+    }
+
     /// Get the symbol of a variable or function.
     ///
     /// # Example

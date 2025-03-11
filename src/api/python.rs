@@ -6014,6 +6014,52 @@ impl PythonTermStreamer {
         self.stream += &mut rhs.stream;
     }
 
+    /// Clear all terms from the term streamer.
+    pub fn clear(&mut self) {
+        self.stream.clear()
+    }
+
+    /// Load terms and their state from a binary stream into the term streamer.
+    /// The state will be merged with the current one. If a symbol has conflicting attributes, the conflict
+    /// can be resolved using the renaming function `conflict_fn`.
+    ///
+    /// A term stream can be exported using `TermStreamer.save`.
+    #[pyo3(signature = (filename, conflict_fn=None))]
+    pub fn load(&mut self, filename: &str, conflict_fn: Option<PyObject>) -> PyResult<u64> {
+        let f = File::open(filename)
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))?;
+        let reader = brotli::Decompressor::new(BufReader::new(f), 4096);
+
+        self.stream
+            .import(
+                reader,
+                match conflict_fn {
+                    Some(f) => Some(Box::new(move |name: &str| -> SmartString<LazyCompact> {
+                        Python::with_gil(|py| {
+                            f.call1(py, (name,)).unwrap().extract::<String>(py).unwrap()
+                        })
+                        .into()
+                    })),
+                    None => None,
+                },
+            )
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))
+    }
+
+    /// Export terms and their state to a binary stream.
+    /// The resulting file can be read back using `TermStreamer.load` or
+    /// by using `Expression.load`. In the latter case, the whole term stream will be read into memory
+    /// as a single expression.
+    #[pyo3(signature = (filename, compression_level=9))]
+    pub fn save(&mut self, filename: &str, compression_level: u32) -> PyResult<()> {
+        let f = File::create(filename)
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not create file: {}", e)))?;
+        let writer = CompressorWriter::new(BufWriter::new(f), 4096, compression_level, 22);
+        self.stream
+            .export(writer)
+            .map_err(|e| exceptions::PyIOError::new_err(e))
+    }
+
     /// Get the total number of bytes of the stream.
     pub fn get_byte_size(&self) -> usize {
         self.stream.get_byte_size()

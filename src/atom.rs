@@ -78,12 +78,16 @@ impl NamespacedSymbol {
     /// Parse a string into a namespaced symbol.
     /// Panics if input does not contain a symbol in the format `namespace::symbol`.
     pub fn parse(s: &str) -> NamespacedSymbol {
-        let mut parts = s.split("::");
-        let namespace = parts.next().unwrap();
-        let symbol = parts.next().unwrap();
+        let (namespace, _partial_symbol) = s.rsplit_once("::").unwrap_or_else(|| {
+            panic!(
+                "Input {} does not contain a symbol in the format `namespace::symbol`.",
+                s
+            )
+        });
+
         NamespacedSymbol {
             namespace: namespace.to_string().into(),
-            symbol: symbol.to_string().into(),
+            symbol: s.to_string().into(),
             file: "".into(),
             line: 0,
         }
@@ -92,9 +96,7 @@ impl NamespacedSymbol {
     /// Parse a string into a namespaced symbol.
     /// Panics if input does not contain a symbol in the format `namespace::symbol`.
     pub fn try_parse<S: AsRef<str>>(s: S) -> Option<NamespacedSymbol> {
-        let mut parts = s.as_ref().split("::");
-        let namespace = parts.next()?;
-        let _partial_symbol = parts.next()?;
+        let (namespace, _partial_symbol) = s.as_ref().rsplit_once("::")?;
         Some(NamespacedSymbol {
             namespace: namespace.to_string().into(),
             symbol: s.as_ref().to_string().into(),
@@ -106,9 +108,7 @@ impl NamespacedSymbol {
     /// Parse a string into a namespaced symbol.
     /// Panics if input does not contain a symbol in the format `namespace::symbol`.
     pub fn try_parse_lit(s: &'static str) -> Option<NamespacedSymbol> {
-        let mut parts = s.split("::");
-        let namespace = parts.next()?;
-        let _partial_symbol = parts.next()?;
+        let (namespace, _partial_symbol) = s.rsplit_once("::")?;
         Some(NamespacedSymbol {
             namespace: namespace.into(),
             symbol: s.into(),

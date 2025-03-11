@@ -2643,6 +2643,25 @@ class TermStreamer:
     def __iadd__(self, other: TermStreamer) -> None:
         """Add another term streamer to this one."""
 
+    def clear(self) -> None:
+        """Clear the term streamer."""
+
+    def load(self, filename: str, conflict_fn: Optional[Callable[[str], str]] = None) -> int:
+        """Load terms and their state from a binary file into the term streamer. The number of terms loaded is returned.
+
+        The state will be merged with the current one. If a symbol has conflicting attributes, the conflict
+        can be resolved using the renaming function `conflict_fn`.
+
+        A term stream can be exported using `TermStreamer.save`.
+        """
+
+    def save(self, filename: str, compression_level: int = 9) -> None:
+        """Export terms and their state to a binary file.
+        The resulting file can be read back using `TermStreamer.load` or
+        by using `Expression.load`. In the latter case, the whole term stream will be read into memory
+        as a single expression.
+        """
+
     def get_byte_size(self) -> int:
         """Get the byte size of the term stream."""
 

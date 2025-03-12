@@ -27,8 +27,8 @@ use std::{
 use colored::{Color, Colorize};
 
 use crate::{
-    atom::Atom, domains::{
-        float::Powf, atom::AtomField, integer::Z, rational::{Rational, Q}, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing
+    domains::{
+        float::Powf, integer::Z, rational::{Rational, Q}, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing
     }, poly::Variable, printer::{PrintOptions, PrintState}
 };
 
@@ -1814,7 +1814,7 @@ impl <F: Field> Matrix<F> {
 
 #[cfg(test)]
 mod test {
-    use std::ops::Mul;
+    use std::ops::{Mul, Sub};
 
     use crate::{
         atom::{Atom, AtomCore, AtomView},
@@ -2232,8 +2232,10 @@ mod test {
         assert_eq!(r.nrows, 2);
         assert_eq!(r.ncols, 2);
         assert!(q.mul(&q.transpose()).is_one());
-        println!("{}", q.mul(&r));
-        // assert!(q.mul(&r).sub(&matrix).is_zero());
+        let diff = q.mul(&r).sub(&matrix);
+        for c in diff.into_vec() {
+            assert!(c.zero_test(1, 1e-7).is_true());
+        }
 
         let matrix = Matrix::from_linear(
             vec![
@@ -2255,18 +2257,20 @@ mod test {
         assert_eq!(r.nrows, 3);
         assert_eq!(r.ncols, 2);
         assert!(q.mul(&q.transpose()).is_one());
-        println!("{}", q.mul(&r));
+        let diff = q.mul(&r).sub(&matrix);
+        for c in diff.into_vec() {
+            assert!(c.zero_test(1, 1e-7).is_true());
+        }
 
-        println!("matrix: {}", matrix);
         let (q, r) = matrix.reduced_qr_decompose().unwrap();
-        println!("Q: {}", q);
-        println!("R: {}", r);
-
         assert_eq!(q.nrows, 3);
         assert_eq!(q.ncols, 2);
         assert_eq!(r.nrows, 2);
         assert_eq!(r.ncols, 2);
         assert!(q.transpose().mul(&q).is_one());
-        println!("{}", q.mul(&r));
+        let diff = q.mul(&r).sub(&matrix);
+        for c in diff.into_vec() {
+            assert!(c.zero_test(1, 1e-7).is_true());
+        }
     }
 }

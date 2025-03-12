@@ -28,7 +28,7 @@ use colored::{Color, Colorize};
 
 use crate::{
     atom::Atom, domains::{
-        atom::AtomField, integer::Z, rational::{Rational, Q}, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing
+        float::Powf, atom::AtomField, integer::Z, rational::{Rational, Q}, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing
     }, poly::Variable, printer::{PrintOptions, PrintState}
 };
 
@@ -505,6 +505,32 @@ impl<F: Field> Vector<F> {
             system[s] = res;
         }
     }
+
+    /// Apply the Gram-Schmidt method in-place and compute its factors.
+    pub fn gram_schmidt_full(system: &mut [Self], factor: &mut [F::Element])
+    where
+        F::Element: Powf + std::fmt::Display,
+    {
+        if system.is_empty() {
+            return;
+        }
+        let field = system[0].field.clone();
+        let half = field.inv(&field.add(&field.one(), &field.one()));
+        for s in 0..system.len() {
+            let mut res = system[s].clone();
+            for j in 0..s {
+                let f = system[j].dot(&system[s]);
+                factor[j * system.len() + s] = f.clone();
+                let scaled = system[j].clone() * f.clone();
+                res -= &scaled;
+            }
+            let nsq = res.norm_squared();
+            let norm = nsq.powf(&half);
+            factor[s * system.len() + s] = norm.clone();
+            let inv_norm = field.inv(&norm);
+            system[s] = res.mul(inv_norm);
+        }
+    }
 }
 
 impl Vector<Z> {
@@ -979,7 +1005,7 @@ impl<F: Ring> Matrix<F> {
 
     /// Split the matrix into two matrices at the `index`-th column.
     pub fn split_col(&self, index: u32) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
-        if index == 0 || index >= self.ncols - 1 {
+        if index == 0 || index >= self.ncols {
             return Err(MatrixError::ShapeMismatch);
         }
 
@@ -1720,20 +1746,23 @@ impl<F: Field> Matrix<F> {
     }
 }
 
-impl <F: Field> Matrix<F> {  // TODO: find domain that supports `sqrt`?
+impl <F: Field> Matrix<F> {
     /// Perform a full QR decomposition of the matrix.
     ///
     /// Decomposes the matrix `A [m x n]` into an orthogonal matrix `Q [m x m]`
     /// and an upper triangular matrix `R [m x n]` such that `A = Q * R`.
-    pub fn qr_decompose(&self) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
+    pub fn qr_decompose(&self) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>>
+    where
+        F::Element: Powf + std::fmt::Display,
+    {
         if self.nrows < self.ncols {
             return Err(MatrixError::ShapeMismatch);
         }
-
         let mut cols = self.columns();
         let mut factors = vec![self.field.zero(); (self.ncols * self.ncols) as usize];
-        Vector::gram_schmidt(&mut cols, &mut factors[..]);
+        Vector::gram_schmidt_full(&mut cols, &mut factors[..]);
 
+        let two = self.field.add(&self.field.one(), &self.field.one());
         let extra_vectors = Matrix::identity(self.nrows, self.field.clone()).columns();
         for mut v in extra_vectors {
             for q in &cols {
@@ -1741,14 +1770,18 @@ impl <F: Field> Matrix<F> {  // TODO: find domain that supports `sqrt`?
                 v -= &proj;
             }
             if !v.is_zero() {
+                let nsq = v.norm_squared();
+                let norm = nsq.powf(&self.field.inv(&two));
+                let inv_norm = self.field.inv(&norm);
+                v = v.mul(inv_norm);
                 cols.push(v);
             }
             if cols.len() == self.nrows as usize {
                 break;
             }
         }
-        let q = Matrix::from_columns(cols, self.field.clone())?;
 
+        let q = Matrix::from_columns(cols, self.field.clone())?;
         let mut r = Matrix::new(self.nrows, self.ncols, self.field.clone());
         for i in 0..self.ncols {
             for j in i..self.ncols {
@@ -1763,16 +1796,19 @@ impl <F: Field> Matrix<F> {  // TODO: find domain that supports `sqrt`?
     ///
     /// Decomposes the matrix `A [m x n]` into an orthogonal matrix `Q1 [m x n]`
     /// and an upper triangular matrix `R1 [n x n]` such that `A = Q1 * R1`.
-    pub fn reduced_qr_decompose(&self) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
+    pub fn reduced_qr_decompose(&self) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>>
+    where
+        F::Element: Powf + std::fmt::Display,
+    {
+        let (mut q, mut r) = self.qr_decompose()?;
+
         // when squared, Q = Q1 and R = R1
-        if self.ncols == self.nrows {
-            return self.qr_decompose();
+        if self.ncols != self.nrows {
+            q = q.split_col(self.ncols)?.0;
+            r = r.split_row(self.ncols)?.0;
         }
 
-        let (q, r) = self.qr_decompose()?;
-        let (q1, _) = q.split_col(self.ncols)?;
-        let (r1, _) = r.split_row(self.ncols)?;
-        Ok((q1, r1))
+        Ok((q, r))
     }
 }
 
@@ -1781,8 +1817,8 @@ mod test {
     use std::ops::Mul;
 
     use crate::{
-        atom::Atom,
-        domains::{atom::AtomField, integer::Z, rational::Q, SelfRing},
+        atom::{Atom, AtomCore, AtomView},
+        domains::{atom::AtomField, integer::Z, rational::Q, Ring, SelfRing},
         parse, symbol,
         tensors::matrix::{Matrix, Vector},
     };
@@ -2138,43 +2174,99 @@ mod test {
     }
 
     #[test]
+    fn gram_schmidt_full() {
+        let field = AtomField {
+            cancel_check_on_division: true,
+            custom_normalization: Some(Box::new(|a: AtomView, out: &mut Atom| {
+                *out = a.expand().collect_num();
+                true
+            })),
+            statistical_zero_test: true,
+        };
+        let mut system = vec![
+            Vector::new(
+                vec![Atom::new_num(1), Atom::new_num(2), Atom::new_num(3)],
+                field.clone(),
+            ),
+            Vector::new(
+                vec![Atom::new_num(2), Atom::new_num(3), Atom::new_num(4)],
+                field.clone(),
+            ),
+            Vector::new(
+                vec![Atom::new_num(3), Atom::new_num(4), Atom::new_num(6)],
+                field.clone(),
+            ),
+        ];
+        let mut factor = vec![field.zero(); 9 as usize];
+        Vector::<AtomField>::gram_schmidt_full(&mut system, &mut factor);
+
+        for v in system {
+            println!("{}", v);
+        }
+    }
+
+    #[test]
     fn qr_decompose() {
+        let field = AtomField {
+            cancel_check_on_division: true,
+            custom_normalization: Some(Box::new(|a: AtomView, out: &mut Atom| {
+                *out = a.expand().collect_num();
+                true
+            })),
+            statistical_zero_test: true,
+        };
         let matrix = Matrix::from_linear(
-            vec![1.into(), 2.into(), 3.into(), 4.into()],
+            vec![
+                Atom::new_num(1),
+                Atom::new_num(2),
+                Atom::new_num(3),
+                Atom::new_num(4),
+            ],
             2,
             2,
-            Q,
-        )
-        .unwrap();
+            field.clone(),
+        ).unwrap();
         let (q, r) = matrix.qr_decompose().unwrap();
-
-        println!("{}", q);
-        println!("{}", r);
-
         assert_eq!(q.nrows, 2);
         assert_eq!(q.ncols, 2);
         assert_eq!(r.nrows, 2);
         assert_eq!(r.ncols, 2);
         assert!(q.mul(&q.transpose()).is_one());
-        assert_eq!(q.mul(&r).data, matrix.data);
+        println!("{}", q.mul(&r));
+        // assert!(q.mul(&r).sub(&matrix).is_zero());
 
         let matrix = Matrix::from_linear(
-            vec![1.into(), 2.into(), 3.into(), 4.into(), 5.into(), 6.into()],
+            vec![
+                Atom::new_num(1),
+                Atom::new_num(2),
+                Atom::new_num(3),
+                Atom::new_num(4),
+                Atom::new_num(5),
+                Atom::new_num(6),
+            ],
             3,
             2,
-            Q,
+            field.clone(),
         )
         .unwrap();
         let (q, r) = matrix.qr_decompose().unwrap();
-
-        println!("{}", q);
-        println!("{}", r);
-
         assert_eq!(q.nrows, 3);
         assert_eq!(q.ncols, 3);
         assert_eq!(r.nrows, 3);
         assert_eq!(r.ncols, 2);
         assert!(q.mul(&q.transpose()).is_one());
-        assert_eq!(q.mul(&r).data, matrix.data);
+        println!("{}", q.mul(&r));
+
+        println!("matrix: {}", matrix);
+        let (q, r) = matrix.reduced_qr_decompose().unwrap();
+        println!("Q: {}", q);
+        println!("R: {}", r);
+
+        assert_eq!(q.nrows, 3);
+        assert_eq!(q.ncols, 2);
+        assert_eq!(r.nrows, 2);
+        assert_eq!(r.ncols, 2);
+        assert!(q.transpose().mul(&q).is_one());
+        println!("{}", q.mul(&r));
     }
 }

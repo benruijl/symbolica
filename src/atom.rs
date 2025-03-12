@@ -48,11 +48,7 @@ use representation::InlineVar;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    coefficient::Coefficient,
-    parser::Token,
-    printer::{AtomPrinter, PrintOptions},
-    state::{RecycledAtom, State, Workspace},
-    transformer::StatsOptions,
+    coefficient::Coefficient, domains::float::Powf, parser::Token, printer::{AtomPrinter, PrintOptions}, state::{RecycledAtom, State, Workspace}, transformer::StatsOptions
 };
 
 use std::{borrow::Cow, cmp::Ordering, hash::Hash, ops::DerefMut};
@@ -1211,6 +1207,12 @@ impl PartialOrd for Atom {
 impl Ord for Atom {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_view().cmp(&other.as_view())
+    }
+}
+
+impl Powf for Atom {
+    fn powf(&self, e: &Self) -> Self {
+        self.pow(e)
     }
 }
 

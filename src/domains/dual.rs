@@ -3,7 +3,7 @@
 //! ```
 //! use symbolica::{
 //! create_hyperdual_from_components, create_hyperdual_single_derivative,
-//! domains::{float::NumericalFloatLike, rational::Rational},
+//! domains::{float::NumericalFloatLike, float::Real, rational::Rational},
 //! };
 //!
 //! create_hyperdual_single_derivative!(SingleDual, 3);
@@ -188,7 +188,7 @@ pub const fn get_mult_table<const N: usize, const C: usize, const T: usize>(
 /// ```
 /// # use symbolica::{
 /// # create_hyperdual_single_derivative,
-/// # domains::{float::NumericalFloatLike, rational::Rational},
+/// # domains::{float::NumericalFloatLike, float::Real, rational::Rational},
 /// # };
 /// create_hyperdual_single_derivative!(Dual, 3);
 ///
@@ -234,7 +234,7 @@ macro_rules! create_hyperdual_from_depths {
 /// ```
 /// # use symbolica::{
 /// # create_hyperdual_from_components,
-/// # domains::{float::NumericalFloatLike, rational::Rational},
+/// # domains::{float::NumericalFloatLike, float::Real, rational::Rational},
 /// # };
 /// create_hyperdual_from_components!(
 ///     Dual,
@@ -730,6 +730,14 @@ macro_rules! create_hyperdual_from_components {
             }
         }
 
+        impl<T: $crate::domains::float::Real> $crate::domains::float::Powf for $t<T> {
+            #[inline]
+            fn powf(&self, e: &Self) -> Self {
+                // TODO: improve
+                (self.log() * e).exp()
+            }
+        }
+
         impl<T: $crate::domains::float::Real> $crate::domains::float::Real for $t<T> {
             #[inline(always)]
             fn pi(&self) -> Self {
@@ -992,12 +1000,6 @@ macro_rules! create_hyperdual_from_components {
             #[inline(always)]
             fn atanh(&self) -> Self {
                 unimplemented!()
-            }
-
-            #[inline]
-            fn powf(&self, e: &Self) -> Self {
-                // TODO: improve
-                (self.log() * e).exp()
             }
         }
     };

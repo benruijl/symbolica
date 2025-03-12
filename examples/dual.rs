@@ -1,6 +1,6 @@
 use symbolica::{
     create_hyperdual_from_components,
-    domains::{float::NumericalFloatLike, float::Real, rational::Rational},
+    domains::{float::NumericalFloatLike, rational::Rational},
 };
 
 create_hyperdual_from_components!(

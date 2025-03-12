@@ -515,22 +515,15 @@ impl<F: Field> Vector<F> {
     where
         F: EuclideanNormRing,
     {
-        if system.is_empty() {
-            return;
-        }
+        Self::gram_schmidt(system, factor);
         let field = system[0].field.clone();
-        for s in 0..system.len() {
-            let mut res = system[s].clone();
-            for j in 0..s {
-                let f = system[j].dot(&system[s]);
-                factor[j * system.len() + s] = f.clone();
-                let scaled = system[j].clone() * f.clone();
-                res -= &scaled;
-            }
-            let norm = field.euclidean_norm(&res.data);
-            factor[s * system.len() + s] = norm.clone();
+        let n = system.len();
+
+        for s in 0..n {
+            let norm = field.euclidean_norm(&system[s].data);
+            factor[s * n + s] = norm.clone();
             let inv_norm = field.inv(&norm);
-            system[s] = res.mul(inv_norm);
+            system[s] = (&system[s]).mul(inv_norm);
         }
     }
 }
@@ -1785,7 +1778,13 @@ impl<F: Field> Matrix<F> {
         let mut r = Matrix::new(self.nrows, self.ncols, self.field.clone());
         for i in 0..self.ncols {
             for j in i..self.ncols {
-                r[(i as u32, j as u32)] = factors[(i * self.ncols + j) as usize].clone();
+                if i == j {
+                    r[(i as u32, j as u32)] = factors[(i * self.ncols + i) as usize].clone();
+                } else {
+                    let raw_proj = &factors[(j * self.ncols + i) as usize];
+                    let diag_norm = &factors[(i * self.ncols + i) as usize];
+                    r[(i as u32, j as u32)] = self.field.mul(raw_proj, diag_norm);
+                }
             }
         }
 
@@ -2181,34 +2180,46 @@ mod test {
 
     #[test]
     fn orthonormalize() {
-        let field = AtomField {
-            cancel_check_on_division: true,
-            custom_normalization: Some(Box::new(|a: AtomView, out: &mut Atom| {
-                *out = a.expand().collect_num();
-                true
-            })),
-            statistical_zero_test: true,
-        };
+        let field = FloatField::<F64>::new();
         let mut system = vec![
             Vector::new(
-                vec![Atom::new_num(1), Atom::new_num(2), Atom::new_num(3)],
+                vec![
+                    F64::from(1 as f64),
+                    F64::from(2 as f64),
+                    F64::from(3 as f64),
+                ],
                 field.clone(),
             ),
             Vector::new(
-                vec![Atom::new_num(2), Atom::new_num(3), Atom::new_num(4)],
+                vec![
+                    F64::from(2 as f64),
+                    F64::from(3 as f64),
+                    F64::from(4 as f64),
+                ],
                 field.clone(),
             ),
             Vector::new(
-                vec![Atom::new_num(3), Atom::new_num(4), Atom::new_num(6)],
+                vec![
+                    F64::from(3 as f64),
+                    F64::from(4 as f64),
+                    F64::from(6 as f64),
+                ],
                 field.clone(),
             ),
         ];
-        let mut factor = vec![field.zero(); 9 as usize];
-        Vector::<AtomField>::orthonormalize(&mut system, &mut factor);
+        let mut factor = vec![field.zero(); system.len() * system[0].len() as usize];
+        Vector::<FloatField<F64>>::orthonormalize(&mut system, &mut factor);
 
-        for v in system {
-            println!("{}", v);
+        let eps = 1e-6;
+        for (i, v) in system.iter().enumerate() {
+            assert!((v.norm_squared().into_inner() - 1.).abs() < eps);
+            for j in (i + 1)..system.len() {
+                let w = &system[j];
+                assert!(v.dot(&w).into_inner().abs() < eps);
+            }
         }
+
+        println!("{}", Matrix::from_linear(factor, 3, 3, field).unwrap());
     }
 
     #[test]
@@ -2237,7 +2248,12 @@ mod test {
             .data
             .iter()
             .all(|e| &ff.mul(e, e) < &F64::from(1e-6 as f64)));
-        assert!(q.mul(&r).sub(&matrix).is_zero());
+        assert!(q
+            .mul(&r)
+            .sub(&matrix)
+            .data
+            .iter()
+            .all(|e| &ff.mul(e, e) < &F64::from(1e-6 as f64)));
 
         let field = AtomField {
             cancel_check_on_division: true,
@@ -2257,7 +2273,8 @@ mod test {
             2,
             2,
             field.clone(),
-        ).unwrap();
+        )
+        .unwrap();
         let (q, r) = matrix.qr_decompose().unwrap();
         assert_eq!(q.nrows, 2);
         assert_eq!(q.ncols, 2);

@@ -2231,7 +2231,6 @@ mod test {
         assert_eq!(q.ncols, 2);
         assert_eq!(r.nrows, 2);
         assert_eq!(r.ncols, 2);
-        println!("{}", q.mul(&q.transpose()));
         assert!(q
             .mul(&q.transpose())
             .sub(&Matrix::identity(2, ff.clone()))

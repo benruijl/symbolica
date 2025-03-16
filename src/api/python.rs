@@ -2729,18 +2729,14 @@ impl PythonExpression {
                         ))?;
                     }
 
-                    Symbol::new_with_attributes_and_function(
-                        name,
-                        &opts,
-                        Box::new(move |input, out| {
-                            Workspace::get_local()
-                                .with(|ws| {
-                                    Transformer::execute_chain(input, &t.1, ws, out).map_err(|e| e)
-                                })
-                                .unwrap();
-                            true
-                        }),
-                    )
+                    Symbol::new_with_attributes_and_function(name, &opts, move |input, out| {
+                        Workspace::get_local()
+                            .with(|ws| {
+                                Transformer::execute_chain(input, &t.1, ws, out).map_err(|e| e)
+                            })
+                            .unwrap();
+                        true
+                    })
                 } else {
                     return Err(exceptions::PyValueError::new_err("Transformer expected"));
                 }
@@ -2766,19 +2762,14 @@ impl PythonExpression {
                         }
 
                         let t = t.1.clone();
-                        Symbol::new_with_attributes_and_function(
-                            name,
-                            &opts,
-                            Box::new(move |input, out| {
-                                Workspace::get_local()
-                                    .with(|ws| {
-                                        Transformer::execute_chain(input, &t, ws, out)
-                                            .map_err(|e| e)
-                                    })
-                                    .unwrap();
-                                true
-                            }),
-                        )
+                        Symbol::new_with_attributes_and_function(name, &opts, move |input, out| {
+                            Workspace::get_local()
+                                .with(|ws| {
+                                    Transformer::execute_chain(input, &t, ws, out).map_err(|e| e)
+                                })
+                                .unwrap();
+                            true
+                        })
                     } else {
                         return Err(exceptions::PyValueError::new_err("Transformer expected"));
                     }
@@ -4143,7 +4134,7 @@ impl PythonExpression {
             }
         }
 
-        let b = self.expr.collect_multiple::<i16, _>(
+        let b = self.expr.collect_multiple::<i16>(
             &Arc::new(xs),
             if let Some(key_map) = key_map {
                 Some(Box::new(move |key, out| {
@@ -4371,7 +4362,7 @@ impl PythonExpression {
             }
         }
 
-        let list = self.expr.coefficient_list::<i16, _>(&xs);
+        let list = self.expr.coefficient_list::<i16>(&xs);
 
         let py_list: Vec<_> = list
             .into_iter()
@@ -12107,7 +12098,7 @@ impl PythonGraph {
         }
 
         if let Some(max_bridges) = max_bridges {
-            settings = settings.max_loops(max_bridges);
+            settings = settings.max_bridges(max_bridges);
         }
 
         if let Some(allow_self_loops) = allow_self_loops {

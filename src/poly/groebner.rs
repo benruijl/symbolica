@@ -41,7 +41,7 @@
 //! .iter()
 //! .map(|x| {
 //!     let a = parse!(x).unwrap();
-//!     a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+//!     a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
 //! })
 //! .collect();
 //!
@@ -1024,7 +1024,7 @@ mod test {
             .iter()
             .map(|x| {
                 let a = parse!(x).unwrap().expand();
-                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
             })
             .collect();
 
@@ -1048,7 +1048,7 @@ mod test {
             .iter()
             .map(|x| {
                 let a = parse!(x).unwrap().expand();
-                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
                     .reorder::<GrevLexOrder>()
             })
             .collect();

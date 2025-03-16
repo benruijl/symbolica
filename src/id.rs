@@ -171,6 +171,29 @@ impl<'a> BorrowPatternOrMap for BorrowedPatternOrMap<'a> {
     }
 }
 
+/// A borrowed condition on a pattern. Set to `None` if no condition is present.
+pub trait BorrowCondition {
+    fn borrow(&self) -> Option<&Condition<PatternRestriction>>;
+}
+
+impl BorrowCondition for &Condition<PatternRestriction> {
+    fn borrow(&self) -> Option<&Condition<PatternRestriction>> {
+        Some(self)
+    }
+}
+
+impl BorrowCondition for Condition<PatternRestriction> {
+    fn borrow(&self) -> Option<&Condition<PatternRestriction>> {
+        Some(self)
+    }
+}
+
+impl BorrowCondition for Option<&Condition<PatternRestriction>> {
+    fn borrow(&self) -> Option<&Condition<PatternRestriction>> {
+        *self
+    }
+}
+
 /// A replacement, specified by a pattern and the right-hand side,
 /// with optional conditions and settings.
 #[derive(Debug, Clone)]
@@ -1778,6 +1801,25 @@ pub enum WildcardRestriction {
     NotGreedy,
 }
 
+impl WildcardRestriction {
+    /// Filter wildcard values based on a custom function.
+    ///
+    /// # Examples
+    /// Check if `x` is greater than 1:
+    /// ```
+    /// # use symbolica::id::WildcardRestriction;
+    /// WildcardRestriction::filter(|x| x.to_atom() > 1);
+    /// ```
+    pub fn filter(f: impl FilterFn + 'static) -> Self {
+        WildcardRestriction::Filter(Box::new(f))
+    }
+
+    /// Compare wildcard values based on a custom function.
+    pub fn cmp(s: Symbol, f: impl CmpFn + 'static) -> Self {
+        WildcardRestriction::Cmp(s, Box::new(f))
+    }
+}
+
 impl std::fmt::Display for WildcardRestriction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1803,6 +1845,45 @@ pub enum PatternRestriction {
     MatchStack(Box<dyn MatchStackFn>),
 }
 
+impl Condition<PatternRestriction> {
+    /// Create a condition that checks tests the currently matched wildcards.
+    /// This allows for early filtering.
+    ///
+    /// # Example
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse, symbol};
+    /// use symbolica::id::{Pattern, Condition, ConditionResult};
+    /// let expr = parse!("f(1, 2, 3)").unwrap();
+    /// let out = expr.replace_all(
+    ///    parse!("f(x_,y_,z_)").unwrap().to_pattern(),
+    ///    parse!("1").unwrap().to_pattern(),
+    ///    Condition::match_stack(|m| {
+    ///        // filter ascending order of x,y,z
+    ///        if let Some(x) = m.get(symbol!("x")) {
+    ///            if let Some(y) = m.get(symbol!("y")) {
+    ///                if x.to_atom() > y.to_atom() {
+    ///                    return ConditionResult::False;
+    ///                }
+    ///
+    ///                if let Some(z) = m.get(symbol!("z")) {
+    ///                    if y.to_atom() > z.to_atom() {
+    ///                        return ConditionResult::False;
+    ///                    }
+    ///                }
+    ///
+    ///                return ConditionResult::True;
+    ///            }
+    ///        }
+    ///        ConditionResult::Inconclusive
+    ///    }),
+    ///    None,
+    /// );
+    /// assert_eq!(out, parse!("1").unwrap());
+    /// ```
+    pub fn match_stack(f: impl MatchStackFn + 'static) -> Self {
+        PatternRestriction::MatchStack(Box::new(f)).into()
+    }
+}
 impl std::fmt::Display for PatternRestriction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1832,6 +1913,26 @@ impl From<WildcardAndRestriction> for PatternRestriction {
 impl From<WildcardAndRestriction> for Condition<PatternRestriction> {
     fn from(value: WildcardAndRestriction) -> Self {
         PatternRestriction::Wildcard(value).into()
+    }
+}
+
+impl<'a> From<PatternRestriction> for Option<Condition<PatternRestriction>> {
+    fn from(value: PatternRestriction) -> Self {
+        Some(Condition::from(value))
+    }
+}
+
+impl Symbol {
+    /// Restrict a wildcard symbol.
+    ///
+    /// # Example
+    /// Restrict the wildcard `x_` to be greater than 1:
+    /// ```
+    /// use symbolica::{id::WildcardRestriction, symbol};
+    /// symbol!("x_").restrict(WildcardRestriction::filter(|x| x.to_atom() > 1));
+    /// ```
+    pub fn restrict(&self, restriction: WildcardRestriction) -> Condition<PatternRestriction> {
+        Condition::from((*self, restriction.into()))
     }
 }
 
@@ -3960,7 +4061,7 @@ mod test {
         let p = parse!("v2+v2^v1_").unwrap().to_pattern();
         let rhs = parse!("v2*(1+v2^(v1_-1))").unwrap().to_pattern();
 
-        let r = a.replace_all(&p, &rhs, None, None);
+        let r = a.replace_all(p, &rhs, None, None);
         let res = parse!("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
         assert_eq!(r, res);
     }
@@ -3968,7 +4069,7 @@ mod test {
     #[test]
     fn level_restriction() {
         let a = parse!("v1*f1(v1,f1(v1))").unwrap();
-        let p = parse!("v1").unwrap().into();
+        let p = parse!("v1").unwrap().to_pattern();
         let rhs = parse!("1").unwrap().to_pattern();
 
         let r = a.replace_all(

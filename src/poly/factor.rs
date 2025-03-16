@@ -3776,7 +3776,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&field, poly.variables.clone().into()),
+                        .to_polynomial(&field, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3804,7 +3804,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&field, poly.variables.clone().into()),
+                        .to_polynomial(&field, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3837,7 +3837,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3870,7 +3870,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3909,7 +3909,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3940,7 +3940,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3970,7 +3970,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4004,7 +4004,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4038,7 +4038,7 @@ mod test {
                     parse!(f)
                         .unwrap()
                         .expand()
-                        .to_polynomial(&Z, poly.variables.clone().into()),
+                        .to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4072,11 +4072,11 @@ mod test {
 
         let f1 = parse!("(1-a^2)+(1-a)*z+z^2")
             .unwrap()
-            .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
+            .to_polynomial::<_, u8>(&Q, a.get_vars().clone())
             .to_number_field(&f);
         let f2 = parse!("(1+a^2)+(a)*z+z^2")
             .unwrap()
-            .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
+            .to_polynomial::<_, u8>(&Q, a.get_vars().clone())
             .to_number_field(&f);
 
         factors.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));

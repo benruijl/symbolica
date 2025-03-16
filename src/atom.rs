@@ -380,9 +380,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::{atom::{AtomView, Symbol, FunctionAttribute, NormalizationFunction}, wrap_symbol};
+    /// use symbolica::{atom::{AtomView, Symbol, FunctionAttribute}, wrap_symbol};
     ///
-    /// let normalize_fn: NormalizationFunction = Box::new(|view, out| {
+    /// let f = Symbol::new_with_attributes_and_function(wrap_symbol!("f"), &[], |view, out| {
     ///     // Example normalization logic that sets odd-length function to 0
     ///     if let AtomView::Fun(f) = view {
     ///         if f.get_nargs() % 2 == 1 {
@@ -394,16 +394,14 @@ impl Symbol {
     ///     } else {
     ///         unreachable!()
     ///     }
-    /// });
-    ///
-    /// let f = Symbol::new_with_attributes_and_function(wrap_symbol!("f"), &[], normalize_fn).unwrap();
+    /// }).unwrap();
     /// ```
     pub fn new_with_attributes_and_function(
         name: NamespacedSymbol,
         attributes: &[FunctionAttribute],
-        f: NormalizationFunction,
+        f: impl Fn(AtomView<'_>, &mut Atom) -> bool + Send + Sync + 'static,
     ) -> Result<Symbol, SmartString<LazyCompact>> {
-        State::get_symbol_with_attributes_and_function(name, attributes, f)
+        State::get_symbol_with_attributes_and_function(name, attributes, Box::new(f))
     }
 
     /// Get the name of the symbol.
@@ -1214,6 +1212,18 @@ impl Ord for Atom {
     }
 }
 
+impl<T: Into<Coefficient> + Clone> PartialEq<T> for Atom {
+    fn eq(&self, other: &T) -> bool {
+        *self == Atom::new_num(other.clone())
+    }
+}
+
+impl<T: Into<Coefficient> + Clone> PartialOrd<T> for Atom {
+    fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+        Some(self.cmp(&Atom::new_num(other.clone().into())))
+    }
+}
+
 impl Atom {
     /// Create an atom that represents the number 0.
     pub fn new() -> Atom {
@@ -1579,7 +1589,7 @@ macro_rules! function {
 /// ```
 /// use symbolica::symbol;
 /// use symbolica::atom::AtomView;
-/// let x = symbol!("f";; Box::new(|f, out| {
+/// let x = symbol!("f";; |f, out| {
 ///     if let AtomView::Fun(ff) = f {
 ///         if ff.get_nargs() % 2 == 1 {
 ///            out.to_num(0.into());
@@ -1587,7 +1597,7 @@ macro_rules! function {
 ///         }
 ///     }
 ///     false
-/// }));
+/// });
 /// ```
 #[macro_export]
 macro_rules! symbol {

@@ -815,13 +815,12 @@ mod tests {
             .to_number_field(&ring);
 
         let b = parse!("x^3-2x^2-x+1")?
-            .to_polynomial(&Q, a.variables.clone().into())
+            .to_polynomial(&Q, a.variables.clone())
             .to_number_field(&ring);
 
         let r = a.gcd(&b).from_number_field();
 
-        let expected =
-            parse!("-50/91+x-23/91*a-1/91*a^2")?.to_polynomial(&Q, a.variables.clone().into());
+        let expected = parse!("-50/91+x-23/91*a-1/91*a^2")?.to_polynomial(&Q, a.variables.clone());
         assert_eq!(r, expected);
         Ok(())
     }
@@ -851,7 +850,7 @@ mod tests {
 
         let res = parse!("16-32*z-64*z^2-64*z^3-52*z^4-40*z^5-132*z^6-24*z^7-50*z^8+120*z^9+66*z^10+92*z^11+47*z^12+32*z^13+14*z^14+4*z^15+z^16")
         .unwrap()
-        .to_polynomial::<_, u8>(&Q, a.variables.clone().into());
+        .to_polynomial::<_, u8>(&Q, a.variables.clone());
 
         assert_eq!(norm, res);
     }

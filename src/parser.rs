@@ -1389,7 +1389,7 @@ mod test {
             input,
             parse!("5+2748*v1^2*v2")
                 .unwrap()
-                .to_polynomial(&Z, var_map.clone().into())
+                .to_polynomial(&Z, var_map.clone())
         );
     }
 }

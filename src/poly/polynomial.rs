@@ -4113,7 +4113,7 @@ mod test {
 
         let p2 = parse!("v1+v2+v3+1")
             .unwrap()
-            .to_polynomial::<_, u8>(&Z, p1.variables.clone().into());
+            .to_polynomial::<_, u8>(&Z, p1.variables.clone());
 
         let (q, r) = p1.quot_rem(&p2, false);
         assert_eq!(q.to_expression(), parse!("-1+5*v2+v1+v1*v2*v3").unwrap());
@@ -4131,7 +4131,7 @@ mod test {
 
         let p2 = parse!("v1+v2+v3+1")
             .unwrap()
-            .to_polynomial::<_, u8>(&Z, p1.variables.clone().into());
+            .to_polynomial::<_, u8>(&Z, p1.variables.clone());
 
         let (q, r) = p1.quot_rem(&p2, false);
         assert_eq!(
@@ -4151,7 +4151,7 @@ mod test {
 
         let p3 = parse!("v3")
             .unwrap()
-            .to_polynomial::<_, u8>(&Z, p1.variables.clone().into());
+            .to_polynomial::<_, u8>(&Z, p1.variables.clone());
 
         let r = p1 * &p2 + p3;
 

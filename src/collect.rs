@@ -795,7 +795,7 @@ mod test {
         let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
         let x = symbol!("v1");
 
-        let r = input.coefficient_list::<i8, InlineVar>(&[x.into()]);
+        let r = input.coefficient_list::<i8>(&[InlineVar::new(x)]);
 
         let res = vec![
             (parse!("1").unwrap(), parse!("v2^2+f1(5,v1)+2").unwrap()),
@@ -812,7 +812,7 @@ mod test {
         let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
         let x = symbol!("v1");
 
-        let out = input.collect::<i8, InlineVar>(x.into(), None, None);
+        let out = input.collect::<i8>(InlineVar::new(x), None, None);
 
         let ref_out = parse!("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
         assert_eq!(out, ref_out)
@@ -823,7 +823,7 @@ mod test {
         let input = parse!("(1+v1)^2*v1+(1+v2)^100").unwrap();
         let x = symbol!("v1");
 
-        let out = input.collect::<i8, InlineVar>(x.into(), None, None);
+        let out = input.collect::<i8>(InlineVar::new(x), None, None);
 
         let ref_out = parse!("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
         assert_eq!(out, ref_out)
@@ -836,8 +836,8 @@ mod test {
         let key = symbol!("f3");
         let coeff = symbol!("f4");
         println!("> Collect in x with wrapping:");
-        let out = input.collect::<i8, InlineVar>(
-            x.into(),
+        let out = input.collect::<i8>(
+            InlineVar::new(x),
             Some(Box::new(move |a, out| {
                 out.set_from_view(&a);
                 *out = function!(key, out);

@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomCore, AtomView},
+    atom::{Atom, AtomCore},
     id::{Match, WildcardRestriction},
     parse, symbol,
 };
@@ -13,14 +13,8 @@ fn main() {
     let rhs_one = Atom::new_num(1).to_pattern();
 
     // prepare the pattern restriction `x_ > 1`
-    let restrictions = (
-        symbol!("x_"),
-        WildcardRestriction::Filter(Box::new(|v: &Match| match v {
-            Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
-            _ => false,
-        })),
-    )
-        .into();
+    let restrictions =
+        symbol!("x_").restrict(WildcardRestriction::filter(|v: &Match| v.to_atom() > 1));
 
     let mut target = parse!("f(10)").unwrap();
 

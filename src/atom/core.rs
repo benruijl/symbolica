@@ -22,8 +22,9 @@ use crate::{
     },
     evaluate::{EvalTree, EvaluationFn, ExpressionEvaluator, FunctionMap, OptimizationSettings},
     id::{
-        BorrowPatternOrMap, BorrowReplacement, Condition, ConditionResult, Context, MatchSettings,
-        Pattern, PatternAtomTreeIterator, PatternRestriction, ReplaceIterator,
+        BorrowCondition, BorrowPatternOrMap, BorrowReplacement, Condition, ConditionResult,
+        Context, MatchSettings, Pattern, PatternAtomTreeIterator, PatternRestriction,
+        ReplaceIterator,
     },
     poly::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, series::Series,
@@ -33,7 +34,7 @@ use crate::{
     state::Workspace,
     tensors::matrix::Matrix,
 };
-use std::sync::Arc;
+use std::{borrow::Borrow, sync::Arc};
 
 use super::{
     representation::{InlineNum, InlineVar},
@@ -87,16 +88,16 @@ pub trait AtomCore {
     /// use symbolica::{atom::AtomCore, parse};
     /// let expr = parse!("x + x * y + x^2").unwrap();
     /// let x = parse!("x").unwrap();
-    /// let collected = expr.collect::<u8, _>(x, None, None);
+    /// let collected = expr.collect::<u8>(x, None, None);
     /// assert_eq!(collected, parse!("x * (1 + y) + x^2").unwrap());
     /// ```
-    fn collect<E: Exponent, T: AtomCore>(
+    fn collect<E: Exponent>(
         &self,
-        x: T,
+        x: impl AtomCore,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
-        self.as_atom_view().collect::<E, T>(x, key_map, coeff_map)
+        self.as_atom_view().collect::<E, _>(x, key_map, coeff_map)
     }
 
     /// Collect terms involving the same power of variables or functions with the name `x`, e.g.
@@ -143,17 +144,17 @@ pub trait AtomCore {
     /// let expr = parse!("x + x * y + x^2 + z + z^2").unwrap();
     /// let x = parse!("x").unwrap();
     /// let z = parse!("z").unwrap();
-    /// let collected = expr.collect_multiple::<u8, _>(&[x, z], None, None);
+    /// let collected = expr.collect_multiple::<u8>(&[x, z], None, None);
     /// assert_eq!(collected, parse!("x * (1 + y) + x^2 + z + z^2").unwrap());
     /// ```
-    fn collect_multiple<E: Exponent, T: AtomCore>(
+    fn collect_multiple<E: Exponent>(
         &self,
-        xs: &[T],
+        xs: &[impl AtomCore],
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
         self.as_atom_view()
-            .collect_multiple::<E, T>(xs, key_map, coeff_map)
+            .collect_multiple::<E, _>(xs, key_map, coeff_map)
     }
 
     /// Collect common factors from (nested) sums.
@@ -180,11 +181,11 @@ pub trait AtomCore {
     /// let expr = parse!("x + x * y + x^2 + z + z^2").unwrap();
     /// let x = parse!("x").unwrap();
     /// let z = parse!("z").unwrap();
-    /// let coeff_list = expr.coefficient_list::<u8, _>(&[x, z]);
+    /// let coeff_list = expr.coefficient_list::<u8>(&[x, z]);
     /// assert_eq!(coeff_list.len(), 4);
     /// ```
-    fn coefficient_list<E: Exponent, T: AtomCore>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
-        self.as_atom_view().coefficient_list::<E, T>(xs)
+    fn coefficient_list<E: Exponent>(&self, xs: &[impl AtomCore]) -> Vec<(Atom, Atom)> {
+        self.as_atom_view().coefficient_list::<E, _>(xs)
     }
 
     /// Collect terms involving the literal occurrence of `x`.
@@ -314,9 +315,9 @@ pub trait AtomCore {
     /// let r = parse!("x^2 + 2 * x + 1").unwrap();
     /// assert_eq!(expanded, r);
     /// ```
-    fn expand_via_poly<E: Exponent, T: AtomCore>(&self, var: Option<T>) -> Atom {
+    fn expand_via_poly<E: Exponent, T: AtomCore>(&self, var: impl Into<Option<T>>) -> Atom {
         self.as_atom_view()
-            .expand_via_poly::<E>(var.as_ref().map(|x| x.as_atom_view()))
+            .expand_via_poly::<E>(var.into().as_ref().map(|x| x.as_atom_view()))
     }
 
     /// Expand an expression in the variable `var`. The function [AtomCore::expand_via_poly] may be faster.
@@ -364,9 +365,9 @@ pub trait AtomCore {
     /// assert!(changed);
     /// assert_eq!(out, r);
     /// ```
-    fn expand_into<T: AtomCore>(&self, var: Option<T>, out: &mut Atom) -> bool {
+    fn expand_into<T: AtomCore>(&self, var: impl Into<Option<T>>, out: &mut Atom) -> bool {
         self.as_atom_view()
-            .expand_into(var.as_ref().map(|x| x.as_atom_view()), out)
+            .expand_into(var.into().as_ref().map(|x| x.as_atom_view()), out)
     }
 
     /// Distribute numbers in the expression, for example:
@@ -870,9 +871,9 @@ pub trait AtomCore {
     fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: impl Into<Option<Arc<Vec<Variable>>>>,
     ) -> MultivariatePolynomial<R, E> {
-        self.as_atom_view().to_polynomial(field, var_map)
+        self.as_atom_view().to_polynomial(field, var_map.into())
     }
 
     /// Convert the atom to a polynomial in specific variables.
@@ -924,14 +925,14 @@ pub trait AtomCore {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: impl Into<Option<Arc<Vec<Variable>>>>,
     ) -> RationalPolynomial<RO, E>
     where
         RationalPolynomial<RO, E>:
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         self.as_atom_view()
-            .to_rational_polynomial(field, out_field, var_map)
+            .to_rational_polynomial(field, out_field, var_map.into())
     }
 
     /// Convert the atom to a rational polynomial with factorized denominators, optionally in the variable ordering
@@ -960,7 +961,7 @@ pub trait AtomCore {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: impl Into<Option<Arc<Vec<Variable>>>>,
     ) -> FactorizedRationalPolynomial<RO, E>
     where
         FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
@@ -968,7 +969,7 @@ pub trait AtomCore {
         MultivariatePolynomial<RO, E>: Factorize,
     {
         self.as_atom_view()
-            .to_factorized_rational_polynomial(field, out_field, var_map)
+            .to_factorized_rational_polynomial(field, out_field, var_map.into())
     }
 
     /// Format the atom.
@@ -1203,10 +1204,12 @@ pub trait AtomCore {
             .is_polynomial(allow_not_expanded, allow_negative_powers)
     }
 
-    /// Replace all occurrences of the pattern.
+    /// Replace all occurrences of the pattern. The right-hand side is
+    /// either another pattern, or a function that maps the matched wildcards to a new expression.
     ///
     /// # Example
     ///
+    /// Replace all occurrences of `x` with `z`:
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::id::Pattern;
@@ -1216,15 +1219,66 @@ pub trait AtomCore {
     /// let result = expr.replace_all(&pattern, replacement, None, None);
     /// assert_eq!(result, parse!("z + y").unwrap());
     /// ```
-    fn replace_all<R: BorrowPatternOrMap>(
+    ///
+    /// Set a condition `x_ > 1` (conditions can be chained with `&` and `|`):
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse, symbol};
+    /// use symbolica::id::{Pattern, WildcardRestriction};
+    /// let expr = parse!("f(1) + f(2) + f(3)").unwrap();
+    /// let out = expr.replace_all(
+    ///     parse!("f(x_)").unwrap().to_pattern(),
+    ///     parse!("f(x_ - 1)").unwrap().to_pattern(),
+    ///     symbol!("x_").restrict(WildcardRestriction::filter(|x| x.to_atom() > 1)),
+    ///     None,
+    /// );
+    /// assert_eq!(out, parse!("2*f(1) + f(2)").unwrap());
+    /// ```
+    ///
+    /// Access the match stack to filter for an ascending order of `x`, `y`, `z`:
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse, symbol};
+    /// use symbolica::id::{Pattern, Condition, ConditionResult};
+    /// let expr = parse!("f(1, 2, 3)").unwrap();
+    /// let out = expr.replace_all(
+    ///    parse!("f(x_,y_,z_)").unwrap().to_pattern(),
+    ///    parse!("1").unwrap().to_pattern(),
+    ///    Condition::match_stack(|m| {
+    ///        if let Some(x) = m.get(symbol!("x")) {
+    ///            if let Some(y) = m.get(symbol!("y")) {
+    ///                if x.to_atom() > y.to_atom() {
+    ///                    return ConditionResult::False;
+    ///                }
+    ///
+    ///                if let Some(z) = m.get(symbol!("z")) {
+    ///                    if y.to_atom() > z.to_atom() {
+    ///                        return ConditionResult::False;
+    ///                    }
+    ///                }
+    ///
+    ///                return ConditionResult::True;
+    ///            }
+    ///        }
+    ///        ConditionResult::Inconclusive
+    ///    }),
+    ///    None,
+    /// );
+    /// assert_eq!(out, parse!("1").unwrap());
+    /// ```
+    fn replace_all<
+        'a,
+        P: Borrow<Pattern>,
+        R: BorrowPatternOrMap,
+        C: BorrowCondition,
+        S: Into<Option<&'a MatchSettings>>,
+    >(
         &self,
-        pattern: &Pattern,
+        pattern: P,
         rhs: R,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
+        conditions: C,
+        settings: S,
     ) -> Atom {
         self.as_atom_view()
-            .replace_all(pattern, rhs, conditions, settings)
+            .replace_all(pattern.borrow(), rhs, conditions.borrow(), settings.into())
     }
 
     /// Replace all occurrences of the pattern.
@@ -1242,16 +1296,26 @@ pub trait AtomCore {
     /// assert!(changed);
     /// assert_eq!(out, parse!("z + y").unwrap());
     /// ```
-    fn replace_all_into<R: BorrowPatternOrMap>(
+    fn replace_all_into<
+        'a,
+        R: BorrowPatternOrMap,
+        C: BorrowCondition,
+        S: Into<Option<&'a MatchSettings>>,
+    >(
         &self,
         pattern: &Pattern,
         rhs: R,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
+        conditions: C,
+        settings: S,
         out: &mut Atom,
     ) -> bool {
-        self.as_atom_view()
-            .replace_all_into(pattern, rhs, conditions, settings, out)
+        self.as_atom_view().replace_all_into(
+            pattern,
+            rhs,
+            conditions.borrow(),
+            settings.into(),
+            out,
+        )
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
@@ -1344,19 +1408,24 @@ pub trait AtomCore {
     /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(y)").unwrap());
     /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(x)").unwrap());
     /// ```
-    fn replace_iter<'a, R: BorrowPatternOrMap>(
+    fn replace_iter<
+        'a,
+        R: BorrowPatternOrMap,
+        C: Into<Option<&'a Condition<PatternRestriction>>>,
+        S: Into<Option<&'a MatchSettings>>,
+    >(
         &'a self,
         pattern: &'a Pattern,
         rhs: &'a R,
-        conditions: Option<&'a Condition<PatternRestriction>>,
-        settings: Option<&'a MatchSettings>,
+        conditions: C,
+        settings: S,
     ) -> ReplaceIterator<'a, 'a> {
         ReplaceIterator::new(
             pattern,
             self.as_atom_view(),
             rhs.borrow(),
-            conditions,
-            settings,
+            conditions.into(),
+            settings.into(),
         )
     }
 
@@ -1376,13 +1445,23 @@ pub trait AtomCore {
     ///     &Atom::new_num(1)
     /// );
     /// ```
-    fn pattern_match<'a: 'b, 'b>(
+    fn pattern_match<
+        'a: 'b,
+        'b,
+        C: Into<Option<&'b Condition<PatternRestriction>>>,
+        S: Into<Option<&'b MatchSettings>>,
+    >(
         &'a self,
         pattern: &'b Pattern,
-        conditions: Option<&'b Condition<PatternRestriction>>,
-        settings: Option<&'b MatchSettings>,
+        conditions: C,
+        settings: S,
     ) -> PatternAtomTreeIterator<'a, 'b> {
-        PatternAtomTreeIterator::new(pattern, self.as_atom_view(), conditions, settings)
+        PatternAtomTreeIterator::new(
+            pattern,
+            self.as_atom_view(),
+            conditions.into(),
+            settings.into(),
+        )
     }
 }
 

@@ -11822,8 +11822,9 @@ impl PythonNumericalIntegrator {
     /// Use `export_grid` to export the grid.
     #[classmethod]
     fn import_grid(_cls: &Bound<'_, PyType>, grid: &[u8]) -> PyResult<Self> {
-        let grid = bincode::deserialize(grid)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let grid = bincode::decode_from_slice(grid, bincode::config::standard())
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?
+            .0;
 
         Ok(PythonNumericalIntegrator { grid })
     }
@@ -11831,7 +11832,7 @@ impl PythonNumericalIntegrator {
     /// Export the grid, so that it can be sent to another thread or machine.
     /// Use `import_grid` to load the grid.
     fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
-        bincode::serialize(&self.grid)
+        bincode::encode_to_vec(&self.grid, bincode::config::standard())
             .map(|a| PyBytes::new(py, &a))
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }

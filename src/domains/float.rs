@@ -8,7 +8,6 @@ use std::{
 };
 
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
@@ -20,7 +19,9 @@ use rug::{
 };
 
 /// A field of floating point type `T`. For `f64` fields, use [`FloatField<F64>`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FloatField<T> {
     rep: T,
 }
@@ -653,6 +654,8 @@ impl From<Rational> for f64 {
 
 /// A wrapper around `f64` that implements `Eq`, `Ord`, and `Hash`.
 /// All `NaN` values are considered equal, and `-0` is considered equal to `0`.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Copy, Clone)]
 pub struct F64(f64);
 
@@ -1099,6 +1102,7 @@ impl Hash for F64 {
 ///
 /// Floating point output with less than five significant binary digits
 /// should be considered unreliable.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
 pub struct Float(MultiPrecisionFloat);
 
@@ -3057,7 +3061,9 @@ impl RealNumberLike for Rational {
 }
 
 /// A complex number, `re + i * im`, where `i` is the imaginary unit.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Complex<T> {
     pub re: T,

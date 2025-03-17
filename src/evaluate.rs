@@ -15,7 +15,6 @@ use ahash::{AHasher, HashMap};
 use rand::{thread_rng, Rng};
 
 use self_cell::self_cell;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
@@ -189,16 +188,43 @@ pub struct EvalTree<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BuiltinSymbol(Symbol);
 
+#[cfg(feature = "serde")]
 impl Serialize for BuiltinSymbol {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.get_id().serialize(serializer)
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for BuiltinSymbol {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let id: u32 = u32::deserialize(deserializer)?;
         Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for BuiltinSymbol {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        Atom::new_var(self.0).encode(encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode_with_context!(BuiltinSymbol, crate::state::StateMap);
+#[cfg(feature = "bincode")]
+impl bincode::Decode<crate::state::StateMap> for BuiltinSymbol {
+    fn decode<D: bincode::de::Decoder<Context = crate::state::StateMap>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let a = Atom::decode(decoder)?;
+        match a {
+            Atom::Var(v) => Ok(BuiltinSymbol(v.get_symbol())),
+            _ => Err(bincode::error::DecodeError::Other("Expected a variable")),
+        }
     }
 }
 
@@ -208,7 +234,13 @@ impl BuiltinSymbol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Expression<T> {
     Const(T),
     Parameter(usize),
@@ -606,7 +638,8 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -2692,7 +2725,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 }
 
 /// A slot in a list that contains a numerical value.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
+#[derive(Debug, Clone)]
 pub enum Slot {
     /// An entry in the list of parameters.
     Param(usize),
@@ -2716,7 +2755,13 @@ impl std::fmt::Display for Slot {
 }
 
 /// An evaluation instruction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     /// `Add(o, [i0,...,i_n])` means `o = i0 + ... + i_n`.
     Add(Slot, Vec<Slot>),
@@ -2829,7 +2874,13 @@ impl<T: Clone> ExpressionEvaluator<T> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
+#[derive(Debug, Clone)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),

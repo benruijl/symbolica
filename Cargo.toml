@@ -38,6 +38,8 @@ python_no_module = ["python_api"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 tracing_only_warnings = ["tracing/release_max_level_warn"]
+serde = ["dep:serde", "rug/serde"]
+bincode = ["dep:bincode"]
 
 [dependencies.pyo3]
 features = ["extension-module", "abi3", "py-clone"]
@@ -50,7 +52,7 @@ tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 [dependencies]
 ahash = "0.8.7"
 append-only-vec = "0.1"
-bincode = {version = "1.3", optional = true}
+bincode = {version = "2.0", optional = true}
 brotli = "5.0"
 byteorder = "1.5"
 bytes = "1.5"
@@ -63,7 +65,7 @@ rand_xoshiro = "0.6"
 rayon = "1.8"
 rug = "=1.25.0"
 self_cell = "1.0"
-serde = {version = "1.0", features = ["derive"]}
+serde = {version = "1.0", features = ["derive"], optional = true}
 smallvec = "1.13"
 smartstring = "1.0"
 tikv-jemallocator = {version = "0.5.4", optional = true}

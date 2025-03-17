@@ -1207,7 +1207,7 @@ pub trait AtomCore {
     /// Replace all occurrences of the pattern. The right-hand side is
     /// either another pattern, or a function that maps the matched wildcards to a new expression.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// Replace all occurrences of `x` with `z`:
     /// ```
@@ -1230,6 +1230,31 @@ pub trait AtomCore {
     ///     .when(symbol!("x_").filter(|x| x.to_atom() > 1))
     ///     .with(parse!("f(x_ - 1)").unwrap());
     /// assert_eq!(out, parse!("2*f(1) + f(2)").unwrap());
+    /// ```
+    ///
+    /// Use a map as a right-hand side:
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, function, parse, symbol};
+    /// let (f, x_) = symbol!("f", "x_");
+    /// let a = function!(f, 1) * function!(f, 3);
+    /// let p = function!(f, x_);
+    ///
+    /// let r = a.replace(p).with_map(move |m| {
+    ///     function!(
+    ///         f,
+    ///         parse!(&format!(
+    ///             "p{}",
+    ///             m.get(x_)
+    ///                 .unwrap()
+    ///                 .to_atom()
+    ///                 .printer(PrintOptions::file()),
+    ///         ))
+    ///         .unwrap()
+    ///     )
+    /// });
+    /// let res = parse!("f(p1)*f(p3)").unwrap();
+    /// assert_eq!(r, res);
     /// ```
     ///
     /// Access the match stack to filter for an ascending order of `x`, `y`, `z`:
@@ -1266,6 +1291,7 @@ pub trait AtomCore {
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    /// To repeatedly replace multiple patterns, wrap the call in [Atom::replace_map].
     ///
     /// # Example
     ///

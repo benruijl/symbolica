@@ -39,6 +39,24 @@ impl<'a, T> BorrowedOrOwned<'a, T> {
     }
 }
 
+impl<'a, T: Clone> BorrowedOrOwned<'a, T> {
+    /// Yield an owned value.
+    pub fn yield_owned(self) -> T {
+        match self {
+            BorrowedOrOwned::Owned(t) => t,
+            BorrowedOrOwned::Borrowed(t) => t.clone(),
+        }
+    }
+
+    /// Create an owned version of `Self`.
+    pub fn into_owned(self) -> BorrowedOrOwned<'static, T> {
+        match self {
+            BorrowedOrOwned::Owned(t) => BorrowedOrOwned::Owned(t),
+            BorrowedOrOwned::Borrowed(t) => BorrowedOrOwned::Owned(t.clone()),
+        }
+    }
+}
+
 impl<T> Deref for BorrowedOrOwned<'_, T> {
     type Target = T;
 

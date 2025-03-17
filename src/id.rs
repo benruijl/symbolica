@@ -286,8 +286,10 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
     }
 
     /// Execute the replacement by specifying the right-hand side.
-    pub fn with<'c, R: Into<ReplaceWith<'c>>>(&self, rhs: R) -> Atom {
-        let rhs = rhs.into();
+    ///
+    /// To use a map as a right-hand side, use [ReplaceBuilder::with_map].
+    pub fn with<'c, R: Into<BorrowedOrOwned<'c, Pattern>>>(&self, rhs: R) -> Atom {
+        let rhs = ReplaceWith::Pattern(rhs.into());
         let mut expr_ref = self.target;
         let mut out = RecycledAtom::new();
         let mut out2 = RecycledAtom::new();
@@ -310,8 +312,12 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
     }
 
     /// Execute the replacement by specifying the right-hand side and writing the result in `out`.
-    pub fn with_into<'c, R: Into<ReplaceWith<'c>>>(&self, rhs: R, out: &mut Atom) -> bool {
-        let rhs = rhs.into();
+    pub fn with_into<'c, R: Into<BorrowedOrOwned<'c, Pattern>>>(
+        &self,
+        rhs: R,
+        out: &mut Atom,
+    ) -> bool {
+        let rhs = ReplaceWith::Pattern(rhs.into());
         let mut expr_ref = self.target;
         let mut out2 = RecycledAtom::new();
 
@@ -338,6 +344,56 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
         replaced
     }
 
+    /// Execute the replacement by specifying the right-hand side as a map on the matched wildcards.
+    ///
+    /// # Example
+    ///
+    /// Prefix the argument of a function with `p`:
+    /// ```
+    /// use symbolica::{atom::AtomCore, function, parse, symbol};
+    /// let (f, x_) = symbol!("f", "x_");
+    /// let a = function!(f, 1) * function!(f, 3);
+    /// let p = function!(f, x_);
+    ///
+    /// let r = a.replace(p).with_map(move |m| {
+    ///     function!(
+    ///         f,
+    ///         parse!(&format!(
+    ///             "p{}",
+    ///             m.get(x_)
+    ///                 .unwrap()
+    ///                 .to_atom()
+    ///                 .printer(PrintOptions::file()),
+    ///         ))
+    ///         .unwrap()
+    ///     )
+    /// });
+    /// let res = parse!("f(p1)*f(p3)").unwrap();
+    /// assert_eq!(r, res);
+    /// ```
+    pub fn with_map<'c, R: MatchMap + 'static>(&self, rhs: R) -> Atom {
+        let rhs = ReplaceWith::Map(Box::new(rhs));
+        let mut expr_ref = self.target;
+        let mut out = RecycledAtom::new();
+        let mut out2 = RecycledAtom::new();
+        while expr_ref.replace_into(
+            self.pattern.borrow(),
+            &rhs,
+            self.conditions.as_ref().map(|x| x.borrow()),
+            Some(&self.settings),
+            &mut out,
+        ) {
+            if !self.repeat {
+                break;
+            }
+
+            std::mem::swap(&mut out, &mut out2);
+            expr_ref = out2.as_view();
+        }
+
+        out.into_inner()
+    }
+
     /// Return an iterator that replaces the pattern in the target once.
     ///
     /// # Example
@@ -353,11 +409,25 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
     /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(y)").unwrap());
     /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(x)").unwrap());
     /// ```
-    pub fn iter<R: Into<ReplaceWith<'a>>>(&'a self, rhs: R) -> ReplaceIterator<'a, 'a> {
+    pub fn iter<'c, R: Into<BorrowedOrOwned<'a, Pattern>>>(
+        &'a self,
+        rhs: R,
+    ) -> ReplaceIterator<'a, 'a> {
         ReplaceIterator::new(
             self.pattern.borrow(),
             self.target,
-            rhs.into(),
+            ReplaceWith::Pattern(rhs.into()),
+            self.conditions.as_ref().map(|x| x.borrow()),
+            Some(&self.settings),
+        )
+    }
+
+    /// Return an iterator that replaces the pattern in the target using a map once.
+    pub fn iter_map<R: MatchMap + 'static>(&'a self, rhs: R) -> ReplaceIterator<'a, 'a> {
+        ReplaceIterator::new(
+            self.pattern.borrow(),
+            self.target,
+            ReplaceWith::Map(Box::new(rhs)),
             self.conditions.as_ref().map(|x| x.borrow()),
             Some(&self.settings),
         )
@@ -4092,7 +4162,7 @@ impl<'a: 'b, 'b> Iterator for ReplaceIterator<'a, 'b> {
 mod test {
     use crate::{
         atom::{Atom, AtomCore},
-        id::{Condition, ConditionResult, Match, ReplaceWith, Replacement},
+        id::{Condition, ConditionResult, Match, Replacement},
         parse,
         printer::PrintOptions,
         symbol,
@@ -4206,13 +4276,11 @@ mod test {
 
     #[test]
     fn map_rhs() {
-        let v1 = symbol!("v1_");
-        let v2 = symbol!("v2_");
-        let v4 = symbol!("v4_");
-        let v5 = symbol!("v5_");
+        let (v1, v2, v4, v5) = symbol!("v1_", "v2_", "v4_", "v5_");
         let a = parse!("v1(2,1)*v2(3,1)").unwrap();
         let p = parse!("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap();
-        let rhs = ReplaceWith::Map(Box::new(move |m| {
+
+        let r = a.replace(p).with_map(move |m| {
             parse!(&format!(
                 "{}(mu{})*{}(mu{})",
                 m.get(v1).unwrap().to_atom().printer(PrintOptions::file()),
@@ -4221,9 +4289,7 @@ mod test {
                 m.get(v5).unwrap().to_atom().printer(PrintOptions::file())
             ))
             .unwrap()
-        }));
-
-        let r = a.replace(p).with(rhs);
+        });
         let res = parse!("v1(mu2)*v2(mu3)").unwrap();
         assert_eq!(r, res);
     }

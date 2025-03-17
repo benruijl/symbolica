@@ -9,7 +9,7 @@ fn main() {
     let expr = parse!("f(1,2,3,4,5,6,7)").unwrap();
     let pat_expr = parse!("f(x__,y__,z__,w__)").unwrap();
 
-    let pattern = pat_expr.as_view().to_pattern();
+    let pattern = pat_expr.to_pattern();
 
     let x = symbol!("x__");
     let y = symbol!("y__");

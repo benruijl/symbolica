@@ -16,7 +16,8 @@ fn main() {
         expr.as_view()
     );
 
-    for x in expr.replace_iter(&pattern, &rhs, None, None) {
+    for x in expr.replace(pattern).iter(rhs) {
+        // _iter(&pattern, &rhs, None, None) {
         println!("\t{}", x);
     }
 }

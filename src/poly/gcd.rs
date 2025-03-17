@@ -1277,11 +1277,11 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
                     .map(|i| (*i, a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
                     .collect();
 
-                let g1 = gc.replace_all_except(vars[0], &r, &mut cache);
+                let g1 = gc.replace_except(vars[0], &r, &mut cache);
 
                 if g1.ldegree(vars[0]) == gc.degree(vars[0]) {
-                    let a1 = a.replace_all_except(vars[0], &r, &mut cache);
-                    let b1 = b.replace_all_except(vars[0], &r, &mut cache);
+                    let a1 = a.replace_except(vars[0], &r, &mut cache);
+                    let b1 = b.replace_except(vars[0], &r, &mut cache);
                     break (g1, a1, b1);
                 }
             };

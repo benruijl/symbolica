@@ -1514,7 +1514,7 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         res
     }
 
-    /// Replace a variable `n` in the polynomial by an element from
+    /// Replace all variables in the polynomial by an element from
     /// the ring `v`.
     pub fn replace_all(&self, r: &[F::Element]) -> F::Element {
         let mut res = self.ring.zero();
@@ -1565,7 +1565,7 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
 
     /// Replace all variables except `v` in the polynomial by elements from
     /// the ring.
-    pub fn replace_all_except(
+    pub fn replace_except(
         &self,
         v: usize,
         r: &[(usize, F::Element)],

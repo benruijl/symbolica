@@ -56,7 +56,7 @@ use crate::{
     graph::{GenerationSettings, Graph},
     id::{
         Condition, ConditionResult, Evaluate, Match, MatchSettings, MatchStack, Pattern,
-        PatternAtomTreeIterator, PatternOrMap, PatternRestriction, Relation, ReplaceIterator,
+        PatternAtomTreeIterator, PatternRestriction, Relation, ReplaceIterator, ReplaceWith,
         Replacement, WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
@@ -354,16 +354,16 @@ impl ConvertibleToPattern {
 }
 
 #[derive(FromPyObject)]
-pub enum ConvertibleToPatternOrMap {
+pub enum ConvertibleToReplaceWith {
     Pattern(ConvertibleToPattern),
     Map(PyObject),
 }
 
-impl ConvertibleToPatternOrMap {
-    pub fn to_pattern_or_map(self) -> PyResult<PatternOrMap> {
+impl ConvertibleToReplaceWith {
+    pub fn to_replace_with(self) -> PyResult<ReplaceWith<'static>> {
         match self {
-            Self::Pattern(p) => Ok(PatternOrMap::Pattern(p.to_pattern()?.expr)),
-            Self::Map(m) => Ok(PatternOrMap::Map(Box::new(move |match_stack| {
+            Self::Pattern(p) => Ok(ReplaceWith::Pattern(p.to_pattern()?.expr.into())),
+            Self::Map(m) => Ok(ReplaceWith::Map(Box::new(move |match_stack| {
                 let match_stack: HashMap<PythonExpression, PythonExpression> = match_stack
                     .get_matches()
                     .iter()
@@ -561,7 +561,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x, x_ = Expression.symbol('x', 'x_')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
+    /// >>> e = f((x+1)**2).replace(f(x_), x_.transform().expand())
     /// >>> print(e)
     #[pyo3(signature = (var = None, via_poly = None))]
     pub fn expand(
@@ -613,7 +613,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x__ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
+    /// >>> e = f(2,3).replace(f(x__), x__.transform().prod())
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Product);
@@ -626,7 +626,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x__ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
+    /// >>> e = f(2,3).replace(f(x__), x__.transform().sum())
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Sum);
@@ -644,7 +644,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x__ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
+    /// >>> e = f(2,3,4).replace(f(x__), x__.transform().nargs())
     /// >>> print(e)
     #[pyo3(signature = (only_for_arg_fun = false))]
     pub fn nargs(&self, only_for_arg_fun: bool) -> PyResult<PythonTransformer> {
@@ -658,7 +658,7 @@ impl PythonTransformer {
     /// --------
     /// >>> from symbolica import Expression, Transformer
     /// >>> x, y, z, w, f, x__ = Expression.symbol('x', 'y', 'z', 'w', 'f', 'x__')
-    /// >>> e = f(x+y, 4*z*w+3).replace_all(f(x__), f(x__).transform().linearize([z]))
+    /// >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).transform().linearize([z]))
     /// >>> print(e)
     ///
     /// yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
@@ -694,7 +694,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
+    /// >>> e = f(3,2,1).replace(f(x__), x__.transform().sort())
     /// >>> print(e)
     pub fn sort(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Sort);
@@ -707,7 +707,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(1,2,4,1,2,3).replace_all(f(x__), x_.transform().cycle_symmetrize())
+    /// >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.transform().cycle_symmetrize())
     /// >>> print(e)
     ///
     /// Yields `f(1,2,3,1,2,4)`.
@@ -723,7 +723,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x__ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(1,2,1,2).replace_all(f(x__), x__.transform().deduplicate())
+    /// >>> e = f(1,2,1,2).replace(f(x__), x__.transform().deduplicate())
     /// >>> print(e)
     ///
     /// Yields `f(1,2)`.
@@ -749,7 +749,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x, x__ = Expression.symbol('x', 'x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = (x + 1).replace_all(x__, f(x__.transform().split()))
+    /// >>> e = (x + 1).replace(x__, f(x__.transform().split()))
     /// >>> print(e)
     pub fn split(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Split);
@@ -771,7 +771,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_, f_id, g_id = Expression.symbol('x__', 'f', 'g')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
+    /// >>> e = f(1,2,1,3).replace(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
     /// >>> print(e)
     ///
     /// yields:
@@ -817,7 +817,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_, f_id = Expression.symbol('x__', 'f')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id))
+    /// >>> e = f(1,2,1,2).replace(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
     ///
     /// yields:
@@ -851,7 +851,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
+    /// >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
     pub fn map(&self, f: PyObject) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
@@ -980,7 +980,7 @@ impl PythonTransformer {
     /// >>> from symbolica import *
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol('f')
-    /// >>> f(10).transform().repeat(Transformer().replace_all(
+    /// >>> f(10).transform().repeat(Transformer().replace(
     /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
     pub fn check_interrupt(&self) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
@@ -1001,7 +1001,7 @@ impl PythonTransformer {
     /// >>> e = Expression.parse("f(5)")
     /// >>> e = e.transform().repeat(
     /// >>>     Transformer().expand(),
-    /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+    /// >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
     pub fn repeat(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
@@ -1077,7 +1077,7 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> t = T.map_terms(T.if_changed(T.replace_all(x, y), T.print()))
+    /// >>> t = T.map_terms(T.if_changed(T.replace(x, y), T.print()))
     /// >>> print(t(x + y + 4))
     ///
     /// prints
@@ -1131,8 +1131,8 @@ impl PythonTransformer {
     /// --------
     /// >>> from symbolica import *
     /// >>> t = T.map_terms(T.repeat(
-    /// >>>     T.replace_all(y, 4),
-    /// >>>     T.if_changed(T.replace_all(x, y),
+    /// >>>     T.replace(y, 4),
+    /// >>>     T.if_changed(T.replace(x, y),
     /// >>>                 T.break_chain()),
     /// >>>     T.print()  # print of y is never reached
     /// >>> ))
@@ -1152,7 +1152,7 @@ impl PythonTransformer {
     /// >>> e = Expression.parse("f(5)")
     /// >>> e = e.transform().repeat(
     /// >>>     Transformer().expand(),
-    /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+    /// >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
     pub fn chain(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
@@ -1272,8 +1272,8 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression
     /// >>> x, y, x_, var, coeff = Expression.symbol('x', 'y', 'x_', 'var', 'coeff')
     /// >>> e = 5*x + x * y + x**2 + 5
-    /// >>> print(e.collect(x, key_map=Transformer().replace_all(x_, var(x_)),
-    ///         coeff_map=Transformer().replace_all(x_, coeff(x_))))
+    /// >>> print(e.collect(x, key_map=Transformer().replace(x_, var(x_)),
+    ///         coeff_map=Transformer().replace(x_, coeff(x_))))
     ///
     /// yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
     ///
@@ -1619,12 +1619,12 @@ impl PythonTransformer {
     /// >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
-    /// >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+    /// >>> r = e.transform().replace(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
     #[pyo3(signature = (lhs, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None))]
-    pub fn replace_all(
+    pub fn replace(
         &self,
         lhs: ConvertibleToPattern,
-        rhs: ConvertibleToPatternOrMap,
+        rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
@@ -1670,22 +1670,22 @@ impl PythonTransformer {
             self,
             Transformer::ReplaceAll(
                 lhs.to_pattern()?.expr,
-                rhs.to_pattern_or_map()?,
+                rhs.to_replace_with()?,
                 cond.map(|r| r.0).unwrap_or_default(),
                 settings,
             )
         );
     }
 
-    /// Create a transformer that replaces all atoms matching the patterns. See `replace_all` for more information.
+    /// Create a transformer that replaces all atoms matching the patterns. See `replace` for more information.
     ///
     /// Examples
     /// --------
     ///
     /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
     /// >>> e = f(x,y)
-    /// >>> r = e.transform().replace_all_multiple([Replacement(x, y), Replacement(y, x)])
-    pub fn replace_all_multiple(
+    /// >>> r = e.transform().replace_multiple([Replacement(x, y), Replacement(y, x)])
+    pub fn replace_multiple(
         &self,
         replacements: Vec<PythonReplacement>,
     ) -> PyResult<PythonTransformer> {
@@ -1770,7 +1770,7 @@ impl PythonTransformer {
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = Expression.parse("f(5)")
-    /// >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
+    /// >>> e = e.transform().stats('replace', Transformer().replace(f(x_), 1)).execute()
     ///
     /// yields
     /// ```log
@@ -2615,7 +2615,7 @@ impl PythonExpression {
     ///
     ///
     /// Define a custom normalization function:
-    /// >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
+    /// >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     /// >>> E("real_log(exp(x)) + real_log(5)")
     #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
     #[classmethod]
@@ -3504,7 +3504,7 @@ impl PythonExpression {
     /// >>> x, x_ = Expression.symbol('x', 'x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(x)*f(2)*f(f(3))
-    /// >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
+    /// >>> e = e.replace(f(x_), 1, x_.req_type(AtomType.Num))
     /// >>> print(e)
     ///
     /// Yields `f(x)*f(1)`.
@@ -3645,7 +3645,7 @@ impl PythonExpression {
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
-    /// >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
+    /// >>> e = e.replace(f(x_), 1, x_.req_lt(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_lt(
         &self,
@@ -3668,7 +3668,7 @@ impl PythonExpression {
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
-    /// >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
+    /// >>> e = e.replace(f(x_), 1, x_.req_gt(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_gt(
         &self,
@@ -3691,7 +3691,7 @@ impl PythonExpression {
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
-    /// >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
+    /// >>> e = e.replace(f(x_), 1, x_.req_le(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_le(
         &self,
@@ -3714,7 +3714,7 @@ impl PythonExpression {
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
-    /// >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
+    /// >>> e = e.replace(f(x_), 1, x_.req_ge(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_ge(
         &self,
@@ -3733,7 +3733,7 @@ impl PythonExpression {
     /// >>> x_ = Expression.symbol('x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
-    /// >>> e = e.replace_all(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
+    /// >>> e = e.replace(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
     pub fn req(&self, filter_fn: PyObject) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
@@ -3784,7 +3784,7 @@ impl PythonExpression {
     /// >>> x_, y_ = Expression.symbol('x_', 'y_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1,2)
-    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
+    /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_lt(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_cmp_lt(
         &self,
@@ -3807,7 +3807,7 @@ impl PythonExpression {
     /// >>> x_, y_ = Expression.symbol('x_', 'y_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(2,1)
-    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
+    /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_gt(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_cmp_gt(
         &self,
@@ -3830,7 +3830,7 @@ impl PythonExpression {
     /// >>> x_, y_ = Expression.symbol('x_', 'y_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1,2)
-    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
+    /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_le(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_cmp_le(
         &self,
@@ -3853,7 +3853,7 @@ impl PythonExpression {
     /// >>> x_, y_ = Expression.symbol('x_', 'y_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(2,1)
-    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
+    /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_ge(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
     pub fn req_cmp_ge(
         &self,
@@ -3872,7 +3872,7 @@ impl PythonExpression {
     /// >>> x_, y_ = Expression.symbol('x_', 'y_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
-    /// >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
+    /// >>> e = e.replace(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
     pub fn req_cmp(
         &self,
         other: PythonExpression,
@@ -3957,7 +3957,7 @@ impl PythonExpression {
     /// --------
     /// >>> x, x_ = Expression.symbol('x', 'x_')
     /// >>> e = (1+x)**2
-    /// >>> r = e.map(Transformer().expand().replace_all(x, 6))
+    /// >>> r = e.map(Transformer().expand().replace(x, 6))
     /// >>> print(r)
     #[pyo3(signature = (op, n_cores = None))]
     pub fn map(
@@ -4795,10 +4795,10 @@ impl PythonExpression {
     /// f(1)*f(2)*f(4)
     /// ```
     #[pyo3(signature = (lhs, rhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
-    pub fn replace(
+    pub fn replace_iter(
         &self,
         lhs: ConvertibleToPattern,
-        rhs: ConvertibleToPatternOrMap,
+        rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
@@ -4816,7 +4816,7 @@ impl PythonExpression {
             (
                 lhs.to_pattern()?.expr,
                 self.expr.clone(),
-                rhs.to_pattern_or_map()?,
+                rhs.to_replace_with()?,
                 conditions,
                 settings,
             ),
@@ -4824,7 +4824,7 @@ impl PythonExpression {
                 ReplaceIterator::new(
                     lhs,
                     target.as_view(),
-                    crate::id::BorrowPatternOrMap::borrow(rhs),
+                    rhs.clone(),
                     Some(res),
                     Some(settings),
                 )
@@ -4847,7 +4847,7 @@ impl PythonExpression {
     /// >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
-    /// >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+    /// >>> r = e.replace(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
     /// >>> print(r)
     ///
     /// Parameters
@@ -4870,10 +4870,10 @@ impl PythonExpression {
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
     #[pyo3(signature = (pattern, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None, repeat = None))]
-    pub fn replace_all(
+    pub fn replace(
         &self,
         pattern: ConvertibleToPattern,
-        rhs: ConvertibleToPatternOrMap,
+        rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
@@ -4883,7 +4883,7 @@ impl PythonExpression {
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
-        let rhs = &rhs.to_pattern_or_map()?;
+        let rhs = &rhs.to_replace_with()?;
 
         let mut settings = MatchSettings::cached();
 
@@ -4925,7 +4925,7 @@ impl PythonExpression {
 
         let mut out = RecycledAtom::new();
         let mut out2 = RecycledAtom::new();
-        while expr_ref.replace_all_into(&pattern, rhs, cond.as_ref(), Some(&settings), &mut out) {
+        while expr_ref.replace_into(&pattern, rhs, cond.as_ref(), Some(&settings), &mut out) {
             if !repeat.unwrap_or(false) {
                 break;
             }
@@ -4937,7 +4937,7 @@ impl PythonExpression {
         Ok(out.into_inner().into())
     }
 
-    /// Replace all atoms matching the patterns. See `replace_all` for more information.
+    /// Replace all atoms matching the patterns. See `replace` for more information.
     ///
     /// The entire operation can be repeated until there are no more matches using `repeat=True`.
     ///
@@ -4946,7 +4946,7 @@ impl PythonExpression {
     ///
     /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
     /// >>> e = f(x,y)
-    /// >>> r = e.replace_all_multiple([Replacement(x, y), Replacement(y, x)])
+    /// >>> r = e.replace_multiple([Replacement(x, y), Replacement(y, x)])
     /// >>> print(r)
     /// f(y,x)
     ///
@@ -4957,7 +4957,7 @@ impl PythonExpression {
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
     #[pyo3(signature = (replacements, repeat = None))]
-    pub fn replace_all_multiple(
+    pub fn replace_multiple(
         &self,
         replacements: Vec<PythonReplacement>,
         repeat: Option<bool>,
@@ -4971,7 +4971,7 @@ impl PythonExpression {
 
         let mut out = RecycledAtom::new();
         let mut out2 = RecycledAtom::new();
-        while expr_ref.replace_all_multiple_into(&reps, &mut out) {
+        while expr_ref.replace_multiple_into(&reps, &mut out) {
             if !repeat.unwrap_or(false) {
                 break;
             }
@@ -5591,7 +5591,7 @@ impl PythonReplacement {
     #[new]
     pub fn new(
         pattern: ConvertibleToPattern,
-        rhs: ConvertibleToPatternOrMap,
+        rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
@@ -5600,7 +5600,7 @@ impl PythonReplacement {
         rhs_cache_size: Option<usize>,
     ) -> PyResult<Self> {
         let pattern = pattern.to_pattern()?.expr;
-        let rhs = rhs.to_pattern_or_map()?;
+        let rhs = rhs.to_replace_with()?;
 
         let mut settings = MatchSettings::cached();
 
@@ -6221,7 +6221,7 @@ impl PythonMatchIterator {
 type OwnedReplace = (
     Pattern,
     Atom,
-    PatternOrMap,
+    ReplaceWith<'static>,
     Condition<PatternRestriction>,
     MatchSettings,
 );

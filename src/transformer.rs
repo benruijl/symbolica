@@ -10,8 +10,8 @@ use crate::{
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
     id::{
-        BorrowPatternOrMap, Condition, Evaluate, MatchSettings, Pattern, PatternOrMap,
-        PatternRestriction, Relation, Replacement,
+        Condition, Evaluate, MatchSettings, Pattern, PatternRestriction, Relation, ReplaceWith,
+        Replacement,
     },
     printer::{AtomPrinter, PrintOptions},
     state::{RecycledAtom, Workspace},
@@ -139,7 +139,7 @@ pub enum Transformer {
     /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
-        PatternOrMap,
+        ReplaceWith<'static>,
         Condition<PatternRestriction>,
         MatchSettings,
     ),
@@ -614,9 +614,9 @@ impl Transformer {
                     }
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
-                    cur_input.replace_all_with_ws_into(
+                    cur_input.replace_with_ws_into(
                         pat,
-                        rhs.borrow(),
+                        rhs,
                         workspace,
                         cond.into(),
                         settings.into(),
@@ -624,7 +624,7 @@ impl Transformer {
                     );
                 }
                 Transformer::ReplaceAllMultiple(replacements) => {
-                    cur_input.replace_all_multiple_into(&replacements, out);
+                    cur_input.replace_multiple_into(&replacements, out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = cur_input {

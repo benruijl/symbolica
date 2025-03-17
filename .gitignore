@@ -4,3 +4,16 @@ flake.lock
 flake.nix
 .envrc
 .direnv/
+# Devenv
+#.devenv/
+.devenv*
+devenv.local.nix
+.zed/
+# direnv
+.direnv
+devenv.lock
+devenv.nix
+devenv.yaml
+
+# pre-commit
+.pre-commit-config.yaml

@@ -11626,20 +11626,18 @@ impl PythonSample {
         let mut weight_index = self.weights.len() - 1;
 
         let mut sample = if !self.c.is_empty() {
-            let s = Some(Sample::Continuous(self.weights[weight_index], self.c));
-            weight_index -= 1;
-            s
+            Some(Sample::Continuous(self.weights[weight_index], self.c))
         } else {
             None
         };
 
         for dd in self.d.iter().rev() {
+            weight_index -= 1;
             sample = Some(Sample::Discrete(
                 self.weights[weight_index],
                 *dd,
                 sample.map(Box::new),
             ));
-            weight_index -= 1;
         }
 
         sample.unwrap()
@@ -11822,8 +11820,9 @@ impl PythonNumericalIntegrator {
     /// Use `export_grid` to export the grid.
     #[classmethod]
     fn import_grid(_cls: &Bound<'_, PyType>, grid: &[u8]) -> PyResult<Self> {
-        let grid = bincode::deserialize(grid)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        let grid = bincode::decode_from_slice(grid, bincode::config::standard())
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?
+            .0;
 
         Ok(PythonNumericalIntegrator { grid })
     }
@@ -11831,7 +11830,7 @@ impl PythonNumericalIntegrator {
     /// Export the grid, so that it can be sent to another thread or machine.
     /// Use `import_grid` to load the grid.
     fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
-        bincode::serialize(&self.grid)
+        bincode::encode_to_vec(&self.grid, bincode::config::standard())
             .map(|a| PyBytes::new(py, &a))
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }

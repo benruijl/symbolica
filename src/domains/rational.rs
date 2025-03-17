@@ -115,10 +115,55 @@ impl<T: Field> FractionNormalization for T {
 }
 
 /// A fraction of two elements of a ring. Create a new one through [FractionField::to_element].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Fraction<R: Ring> {
     numerator: R::Element,
     denominator: R::Element,
+}
+
+#[cfg(feature = "bincode")]
+impl<R: Ring> bincode::enc::Encode for Fraction<R>
+where
+    R::Element: bincode::enc::Encode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.numerator.encode(encoder)?;
+        self.denominator.encode(encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<C, R: Ring> bincode::de::Decode<C> for Fraction<R>
+where
+    R::Element: bincode::de::Decode<C>,
+{
+    fn decode<D: bincode::de::Decoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Fraction {
+            numerator: R::Element::decode(decoder)?,
+            denominator: R::Element::decode(decoder)?,
+        })
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<'de, C, R: Ring> bincode::de::BorrowDecode<'de, C> for Fraction<R>
+where
+    R::Element: bincode::de::BorrowDecode<'de, C>,
+{
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Fraction {
+            numerator: R::Element::borrow_decode(decoder)?,
+            denominator: R::Element::borrow_decode(decoder)?,
+        })
+    }
 }
 
 impl<R: Ring> Fraction<R> {

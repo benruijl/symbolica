@@ -60,6 +60,7 @@ impl IntegerRing {
 
 /// An arbitrary-precision integer that automatically upgrades and downgrades to the most efficient
 /// representation.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Integer {
     Natural(i64),
@@ -70,6 +71,60 @@ pub enum Integer {
 impl InternalOrdering for Integer {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
         Ord::cmp(self, other)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for Integer {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        match self {
+            Integer::Natural(val) => {
+                0u8.encode(encoder)?;
+                val.encode(encoder)
+            }
+            Integer::Double(val) => {
+                1u8.encode(encoder)?;
+                val.encode(encoder)
+            }
+            Integer::Large(val) => {
+                2u8.encode(encoder)?;
+                let bytes = val.to_digits::<u8>(rug::integer::Order::MsfBe);
+                bytes.encode(encoder)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(Integer);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for Integer {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let variant = u8::decode(decoder)?;
+        match variant {
+            0 => {
+                let val = i64::decode(decoder)?;
+                Ok(Integer::Natural(val))
+            }
+            1 => {
+                let val = i128::decode(decoder)?;
+                Ok(Integer::Double(val))
+            }
+            2 => {
+                let b = Vec::<u8>::decode(decoder)?;
+                let val = MultiPrecisionInteger::from_digits(&b, rug::integer::Order::MsfBe);
+                Ok(Integer::Large(val))
+            }
+            _ => Err(bincode::error::DecodeError::OtherString(format!(
+                "Invalid variant for Integer: {}",
+                variant
+            ))),
+        }
     }
 }
 
@@ -2629,5 +2684,16 @@ mod test {
         assert_eq!(g3, 1);
         assert_eq!(s3, -16);
         assert_eq!(t3, 11);
+    }
+
+    #[cfg(feature = "bincode")]
+    #[test]
+    fn bincode_export() {
+        let a = Integer::from(rug::Integer::factorial(150).complete());
+        let encoded = bincode::encode_to_vec(&a, bincode::config::standard()).unwrap();
+        let b: Integer = bincode::decode_from_slice(&encoded, bincode::config::standard())
+            .unwrap()
+            .0;
+        assert_eq!(a, b);
     }
 }

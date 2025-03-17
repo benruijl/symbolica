@@ -15,7 +15,6 @@ use ahash::{AHasher, HashMap};
 use rand::{thread_rng, Rng};
 
 use self_cell::self_cell;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
@@ -189,15 +188,39 @@ pub struct EvalTree<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BuiltinSymbol(Symbol);
 
-impl Serialize for BuiltinSymbol {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+#[cfg(feature = "serde")]
+impl serde::Serialize for BuiltinSymbol {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.get_id().serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for BuiltinSymbol {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BuiltinSymbol {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let id: u32 = u32::deserialize(deserializer)?;
+        Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for BuiltinSymbol {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        u32::encode(&self.0.get_id(), encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(BuiltinSymbol);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for BuiltinSymbol {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let id: u32 = u32::decode(decoder)?;
         Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
     }
 }
@@ -208,7 +231,9 @@ impl BuiltinSymbol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Expression<T> {
     Const(T),
     Parameter(usize),
@@ -606,7 +631,8 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -2692,7 +2718,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 }
 
 /// A slot in a list that contains a numerical value.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 pub enum Slot {
     /// An entry in the list of parameters.
     Param(usize),
@@ -2716,7 +2744,9 @@ impl std::fmt::Display for Slot {
 }
 
 /// An evaluation instruction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     /// `Add(o, [i0,...,i_n])` means `o = i0 + ... + i_n`.
     Add(Slot, Vec<Slot>),
@@ -2829,7 +2859,9 @@ impl<T: Clone> ExpressionEvaluator<T> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),

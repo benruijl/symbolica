@@ -209,6 +209,7 @@ impl State {
     }
 
     #[inline(always)]
+    #[allow(dead_code)]
     pub(crate) unsafe fn symbol_from_id(id: u32) -> Symbol {
         if ID_TO_STR.len() == 0 {
             let _ = *STATE; // initialize the state

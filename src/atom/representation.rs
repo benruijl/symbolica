@@ -161,6 +161,93 @@ impl InlineNum {
     }
 }
 
+#[cfg(feature = "bincode")]
+impl bincode::Encode for Symbol {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        Atom::new_var(*self).encode(encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode_with_context!(Symbol, StateMap);
+#[cfg(feature = "bincode")]
+impl bincode::Decode<StateMap> for Symbol {
+    fn decode<D: bincode::de::Decoder<Context = StateMap>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let atom = Atom::decode(decoder)?;
+        if let Atom::Var(v) = atom {
+            Ok(v.get_symbol())
+        } else {
+            Err(bincode::error::DecodeError::Other("Expected a variable"))
+        }
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for Atom {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        use bincode::enc::write::Writer;
+
+        let d = self.as_view().get_data();
+        let writer = encoder.writer();
+        writer.write(&[0])?;
+        writer.write(&d.len().to_le_bytes())?;
+        writer.write(d)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode_with_context!(Atom, StateMap);
+#[cfg(feature = "bincode")]
+impl bincode::Decode<StateMap> for Atom {
+    fn decode<D: bincode::de::Decoder<Context = StateMap>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        use bincode::de::read::Reader;
+        let atom = {
+            // equivalent to Atom::read
+            let source = decoder.reader();
+
+            let mut dest = Atom::Zero.into_raw();
+
+            // should also set whether rat poly coefficient needs to be converted
+            let mut flags_buf = [0; 1];
+            let mut size_buf = [0; 8];
+
+            source.read(&mut flags_buf)?;
+            source.read(&mut size_buf)?;
+
+            let n_size = u64::from_le_bytes(size_buf);
+
+            dest.extend(size_buf);
+            dest.resize(n_size as usize, 0);
+            source.read(&mut dest)?;
+
+            unsafe {
+                match dest[0] & TYPE_MASK {
+                    NUM_ID => Atom::Num(Num::from_raw(dest)),
+                    VAR_ID => Atom::Var(Var::from_raw(dest)),
+                    FUN_ID => Atom::Fun(Fun::from_raw(dest)),
+                    MUL_ID => Atom::Mul(Mul::from_raw(dest)),
+                    ADD_ID => Atom::Add(Add::from_raw(dest)),
+                    POW_ID => Atom::Pow(Pow::from_raw(dest)),
+                    _ => unreachable!("Unknown type {}", dest[0]),
+                }
+            }
+        };
+
+        let state_map = decoder.context();
+        Ok(atom.as_view().rename(&state_map))
+    }
+}
+
 impl Atom {
     /// Read from a binary stream. The format is the byte-length first
     /// followed by the data.

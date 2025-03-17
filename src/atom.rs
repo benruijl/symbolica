@@ -44,7 +44,6 @@ mod core;
 pub mod representation;
 
 use colored::Colorize;
-use representation::InlineVar;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
@@ -59,8 +58,8 @@ use std::{borrow::Cow, cmp::Ordering, hash::Hash, ops::DerefMut};
 
 pub use self::core::AtomCore;
 pub use self::representation::{
-    Add, AddView, Fun, KeyLookup, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow,
-    PowView, Var, VarView,
+    Add, AddView, Fun, InlineNum, InlineVar, KeyLookup, ListIterator, ListSlice, Mul, MulView, Num,
+    NumView, Pow, PowView, Var, VarView,
 };
 use self::representation::{FunView, RawAtom};
 

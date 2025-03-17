@@ -7,7 +7,7 @@ fn main() {
 
     let pattern = pat_expr.to_pattern();
 
-    println!("> Matching pattern {} to {}:", pat_expr, expr.as_view());
+    println!("> Matching pattern {} to {}:", pat_expr, expr);
 
     // simple match
     for m in expr.pattern_match(&pattern, None, None) {

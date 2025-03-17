@@ -764,7 +764,7 @@ mod test {
         let pattern = parse!("f1(x_)").unwrap().to_pattern();
         let rhs = parse!("f1(v1) + v1").unwrap().to_pattern();
 
-        streamer = streamer.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
+        streamer = streamer.map(|x| x.replace(&pattern).with(&rhs).expand());
 
         streamer.normalize();
 
@@ -790,19 +790,10 @@ mod test {
         let rhs = parse!("v1").unwrap().to_pattern();
 
         streamer = streamer.map(|x| {
-            x.replace_all(
-                &pattern,
-                &rhs,
-                Some(
-                    &(
-                        symbol!("v1_"),
-                        WildcardRestriction::IsAtomType(AtomType::Var),
-                    )
-                        .into(),
-                ),
-                None,
-            )
-            .expand()
+            x.replace(&pattern)
+                .when(symbol!("v1_").restrict(WildcardRestriction::IsAtomType(AtomType::Var)))
+                .with(&rhs)
+                .expand()
         });
 
         streamer.normalize();
@@ -823,7 +814,7 @@ mod test {
         stream.push(input);
 
         // map every term in the expression
-        stream = stream.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
+        stream = stream.map(|x| x.replace(&pattern).with(&rhs).expand());
 
         let r = stream.to_expression();
 

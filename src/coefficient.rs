@@ -1595,23 +1595,9 @@ mod test {
 
         let a = a.set_coefficient_ring(&Arc::new(vec![]));
 
-        let expr = expr
-            .replace_all(
-                &Atom::new_var(v2).to_pattern(),
-                &Atom::new_num(3).to_pattern(),
-                None,
-                None,
-            )
-            .expand();
+        let expr = expr.replace(v2).with(Atom::new_num(3)).expand();
 
-        let a = a
-            .replace_all(
-                &Atom::new_var(v2).to_pattern(),
-                &Atom::new_num(3).to_pattern(),
-                None,
-                None,
-            )
-            .expand();
+        let a = a.replace(v2).with(Atom::new_num(3)).expand();
 
         assert_eq!(a, expr);
     }

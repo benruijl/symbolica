@@ -22,9 +22,8 @@ use crate::{
     },
     evaluate::{EvalTree, EvaluationFn, ExpressionEvaluator, FunctionMap, OptimizationSettings},
     id::{
-        BorrowCondition, BorrowPatternOrMap, BorrowReplacement, Condition, ConditionResult,
-        Context, MatchSettings, Pattern, PatternAtomTreeIterator, PatternRestriction,
-        ReplaceIterator,
+        BorrowReplacement, Condition, ConditionResult, Context, MatchSettings, Pattern,
+        PatternAtomTreeIterator, PatternRestriction, ReplaceBuilder,
     },
     poly::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, series::Series,
@@ -33,8 +32,9 @@ use crate::{
     printer::{AtomPrinter, PrintOptions, PrintState},
     state::Workspace,
     tensors::matrix::Matrix,
+    utils::BorrowedOrOwned,
 };
-use std::{borrow::Borrow, sync::Arc};
+use std::sync::Arc;
 
 use super::{
     representation::{InlineNum, InlineVar},
@@ -1207,118 +1207,91 @@ pub trait AtomCore {
     /// Replace all occurrences of the pattern. The right-hand side is
     /// either another pattern, or a function that maps the matched wildcards to a new expression.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// Replace all occurrences of `x` with `z`:
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::id::Pattern;
     /// let expr = parse!("x + y").unwrap();
-    /// let pattern = parse!("x").unwrap().to_pattern();
-    /// let replacement = parse!("z").unwrap().to_pattern();
-    /// let result = expr.replace_all(&pattern, replacement, None, None);
+    /// let pattern = parse!("x").unwrap();
+    /// let replacement = parse!("z").unwrap();
+    /// let result = expr.replace(pattern).with(replacement);
     /// assert_eq!(result, parse!("z + y").unwrap());
     /// ```
     ///
     /// Set a condition `x_ > 1` (conditions can be chained with `&` and `|`):
     /// ```
+    /// use symbolica::id::Pattern;
     /// use symbolica::{atom::AtomCore, parse, symbol};
-    /// use symbolica::id::{Pattern, WildcardRestriction};
     /// let expr = parse!("f(1) + f(2) + f(3)").unwrap();
-    /// let out = expr.replace_all(
-    ///     parse!("f(x_)").unwrap().to_pattern(),
-    ///     parse!("f(x_ - 1)").unwrap().to_pattern(),
-    ///     symbol!("x_").restrict(WildcardRestriction::filter(|x| x.to_atom() > 1)),
-    ///     None,
-    /// );
+    /// let out = expr
+    ///     .replace(parse!("f(x_)").unwrap())
+    ///     .when(symbol!("x_").filter(|x| x.to_atom() > 1))
+    ///     .with(parse!("f(x_ - 1)").unwrap());
     /// assert_eq!(out, parse!("2*f(1) + f(2)").unwrap());
+    /// ```
+    ///
+    /// Use a map as a right-hand side:
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, function, parse, symbol};
+    /// let (f, x_) = symbol!("f", "x_");
+    /// let a = function!(f, 1) * function!(f, 3);
+    /// let p = function!(f, x_);
+    ///
+    /// let r = a.replace(p).with_map(move |m| {
+    ///     function!(
+    ///         f,
+    ///         parse!(&format!(
+    ///             "p{}",
+    ///             m.get(x_)
+    ///                 .unwrap()
+    ///                 .to_atom()
+    ///                 .printer(PrintOptions::file()),
+    ///         ))
+    ///         .unwrap()
+    ///     )
+    /// });
+    /// let res = parse!("f(p1)*f(p3)").unwrap();
+    /// assert_eq!(r, res);
     /// ```
     ///
     /// Access the match stack to filter for an ascending order of `x`, `y`, `z`:
     /// ```
+    /// use symbolica::id::{Condition, ConditionResult, Pattern};
     /// use symbolica::{atom::AtomCore, parse, symbol};
-    /// use symbolica::id::{Pattern, Condition, ConditionResult};
     /// let expr = parse!("f(1, 2, 3)").unwrap();
-    /// let out = expr.replace_all(
-    ///    parse!("f(x_,y_,z_)").unwrap().to_pattern(),
-    ///    parse!("1").unwrap().to_pattern(),
-    ///    Condition::match_stack(|m| {
-    ///        if let Some(x) = m.get(symbol!("x")) {
-    ///            if let Some(y) = m.get(symbol!("y")) {
-    ///                if x.to_atom() > y.to_atom() {
-    ///                    return ConditionResult::False;
-    ///                }
-    ///
-    ///                if let Some(z) = m.get(symbol!("z")) {
-    ///                    if y.to_atom() > z.to_atom() {
-    ///                        return ConditionResult::False;
-    ///                    }
-    ///                }
-    ///
-    ///                return ConditionResult::True;
-    ///            }
-    ///        }
-    ///        ConditionResult::Inconclusive
-    ///    }),
-    ///    None,
-    /// );
+    /// let out = expr
+    ///     .replace(parse!("f(x_,y_,z_)").unwrap())
+    ///     .when(Condition::match_stack(|m| {
+    ///         if let Some(x) = m.get(symbol!("x")) {
+    ///             if let Some(y) = m.get(symbol!("y")) {
+    ///                 if x.to_atom() > y.to_atom() {
+    ///                     return ConditionResult::False;
+    ///                 }
+    ///                 if let Some(z) = m.get(symbol!("z")) {
+    ///                     if y.to_atom() > z.to_atom() {
+    ///                         return ConditionResult::False;
+    ///                     }
+    ///                 }
+    ///                 return ConditionResult::True;
+    ///             }
+    ///         }
+    ///         ConditionResult::Inconclusive
+    ///     }))
+    ///     .with(parse!("1").unwrap());
     /// assert_eq!(out, parse!("1").unwrap());
     /// ```
-    fn replace_all<
-        'a,
-        P: Borrow<Pattern>,
-        R: BorrowPatternOrMap,
-        C: BorrowCondition,
-        S: Into<Option<&'a MatchSettings>>,
-    >(
+    fn replace<'b, P: Into<BorrowedOrOwned<'b, Pattern>>>(
         &self,
         pattern: P,
-        rhs: R,
-        conditions: C,
-        settings: S,
-    ) -> Atom {
-        self.as_atom_view()
-            .replace_all(pattern.borrow(), rhs, conditions.borrow(), settings.into())
-    }
-
-    /// Replace all occurrences of the pattern.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use symbolica::{atom::{Atom, AtomCore}, parse};
-    /// use symbolica::id::Pattern;
-    /// let expr = parse!("x + y").unwrap();
-    /// let pattern = parse!("x").unwrap().to_pattern();
-    /// let replacement = parse!("z").unwrap().to_pattern();
-    /// let mut out = Atom::new();
-    /// let changed = expr.replace_all_into(&pattern, replacement, None, None, &mut out);
-    /// assert!(changed);
-    /// assert_eq!(out, parse!("z + y").unwrap());
-    /// ```
-    fn replace_all_into<
-        'a,
-        R: BorrowPatternOrMap,
-        C: BorrowCondition,
-        S: Into<Option<&'a MatchSettings>>,
-    >(
-        &self,
-        pattern: &Pattern,
-        rhs: R,
-        conditions: C,
-        settings: S,
-        out: &mut Atom,
-    ) -> bool {
-        self.as_atom_view().replace_all_into(
-            pattern,
-            rhs,
-            conditions.borrow(),
-            settings.into(),
-            out,
-        )
+    ) -> ReplaceBuilder<'_, 'b> {
+        self.as_atom_view().replace(pattern)
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    /// To repeatedly replace multiple patterns, wrap the call in [Atom::replace_map].
     ///
     /// # Example
     ///
@@ -1330,14 +1303,14 @@ pub trait AtomCore {
     /// let replacement1 = parse!("y").unwrap().to_pattern();
     /// let pattern2 = parse!("y").unwrap().to_pattern();
     /// let replacement2 = parse!("x").unwrap().to_pattern();
-    /// let result = expr.replace_all_multiple(&[
+    /// let result = expr.replace_multiple(&[
     ///     Replacement::new(pattern1, replacement1),
     ///     Replacement::new(pattern2, replacement2),
     /// ]);
     /// assert_eq!(result, parse!("x + y").unwrap());
     /// ```
-    fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
-        self.as_atom_view().replace_all_multiple(replacements)
+    fn replace_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
+        self.as_atom_view().replace_multiple(replacements)
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
@@ -1358,17 +1331,16 @@ pub trait AtomCore {
     ///     Replacement::new(pattern1, replacement1),
     ///     Replacement::new(pattern2, replacement2),
     /// ];
-    /// let changed = expr.replace_all_multiple_into(&replacements, &mut out);
+    /// let changed = expr.replace_multiple_into(&replacements, &mut out);
     /// assert!(changed);
     /// assert_eq!(out, parse!("x + y").unwrap());
     /// ```
-    fn replace_all_multiple_into<T: BorrowReplacement>(
+    fn replace_multiple_into<T: BorrowReplacement>(
         &self,
         replacements: &[T],
         out: &mut Atom,
     ) -> bool {
-        self.as_atom_view()
-            .replace_all_multiple_into(replacements, out)
+        self.as_atom_view().replace_multiple_into(replacements, out)
     }
 
     /// Replace part of an expression by calling the map `m` on each subexpression.
@@ -1392,41 +1364,6 @@ pub trait AtomCore {
     /// ```
     fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(&self, m: F) -> Atom {
         self.as_atom_view().replace_map(m)
-    }
-
-    /// Return an iterator that replaces the pattern in the target once.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use symbolica::{atom::AtomCore, parse};
-    /// use symbolica::id::Pattern;
-    /// let expr = parse!("f(x) + f(y)").unwrap();
-    /// let pattern = parse!("f(x_)").unwrap().to_pattern();
-    /// let replacement = parse!("f(z)").unwrap().to_pattern();
-    /// let mut iter = expr.replace_iter(&pattern, &replacement, None, None);
-    /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(y)").unwrap());
-    /// assert_eq!(iter.next().unwrap(), parse!("f(z) + f(x)").unwrap());
-    /// ```
-    fn replace_iter<
-        'a,
-        R: BorrowPatternOrMap,
-        C: Into<Option<&'a Condition<PatternRestriction>>>,
-        S: Into<Option<&'a MatchSettings>>,
-    >(
-        &'a self,
-        pattern: &'a Pattern,
-        rhs: &'a R,
-        conditions: C,
-        settings: S,
-    ) -> ReplaceIterator<'a, 'a> {
-        ReplaceIterator::new(
-            pattern,
-            self.as_atom_view(),
-            rhs.borrow(),
-            conditions.into(),
-            settings.into(),
-        )
     }
 
     /// Return an iterator over matched expressions.

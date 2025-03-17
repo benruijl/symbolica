@@ -1,6 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore, AtomView},
-    id::{Match, WildcardRestriction},
+    id::Match,
     parse, symbol,
 };
 
@@ -14,23 +14,23 @@ fn fibonacci() {
     let rhs_one = Atom::new_num(1).to_pattern();
 
     // prepare the pattern restriction `x_ > 1`
-    let restrictions = (
-        symbol!("x_"),
-        WildcardRestriction::Filter(Box::new(|v: &Match| match v {
-            Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
-            _ => false,
-        })),
-    )
-        .into();
+    let restrictions = symbol!("x_").filter(|v: &Match| match v {
+        Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
+        _ => false,
+    });
 
     let mut target = parse!("f(10)").unwrap();
 
     for _ in 0..9 {
         target = target
-            .replace_all(&pattern, &rhs, Some(&restrictions), None)
+            .replace(&pattern)
+            .when(&restrictions)
+            .with(&rhs)
             .expand()
-            .replace_all(&lhs_zero_pat, &rhs_one, None, None)
-            .replace_all(&lhs_one_pat, &rhs_one, None, None);
+            .replace(&lhs_zero_pat)
+            .with(&rhs_one)
+            .replace(&lhs_one_pat)
+            .with(&rhs_one);
     }
 
     assert_eq!(target, Atom::new_num(89));
@@ -46,10 +46,7 @@ fn replace_once() {
 
     let pattern = pat_expr.as_view().to_pattern();
 
-    let r: Vec<_> = expr
-        .replace_iter(&pattern, &rhs, None, None)
-        .into_iter()
-        .collect();
+    let r: Vec<_> = expr.replace(&pattern).iter(&rhs).into_iter().collect();
 
     let res = [
         "g(z)*f(y)*f(f(x))",

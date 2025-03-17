@@ -91,7 +91,7 @@ def S(name: str,
     dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
 
     Define a custom normalization function:
-    >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
+    >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     >>> E("real_log(exp(x)) + real_log(5)")
 
     Parameters
@@ -319,7 +319,7 @@ class Expression:
         dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
 
         Define a custom normalization function:
-        >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
+        >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
         >>> E("real_log(exp(x)) + real_log(5)")
 
         Parameters
@@ -717,7 +717,7 @@ class Expression:
         >>> x, x_ = Expression.symbol('x', 'x_')
         >>> f = Expression.symbol('f')
         >>> e = f(x)*f(2)*f(f(3))
-        >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
+        >>> e = e.replace(f(x_), 1, x_.req_type(AtomType.Num))
         >>> print(e)
 
         Yields `f(x)*f(1)`.
@@ -753,7 +753,7 @@ class Expression:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> e = e.replace_all(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
+        >>> e = e.replace(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
         """
 
     def req_cmp(
@@ -771,7 +771,7 @@ class Expression:
         >>> x_, y_ = Expression.symbol('x_', 'y_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
+        >>> e = e.replace(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
         """
 
     def req_lt(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
@@ -788,7 +788,7 @@ class Expression:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
+        >>> e = e.replace(f(x_), 1, x_.req_lt(2))
         """
 
     def req_gt(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
@@ -805,7 +805,7 @@ class Expression:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
+        >>> e = e.replace(f(x_), 1, x_.req_gt(2))
         """
 
     def req_le(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
@@ -822,7 +822,7 @@ class Expression:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
+        >>> e = e.replace(f(x_), 1, x_.req_le(2))
         """
 
     def req_ge(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
@@ -839,7 +839,7 @@ class Expression:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
+        >>> e = e.replace(f(x_), 1, x_.req_ge(2))
         """
 
     def req_cmp_lt(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
@@ -856,7 +856,7 @@ class Expression:
         >>> x_, y_ = Expression.symbol('x_', 'y_')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2)
-        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
+        >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_lt(y_))
         """
 
     def req_cmp_gt(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
@@ -873,7 +873,7 @@ class Expression:
         >>> x_, y_ = Expression.symbol('x_', 'y_')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2)
-        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
+        >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_gt(y_))
         """
 
     def req_cmp_le(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
@@ -890,7 +890,7 @@ class Expression:
         >>> x_, y_ = Expression.symbol('x_', 'y_')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2)
-        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
+        >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_le(y_))
         """
 
     def req_cmp_ge(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
@@ -907,7 +907,7 @@ class Expression:
         >>> x_, y_ = Expression.symbol('x_', 'y_')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2)
-        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
+        >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_ge(y_))
         """
 
     def __eq__(self, other: Expression | int | float | Decimal) -> Condition:
@@ -961,7 +961,7 @@ class Expression:
         --------
         >>> x, x_ = Expression.symbol('x', 'x_')
         >>> e = (1+x)**2
-        >>> r = e.map(Transformer().expand().replace_all(x, 6))
+        >>> r = e.map(Transformer().expand().replace(x, 6))
         >>> print(r)
         """
 
@@ -1314,7 +1314,7 @@ class Expression:
         >>>    print('match')
         """
 
-    def replace(
+    def replace_iter(
         self,
         lhs: Transformer | Expression | int | float | Decimal,
         rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
@@ -1334,7 +1334,7 @@ class Expression:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
-        >>> for r in e.replace(f(x_), f(x_ + 1)):
+        >>> for r in e.replace_iter(f(x_), f(x_ + 1)):
         >>>     print(r)
 
         Yields:
@@ -1360,7 +1360,7 @@ class Expression:
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         """
 
-    def replace_all(
+    def replace(
         self,
         pattern: Transformer | Expression | int | float | Decimal,
         rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
@@ -1381,7 +1381,7 @@ class Expression:
         >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
         >>> f = Expression.symbol('f')
         >>> e = f(3,x)
-        >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
+        >>> r = e.replace(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
         >>> print(r)
 
         Parameters
@@ -1409,9 +1409,9 @@ class Expression:
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
-    def replace_all_multiple(self, replacements: Sequence[Replacement],  repeat: Optional[bool] = False) -> Expression:
+    def replace_multiple(self, replacements: Sequence[Replacement],  repeat: Optional[bool] = False) -> Expression:
         """
-        Replace all atoms matching the patterns. See `replace_all` for more information.
+        Replace all atoms matching the patterns. See `replace` for more information.
 
         The entire operation can be repeated until there are no more matches using `repeat=True`.
 
@@ -1420,7 +1420,7 @@ class Expression:
 
         >>> x, y, f = Expression.symbol('x', 'y', 'f')
         >>> e = f(x,y)
-        >>> r = e.replace_all_multiple([Replacement(x, y), Replacement(y, x)])
+        >>> r = e.replace_multiple([Replacement(x, y), Replacement(y, x)])
         >>> print(r)
         f(y,x)
 
@@ -1684,7 +1684,7 @@ class Replacement:
             level_is_tree_depth: Optional[bool] = False,
             allow_new_wildcards_on_rhs: Optional[bool] = False,
             rhs_cache_size: Optional[int] = None) -> Replacement:
-        """Create a new replacement. See `replace_all` for more information."""
+        """Create a new replacement. See `replace` for more information."""
 
 
 class PatternRestriction:
@@ -1727,7 +1727,7 @@ class PatternRestriction:
         >>>    return 0  # inconclusive
         >>>
         >>>
-        >>> e = f(1, 2, 3).replace_all(f(x_, y_, z_), 1,
+        >>> e = f(1, 2, 3).replace(f(x_, y_, z_), 1,
         >>>         PatternRestriction.req_matches(filter))
         """
 
@@ -1852,7 +1852,7 @@ class Transformer:
 
         Examples
         --------
-        >>> t = T.map_terms(T.if_changed(T.replace_all(x, y), T.print()))
+        >>> t = T.map_terms(T.if_changed(T.replace(x, y), T.print()))
         >>> print(t(x + y + 4))
 
         prints
@@ -1869,8 +1869,8 @@ class Transformer:
         --------
         >>> from symbolica import *
         >>> t = T.map_terms(T.repeat(
-        >>>     T.replace_all(y, 4),
-        >>>     T.if_changed(T.replace_all(x, y),
+        >>>     T.replace(y, 4),
+        >>>     T.if_changed(T.replace(x, y),
         >>>                 T.break_chain()),
         >>>     T.print()  # print of y is never reached
         >>> ))
@@ -1887,7 +1887,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x, x_ = Expression.symbol('x', 'x_')
         >>> f = Expression.symbol('f')
-        >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
+        >>> e = f((x+1)**2).replace(f(x_), x_.transform().expand())
         >>> print(e)
         """
 
@@ -1917,7 +1917,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x__ = Expression.symbol('x__')
         >>> f = Expression.symbol('f')
-        >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
+        >>> e = f(2,3).replace(f(x__), x__.transform().prod())
         >>> print(e)
         """
 
@@ -1929,7 +1929,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x__ = Expression.symbol('x__')
         >>> f = Expression.symbol('f')
-        >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
+        >>> e = f(2,3).replace(f(x__), x__.transform().sum())
         >>> print(e)
         """
 
@@ -1946,7 +1946,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x__ = Expression.symbol('x__')
         >>> f = Expression.symbol('f')
-        >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
+        >>> e = f(2,3,4).replace(f(x__), x__.transform().nargs())
         >>> print(e)
         """
 
@@ -1958,7 +1958,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x__ = Expression.symbol('x__')
         >>> f = Expression.symbol('f')
-        >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
+        >>> e = f(3,2,1).replace(f(x__), x__.transform().sort())
         >>> print(e)
         """
 
@@ -1970,7 +1970,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x_ = Expression.symbol('x__')
         >>> f = Expression.symbol('f')
-        >>> e = f(1,2,4,1,2,3).replace_all(f(x__), x_.transform().cycle_symmetrize())
+        >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.transform().cycle_symmetrize())
         >>> print(e)
 
         Yields `f(1,2,3,1,2,4)`.
@@ -1985,7 +1985,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x__ = Expression.symbol('x__')
         >>> f = Expression.symbol('f')
-        >>> e = f(1,2,1,2).replace_all(f(x__), x__.transform().deduplicate())
+        >>> e = f(1,2,1,2).replace(f(x__), x__.transform().deduplicate())
         >>> print(e)
 
         Yields `f(1,2)`.
@@ -2009,7 +2009,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x, x__ = Expression.symbol('x', 'x__')
         >>> f = Expression.symbol('f')
-        >>> e = (x + 1).replace_all(x__, f(x_.transform().split()))
+        >>> e = (x + 1).replace(x__, f(x_.transform().split()))
         >>> print(e)
         """
 
@@ -2022,7 +2022,7 @@ class Transformer:
 
         >>> from symbolica import Expression, Transformer
         >>> x, y, z, w, f, x__ = Expression.symbol('x', 'y', 'z', 'w', 'f', 'x__')
-        >>> e = f(x+y, 4*z*w+3).replace_all(f(x__), f(x__).transform().linearize([z]))
+        >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).transform().linearize([z]))
         >>> print(e)
 
         yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
@@ -2050,7 +2050,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x_, f_id, g_id = Expression.symbol('x__', 'f', 'g')
         >>> f = Expression.symbol('f')
-        >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
+        >>> e = f(1,2,1,3).replace(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
         >>> print(e)
 
         yields:
@@ -2067,7 +2067,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x_, f_id = Expression.symbol('x__', 'f')
         >>> f = Expression.symbol('f')
-        >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
+        >>> e = f(1,2,1,2).replace(f(x_), x_.transform().permutations(f_id)
         >>> print(e)
 
         yields:
@@ -2084,7 +2084,7 @@ class Transformer:
         >>> from symbolica import Expression, Transformer
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
-        >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
+        >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
         >>> print(e)
         """
 
@@ -2120,7 +2120,7 @@ class Transformer:
         >>> from symbolica import *
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
-        >>> f(10).transform().repeat(Transformer().replace_all(
+        >>> f(10).transform().repeat(Transformer().replace(
         >>> f(x_), f(x_+1)).check_interrupt()).execute()
         """
 
@@ -2137,7 +2137,7 @@ class Transformer:
         >>> e = Expression.parse("f(5)")
         >>> e = e.transform().repeat(
         >>>     Transformer().expand(),
-        >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+        >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
         >>> ).execute()
         """
 
@@ -2153,7 +2153,7 @@ class Transformer:
         >>> e = Expression.parse("f(5)")
         >>> e = e.transform().chain(
         >>>     Transformer().expand(),
-        >>>     Transformer().replace_all(f(x_), f(5))
+        >>>     Transformer().replace(f(x_), f(5))
         >>> ).execute()
         """
 
@@ -2210,8 +2210,8 @@ class Transformer:
         >>> from symbolica import Expression
         >>> x, y, x_, var, coeff = Expression.symbol('x', 'y', 'x_', 'var', 'coeff')
         >>> e = 5*x + x * y + x**2 + 5
-        >>> print(e.collect(x, key_map=Transformer().replace_all(x_, var(x_)),
-                coeff_map=Transformer().replace_all(x_, coeff(x_))))
+        >>> print(e.collect(x, key_map=Transformer().replace(x_, var(x_)),
+                coeff_map=Transformer().replace(x_, coeff(x_))))
 
         yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
 
@@ -2340,7 +2340,7 @@ class Transformer:
         yields `f(0)+x*der(1,f(0))+1/2*x^2*(der(2,f(0))+4*y)`.
         """
 
-    def replace_all(
+    def replace(
         self,
         pat: Transformer | Expression | int | float | Decimal,
         rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
@@ -2359,7 +2359,7 @@ class Transformer:
         >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
         >>> f = Expression.symbol('f')
         >>> e = f(3,x)
-        >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
+        >>> r = e.transform().replace(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
         >>> print(r)
 
         Parameters
@@ -2385,16 +2385,16 @@ class Transformer:
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
-    def replace_all_multiple(self, replacements: Sequence[Replacement]) -> Transformer:
+    def replace_multiple(self, replacements: Sequence[Replacement]) -> Transformer:
         """
-        Create a transformer that replaces all atoms matching the patterns. See `replace_all` for more information.
+        Create a transformer that replaces all atoms matching the patterns. See `replace` for more information.
 
         Examples
         --------
 
         >>> x, y, f = Expression.symbol('x', 'y', 'f')
         >>> e = f(x,y)
-        >>> r = e.transform().replace_all_multiple([Replacement(x, y), Replacement(y, x)])
+        >>> r = e.transform().replace_multiple([Replacement(x, y), Replacement(y, x)])
         >>> print(r)
         """
 
@@ -2439,7 +2439,7 @@ class Transformer:
         >>> x_ = Expression.symbol('x_')
         >>> f = Expression.symbol('f')
         >>> e = Expression.parse("f(5)")
-        >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
+        >>> e = e.transform().stats('replace', Transformer().replace(f(x_), 1)).execute()
 
         yields
         ```

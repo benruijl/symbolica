@@ -70,6 +70,7 @@ pub mod state;
 pub mod streaming;
 pub mod tensors;
 pub mod transformer;
+pub mod utils;
 
 #[cfg(feature = "faster_alloc")]
 #[global_allocator]

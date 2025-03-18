@@ -11626,20 +11626,18 @@ impl PythonSample {
         let mut weight_index = self.weights.len() - 1;
 
         let mut sample = if !self.c.is_empty() {
-            let s = Some(Sample::Continuous(self.weights[weight_index], self.c));
-            weight_index -= 1;
-            s
+            Some(Sample::Continuous(self.weights[weight_index], self.c))
         } else {
             None
         };
 
         for dd in self.d.iter().rev() {
+            weight_index -= 1;
             sample = Some(Sample::Discrete(
                 self.weights[weight_index],
                 *dd,
                 sample.map(Box::new),
             ));
-            weight_index -= 1;
         }
 
         sample.unwrap()

@@ -38,7 +38,9 @@ python_no_module = ["python_api"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 tracing_only_warnings = ["tracing/release_max_level_warn"]
+# import/export objects that do not depend on the state using serde
 serde = ["dep:serde", "rug/serde"]
+# allow importing/exporting of atoms with a state map using bincode
 bincode = ["dep:bincode"]
 
 [dependencies.pyo3]

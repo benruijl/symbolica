@@ -209,22 +209,19 @@ impl bincode::Encode for BuiltinSymbol {
         &self,
         encoder: &mut E,
     ) -> core::result::Result<(), bincode::error::EncodeError> {
-        Atom::new_var(self.0).encode(encoder)
+        u32::encode(&self.0.get_id(), encoder)
     }
 }
 
 #[cfg(feature = "bincode")]
-bincode::impl_borrow_decode_with_context!(BuiltinSymbol, crate::state::StateMap);
+bincode::impl_borrow_decode!(BuiltinSymbol);
 #[cfg(feature = "bincode")]
-impl bincode::Decode<crate::state::StateMap> for BuiltinSymbol {
-    fn decode<D: bincode::de::Decoder<Context = crate::state::StateMap>>(
+impl<Context> bincode::Decode<Context> for BuiltinSymbol {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
-        let a = Atom::decode(decoder)?;
-        match a {
-            Atom::Var(v) => Ok(BuiltinSymbol(v.get_symbol())),
-            _ => Err(bincode::error::DecodeError::Other("Expected a variable")),
-        }
+        let id: u32 = u32::decode(decoder)?;
+        Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
     }
 }
 
@@ -235,11 +232,7 @@ impl BuiltinSymbol {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    feature = "bincode",
-    derive(bincode::Encode, bincode::Decode),
-    bincode(decode_context = "crate::state::StateMap")
-)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Expression<T> {
     Const(T),
@@ -2726,11 +2719,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
 /// A slot in a list that contains a numerical value.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    feature = "bincode",
-    derive(bincode::Encode, bincode::Decode),
-    bincode(decode_context = "crate::state::StateMap")
-)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 pub enum Slot {
     /// An entry in the list of parameters.
@@ -2756,11 +2745,7 @@ impl std::fmt::Display for Slot {
 
 /// An evaluation instruction.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    feature = "bincode",
-    derive(bincode::Encode, bincode::Decode),
-    bincode(decode_context = "crate::state::StateMap")
-)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 pub enum Instruction {
     /// `Add(o, [i0,...,i_n])` means `o = i0 + ... + i_n`.
@@ -2875,11 +2860,7 @@ impl<T: Clone> ExpressionEvaluator<T> {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(
-    feature = "bincode",
-    derive(bincode::Encode, bincode::Decode),
-    bincode(decode_context = "crate::state::StateMap")
-)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 enum Instr {
     Add(usize, Vec<usize>),

@@ -350,7 +350,7 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
     ///
     /// Prefix the argument of a function with `p`:
     /// ```
-    /// use symbolica::{atom::AtomCore, function, parse, symbol};
+    /// use symbolica::{atom::AtomCore, function, parse, printer::PrintOptions, symbol};
     /// let (f, x_) = symbol!("f", "x_");
     /// let a = function!(f, 1) * function!(f, 3);
     /// let p = function!(f, x_);

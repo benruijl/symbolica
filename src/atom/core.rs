@@ -1235,7 +1235,7 @@ pub trait AtomCore {
     /// Use a map as a right-hand side:
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, function, parse, symbol};
+    /// use symbolica::{atom::AtomCore, function, parse, printer::PrintOptions, symbol};
     /// let (f, x_) = symbol!("f", "x_");
     /// let a = function!(f, 1) * function!(f, 3);
     /// let p = function!(f, x_);

@@ -186,6 +186,36 @@ pub trait Field: EuclideanDomain {
     fn inv(&self, a: &Self::Element) -> Self::Element;
 }
 
+/// Rings that can be upgraded to fields, such as `IntegerRing` and `PolynomialRing`.
+/// The most common upgrade is by creating a fraction field, such as `Q[x]`.
+pub trait UpgradeToField: Ring {
+    type Upgraded: Field;
+
+    /// Upgrade the ring to a field.
+    fn upgrade(self) -> Self::Upgraded;
+
+    /// Upgrade an element of the ring to an element of the upgraded field.
+    fn upgrade_element(
+        &self,
+        element: <Self as Ring>::Element,
+    ) -> <Self::Upgraded as Ring>::Element;
+}
+
+impl<T: Field> UpgradeToField for T {
+    type Upgraded = Self;
+
+    fn upgrade(self) -> Self::Upgraded {
+        self
+    }
+
+    fn upgrade_element(
+        &self,
+        element: <Self as Ring>::Element,
+    ) -> <Self::Upgraded as Ring>::Element {
+        element
+    }
+}
+
 /// Provides an interface for printing elements of a ring with optional customization,
 /// suitable as an argument to [format!]. Internally, it will call [Ring::format].
 pub struct RingPrinter<'a, R: Ring> {

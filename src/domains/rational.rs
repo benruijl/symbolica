@@ -17,7 +17,7 @@ use super::{
         Zp, Z2,
     },
     integer::{Integer, IntegerRing, Z},
-    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, UpgradeToField,
 };
 
 /// The field of rational numbers.
@@ -576,6 +576,21 @@ impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<Fra
 
 /// A rational number.
 pub type Rational = Fraction<IntegerRing>;
+
+impl UpgradeToField for IntegerRing {
+    type Upgraded = Q;
+
+    fn upgrade(self) -> Self::Upgraded {
+        Q
+    }
+
+    fn upgrade_element(
+        &self,
+        element: <Self as Ring>::Element,
+    ) -> <Self::Upgraded as Ring>::Element {
+        Rational::from(element)
+    }
+}
 
 impl Default for Rational {
     fn default() -> Self {

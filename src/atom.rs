@@ -1072,6 +1072,7 @@ impl<'a> AtomView<'a> {
 ///     ..PrintOptions::new()
 /// }));
 /// ```
+#[must_use]
 #[derive(Clone)]
 pub enum Atom {
     Num(Num),

@@ -245,6 +245,32 @@ impl<'a> AtomView<'a> {
         }
     }
 
+    /// Write the expression as a sum of terms with minimal denominators in all variables.
+    pub fn apart_multivariate(&self) -> Atom {
+        let mut out = Atom::new();
+
+        Workspace::get_local().with(|ws| {
+            self.apart_multivariate_with_ws_into(ws, &mut out);
+        });
+
+        out
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators in all variables.
+    pub fn apart_multivariate_with_ws_into(&self, ws: &Workspace, out: &mut Atom) {
+        let poly = self.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+
+        let mut a = ws.new_atom();
+        let add = a.to_add();
+        let mut tmp = ws.new_atom();
+        for x in poly.apart_multivariate() {
+            x.to_expression_into(&mut tmp);
+            add.extend(tmp.as_view());
+        }
+
+        add.as_view().normalize(ws, out);
+    }
+
     /// Cancel all common factors between numerators and denominators.
     /// Any non-canceling parts of the expression will not be rewritten.
     pub(crate) fn cancel(&self) -> Atom {

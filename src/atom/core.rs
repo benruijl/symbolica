@@ -222,7 +222,7 @@ pub trait AtomCore {
         self.as_atom_view().together()
     }
 
-    /// Write the expression as a sum of terms with minimal denominators.
+    /// Write the expression as a sum of terms with minimal denominators in `x`.
     ///
     /// # Example
     ///
@@ -235,6 +235,22 @@ pub trait AtomCore {
     /// ```
     fn apart(&self, x: Symbol) -> Atom {
         self.as_atom_view().apart(x)
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators in all variables.
+    /// This method computes a Groebner basis and may therefore be slow for large inputs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("(2y-x)/(y*(x+y)*(y-x))").unwrap();
+    /// let apart = expr.apart_multivariate();
+    /// let r = parse!("3/(2*y*x+2*y^2)+1/(2*y^2-2*x*y)").unwrap();
+    /// assert_eq!(apart, r);
+    /// ```
+    fn apart_multivariate(&self) -> Atom {
+        self.as_atom_view().apart_multivariate()
     }
 
     /// Cancel all common factors between numerators and denominators.

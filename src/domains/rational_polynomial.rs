@@ -13,8 +13,12 @@ use ahash::HashMap;
 
 use crate::{
     poly::{
-        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
-        univariate::UnivariatePolynomial, PositiveExponent, Variable,
+        factor::Factorize,
+        gcd::PolynomialGCD,
+        groebner::{Echelonize, GroebnerBasis},
+        polynomial::{MultivariatePolynomial, PolynomialRing},
+        univariate::UnivariatePolynomial,
+        GrevLexOrder, LexOrder, PositiveExponent, Variable,
     },
     printer::{PrintOptions, PrintState},
 };
@@ -23,7 +27,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+    Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, UpgradeToField,
 };
 
 /// A rational polynomial field.
@@ -56,6 +60,29 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: PositiveExponent> {
         field: &OR,
         do_gcd: bool,
     ) -> RationalPolynomial<OR, E>;
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> UpgradeToField
+    for PolynomialRing<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
+    type Upgraded = RationalPolynomialField<R, E>;
+
+    fn upgrade(self) -> RationalPolynomialField<R, E> {
+        RationalPolynomialField {
+            ring: self.ring,
+            _phantom_exp: PhantomData,
+        }
+    }
+
+    fn upgrade_element(
+        &self,
+        element: <Self as Ring>::Element,
+    ) -> <Self::Upgraded as Ring>::Element {
+        let one = element.one();
+        RationalPolynomial::from_num_den(element, one, &self.ring, false)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -1010,6 +1037,110 @@ where
         }
 
         hs
+    }
+}
+
+impl<R: EuclideanDomain + UpgradeToField + PolynomialGCD<E>, E: PositiveExponent>
+    RationalPolynomial<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<<R as UpgradeToField>::Upgraded, R, E>,
+    <R as UpgradeToField>::Upgraded: Echelonize,
+    MultivariatePolynomial<R, E>: Factorize,
+{
+    /// Compute the multivariate partial fraction decomposition.
+    /// Based on [MultivariateApart](https://arxiv.org/abs/2101.08283v1) by Heller and von Manteuffel.
+    pub fn apart_multivariate(&self) -> Vec<Self> {
+        if self.numerator.nterms() == 1 {
+            return vec![self.clone()];
+        }
+
+        let mut fs = self.denominator.factor();
+
+        // sort by number of variables
+        // TODO: block sort
+        fs.sort_by_key(|(f, _)| {
+            std::cmp::Reverse((0..f.nvars()).filter(|v| f.contains(*v)).count())
+        });
+
+        let mut vars = (0..fs.len())
+            .map(|i| Variable::Temporary(i))
+            .collect::<Vec<_>>();
+        for v in self.numerator.get_vars_ref() {
+            vars.push(v.clone());
+        }
+
+        let mut r = self.numerator.rearrange_with_growth(&vars).unwrap();
+        let mut exp = vec![E::zero(); vars.len()];
+        let mut system = Vec::with_capacity(fs.len());
+        for (var, (f, p)) in fs.iter().enumerate() {
+            exp[var] = E::from_u32(*p as u32);
+            r = r.mul_exp(&exp);
+
+            exp[var] = E::one();
+            let f = f
+                .rearrange_with_growth(&vars)
+                .unwrap()
+                .mul_exp(&exp)
+                .add_constant(f.ring.neg(&f.ring.one()));
+
+            system.push(f.reorder::<GrevLexOrder>().map_coeff(
+                |c| f.ring.upgrade_element(c.clone()),
+                f.ring.clone().upgrade(),
+            ));
+            exp[var] = E::zero();
+        }
+
+        let g = GroebnerBasis::new(&system, false);
+        let res = r
+            .map_coeff(
+                |c| r.ring.upgrade_element(c.clone()),
+                r.ring.clone().upgrade(),
+            )
+            .reorder::<GrevLexOrder>()
+            .reduce(&g.system)
+            .reorder::<LexOrder>();
+
+        let fc = fs
+            .iter()
+            .map(|(f, _)| {
+                f.map_coeff(
+                    |c| r.ring.upgrade_element(c.clone()),
+                    r.ring.clone().upgrade(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let mut parts = vec![];
+        let mut exp = vec![E::zero(); self.numerator.nvars()];
+        for term in &res {
+            let mut num = self
+                .numerator
+                .map_coeff(
+                    |c| r.ring.upgrade_element(c.clone()),
+                    r.ring.clone().upgrade(),
+                )
+                .constant(term.coefficient.clone());
+            let mut den = num.one();
+            for (i, v) in term.exponents.iter().enumerate() {
+                if *v != E::zero() {
+                    if i < fc.len() {
+                        if *v == E::one() {
+                            den = den * &fc[i];
+                        } else {
+                            den = den * &fc[i].pow(v.to_u32() as usize);
+                        }
+                    } else {
+                        exp[i - fc.len()] = *v;
+                        num = num.mul_exp(&exp);
+                        exp[i - fc.len()] = E::zero();
+                    }
+                }
+            }
+            parts.push(Self::from_num_den(num, den, &self.numerator.ring, false));
+        }
+
+        parts
     }
 }
 

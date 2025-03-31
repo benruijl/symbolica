@@ -2969,6 +2969,10 @@ impl PythonExpression {
         ))
     }
 
+    pub fn __contains__(&self, expr: &PythonExpression) -> bool {
+        self.expr.contains(&expr.expr)
+    }
+
     /// Get the number of bytes that this expression takes up in memory.
     pub fn get_byte_size(&self) -> usize {
         self.expr.as_view().get_byte_size()
@@ -4117,6 +4121,12 @@ impl PythonExpression {
         key_map: Option<PyObject>,
         coeff_map: Option<PyObject>,
     ) -> PyResult<PythonExpression> {
+        if x.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "No variable or function specified",
+            ));
+        }
+
         let mut xs = vec![];
         for a in x {
             if let Ok(r) = a.extract::<PythonExpression>() {
@@ -4345,6 +4355,12 @@ impl PythonExpression {
         &self,
         x: Bound<'_, PyTuple>,
     ) -> PyResult<Vec<(PythonExpression, PythonExpression)>> {
+        if x.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "No variable or function specified",
+            ));
+        }
+
         let mut xs = vec![];
         for a in x {
             if let Ok(r) = a.extract::<PythonExpression>() {
@@ -4431,42 +4447,31 @@ impl PythonExpression {
 
     /// Compute the partial fraction decomposition in `x`.
     ///
+    /// If `None` is passed, the expression will be decomposed in all variables
+    /// which involves a potentially expensive Groebner basis computation.
+    ///
     /// Examples
     /// --------
     ///
-    /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))')
-    /// >>> print(p.apart(x))
-    pub fn apart(&self, x: PythonExpression) -> PyResult<PythonExpression> {
-        let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
-        let x = poly
-            .get_variables()
-            .iter()
-            .position(|v| match (v, x.expr.as_view()) {
-                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                _ => false,
-            })
-            .ok_or(exceptions::PyValueError::new_err(format!(
-                "Variable {} not found in polynomial",
-                x.__str__()?
-            )))?;
-
-        let fs = poly.apart(x);
-
-        let mut rn = Atom::new();
-        Workspace::get_local().with(|ws| {
-            let mut res = ws.new_atom();
-            let a = res.to_add();
-            for f in fs {
-                a.extend(f.to_expression().as_view());
+    /// >>> p = E('1/((x+y)*(x^2+x*y+1)(x+1))')
+    /// >>> print(p.apart(S('x')))
+    ///
+    /// Multivariate partial fractioning
+    /// >>> p = E('(2y-x)/(y*(x+y)*(y-x))')
+    /// >>> print(p.apart())
+    #[pyo3(signature = (x = None))]
+    pub fn apart(&self, x: Option<PythonExpression>) -> PyResult<PythonExpression> {
+        if let Some(x) = x {
+            if let Some(r) = x.expr.get_symbol() {
+                Ok(self.expr.apart(r).into())
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Partial fraction decomposition must be done wrt a symbol",
+                ));
             }
-
-            res.as_view().normalize(ws, &mut rn);
-        });
-
-        Ok(rn.into())
+        } else {
+            Ok(self.apart_multivariate().into())
+        }
     }
 
     /// Write the expression over a common denominator.
@@ -6175,6 +6180,11 @@ impl PythonAtomIterator {
 
 #[pymethods]
 impl PythonAtomIterator {
+    /// Create the iterator.
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
     fn __next__(&mut self) -> Option<PythonExpression> {
         self.with_dependent_mut(|_, i| {
             i.next().map(|e| {
@@ -6379,6 +6389,18 @@ impl PythonPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
+    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonPolynomial> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            poly: self.poly.pow(p),
+        })
+    }
+
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
@@ -6394,7 +6416,7 @@ impl PythonPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_vars_ref() {
@@ -6465,6 +6487,60 @@ impl PythonPolynomial {
                 r
             )))
         }
+    }
+
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.poly.unify_variables(&mut other.poly);
+    }
+
+    pub fn __contains__(&self, var: &PythonExpression) -> bool {
+        self.contains(var)
+    }
+
+    pub fn contains(&self, var: &PythonExpression) -> bool {
+        if let Some(p) =
+            self.poly
+                .get_vars_ref()
+                .iter()
+                .position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                })
+        {
+            self.poly.contains(p)
+        } else {
+            false
+        }
+    }
+
+    pub fn degree(&self, var: &PythonExpression) -> PyResult<isize> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        Ok(self.poly.degree(x) as isize)
+    }
+
+    /// Set a new variable ordering for the polynomial.
+    /// This can be used to introduce new variables as well.
+    pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
+        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        self.poly = self
+            .poly
+            .rearrange_with_growth(&vars)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+        Ok(())
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
@@ -6548,7 +6624,7 @@ impl PythonPolynomial {
     }
 
     /// Compute the resultant of two polynomials with respect to the variable `var`.
-    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+    pub fn resultant(&self, rhs: Self, var: &PythonExpression) -> PyResult<Self> {
         let x = self
             .poly
             .get_vars_ref()
@@ -6955,9 +7031,32 @@ impl PythonPolynomial {
                 })
                 .collect()
         } else {
-            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
             let gb = GroebnerBasis::new(&ideal, print_stats);
             gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    #[pyo3(signature = (system, grevlex = true))]
+    pub fn reduce(&self, system: Vec<Self>, grevlex: bool) -> Self {
+        if grevlex {
+            let p = self.poly.reorder::<GrevLexOrder>();
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+
+            let r = p.reduce(&grevlex_ideal);
+            Self {
+                poly: r.reorder::<LexOrder>(),
+            }
+        } else {
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
+            Self {
+                poly: self.poly.reduce(&ideal),
+            }
         }
     }
 
@@ -7194,6 +7293,18 @@ impl PythonFiniteFieldPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
+    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonFiniteFieldPolynomial> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            poly: self.poly.pow(p),
+        })
+    }
+
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
@@ -7209,7 +7320,7 @@ impl PythonFiniteFieldPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_vars_ref() {
@@ -7280,6 +7391,60 @@ impl PythonFiniteFieldPolynomial {
                 r
             )))
         }
+    }
+
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.poly.unify_variables(&mut other.poly);
+    }
+
+    pub fn __contains__(&self, var: &PythonExpression) -> bool {
+        self.contains(var)
+    }
+
+    pub fn contains(&self, var: &PythonExpression) -> bool {
+        if let Some(p) =
+            self.poly
+                .get_vars_ref()
+                .iter()
+                .position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                })
+        {
+            self.poly.contains(p)
+        } else {
+            false
+        }
+    }
+
+    pub fn degree(&self, var: &PythonExpression) -> PyResult<isize> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        Ok(self.poly.degree(x) as isize)
+    }
+
+    /// Set a new variable ordering for the polynomial.
+    /// This can be used to introduce new variables as well.
+    pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
+        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        self.poly = self
+            .poly
+            .rearrange_with_growth(&vars)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+        Ok(())
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
@@ -7664,6 +7829,29 @@ impl PythonFiniteFieldPolynomial {
         }
     }
 
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    #[pyo3(signature = (system, grevlex = true))]
+    pub fn reduce(&self, system: Vec<Self>, grevlex: bool) -> Self {
+        if grevlex {
+            let p = self.poly.reorder::<GrevLexOrder>();
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+
+            let r = p.reduce(&grevlex_ideal);
+            Self {
+                poly: r.reorder::<LexOrder>(),
+            }
+        } else {
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
+            Self {
+                poly: self.poly.reduce(&ideal),
+            }
+        }
+    }
+
     /// Integrate the polynomial in `x`.
     ///
     /// Examples
@@ -7868,6 +8056,18 @@ impl PythonPrimeTwoPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
+    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonPrimeTwoPolynomial> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            poly: self.poly.pow(p),
+        })
+    }
+
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
@@ -7883,7 +8083,7 @@ impl PythonPrimeTwoPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_vars_ref() {
@@ -7936,6 +8136,60 @@ impl PythonPrimeTwoPolynomial {
                 r
             )))
         }
+    }
+
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.poly.unify_variables(&mut other.poly);
+    }
+
+    pub fn __contains__(&self, var: &PythonExpression) -> bool {
+        self.contains(var)
+    }
+
+    pub fn contains(&self, var: &PythonExpression) -> bool {
+        if let Some(p) =
+            self.poly
+                .get_vars_ref()
+                .iter()
+                .position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                })
+        {
+            self.poly.contains(p)
+        } else {
+            false
+        }
+    }
+
+    pub fn degree(&self, var: &PythonExpression) -> PyResult<isize> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        Ok(self.poly.degree(x) as isize)
+    }
+
+    /// Set a new variable ordering for the polynomial.
+    /// This can be used to introduce new variables as well.
+    pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
+        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        self.poly = self
+            .poly
+            .rearrange_with_growth(&vars)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+        Ok(())
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
@@ -8261,6 +8515,29 @@ impl PythonPrimeTwoPolynomial {
         }
     }
 
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    #[pyo3(signature = (system, grevlex = true))]
+    pub fn reduce(&self, system: Vec<Self>, grevlex: bool) -> Self {
+        if grevlex {
+            let p = self.poly.reorder::<GrevLexOrder>();
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+
+            let r = p.reduce(&grevlex_ideal);
+            Self {
+                poly: r.reorder::<LexOrder>(),
+            }
+        } else {
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
+            Self {
+                poly: self.poly.reduce(&ideal),
+            }
+        }
+    }
+
     /// Integrate the polynomial in `x`.
     ///
     /// Examples
@@ -8417,6 +8694,22 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
+    pub fn __pow__(
+        &self,
+        p: usize,
+        m: Option<i64>,
+    ) -> PyResult<PythonGaloisFieldPrimeTwoPolynomial> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            poly: self.poly.pow(p),
+        })
+    }
+
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
@@ -8432,7 +8725,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_vars_ref() {
@@ -8503,6 +8796,60 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 r
             )))
         }
+    }
+
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.poly.unify_variables(&mut other.poly);
+    }
+
+    pub fn __contains__(&self, var: &PythonExpression) -> bool {
+        self.contains(var)
+    }
+
+    pub fn contains(&self, var: &PythonExpression) -> bool {
+        if let Some(p) =
+            self.poly
+                .get_vars_ref()
+                .iter()
+                .position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                })
+        {
+            self.poly.contains(p)
+        } else {
+            false
+        }
+    }
+
+    pub fn degree(&self, var: &PythonExpression) -> PyResult<isize> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        Ok(self.poly.degree(x) as isize)
+    }
+
+    /// Set a new variable ordering for the polynomial.
+    /// This can be used to introduce new variables as well.
+    pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
+        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        self.poly = self
+            .poly
+            .rearrange_with_growth(&vars)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+        Ok(())
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
@@ -8873,6 +9220,29 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         }
     }
 
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    #[pyo3(signature = (system, grevlex = true))]
+    pub fn reduce(&self, system: Vec<Self>, grevlex: bool) -> Self {
+        if grevlex {
+            let p = self.poly.reorder::<GrevLexOrder>();
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+
+            let r = p.reduce(&grevlex_ideal);
+            Self {
+                poly: r.reorder::<LexOrder>(),
+            }
+        } else {
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
+            Self {
+                poly: self.poly.reduce(&ideal),
+            }
+        }
+    }
+
     /// Integrate the polynomial in `x`.
     ///
     /// Examples
@@ -9033,6 +9403,18 @@ impl PythonGaloisFieldPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
+    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonGaloisFieldPolynomial> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            poly: self.poly.pow(p),
+        })
+    }
+
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
@@ -9048,7 +9430,7 @@ impl PythonGaloisFieldPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_vars_ref() {
@@ -9101,6 +9483,60 @@ impl PythonGaloisFieldPolynomial {
                 r
             )))
         }
+    }
+
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.poly.unify_variables(&mut other.poly);
+    }
+
+    pub fn __contains__(&self, var: &PythonExpression) -> bool {
+        self.contains(var)
+    }
+
+    pub fn contains(&self, var: &PythonExpression) -> bool {
+        if let Some(p) =
+            self.poly
+                .get_vars_ref()
+                .iter()
+                .position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                })
+        {
+            self.poly.contains(p)
+        } else {
+            false
+        }
+    }
+
+    pub fn degree(&self, var: &PythonExpression) -> PyResult<isize> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        Ok(self.poly.degree(x) as isize)
+    }
+
+    /// Set a new variable ordering for the polynomial.
+    /// This can be used to introduce new variables as well.
+    pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
+        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        self.poly = self
+            .poly
+            .rearrange_with_growth(&vars)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+        Ok(())
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
@@ -9423,6 +9859,29 @@ impl PythonGaloisFieldPolynomial {
             let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
             let gb = GroebnerBasis::new(&ideal, print_stats);
             gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    #[pyo3(signature = (system, grevlex = true))]
+    pub fn reduce(&self, system: Vec<Self>, grevlex: bool) -> Self {
+        if grevlex {
+            let p = self.poly.reorder::<GrevLexOrder>();
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+
+            let r = p.reduce(&grevlex_ideal);
+            Self {
+                poly: r.reorder::<LexOrder>(),
+            }
+        } else {
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
+            Self {
+                poly: self.poly.reduce(&ideal),
+            }
         }
     }
 
@@ -9587,6 +10046,18 @@ impl PythonNumberFieldPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
+    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonNumberFieldPolynomial> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            poly: self.poly.pow(p),
+        })
+    }
+
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
@@ -9602,7 +10073,7 @@ impl PythonNumberFieldPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_vars_ref() {
@@ -9655,6 +10126,60 @@ impl PythonNumberFieldPolynomial {
                 r
             )))
         }
+    }
+
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.poly.unify_variables(&mut other.poly);
+    }
+
+    pub fn __contains__(&self, var: &PythonExpression) -> bool {
+        self.contains(var)
+    }
+
+    pub fn contains(&self, var: &PythonExpression) -> bool {
+        if let Some(p) =
+            self.poly
+                .get_vars_ref()
+                .iter()
+                .position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                })
+        {
+            self.poly.contains(p)
+        } else {
+            false
+        }
+    }
+
+    pub fn degree(&self, var: &PythonExpression) -> PyResult<isize> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        Ok(self.poly.degree(x) as isize)
+    }
+
+    /// Set a new variable ordering for the polynomial.
+    /// This can be used to introduce new variables as well.
+    pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
+        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        self.poly = self
+            .poly
+            .rearrange_with_growth(&vars)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+        Ok(())
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
@@ -9980,6 +10505,29 @@ impl PythonNumberFieldPolynomial {
         }
     }
 
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    #[pyo3(signature = (system, grevlex = true))]
+    pub fn reduce(&self, system: Vec<Self>, grevlex: bool) -> Self {
+        if grevlex {
+            let p = self.poly.reorder::<GrevLexOrder>();
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+
+            let r = p.reduce(&grevlex_ideal);
+            Self {
+                poly: r.reorder::<LexOrder>(),
+            }
+        } else {
+            let ideal: Vec<_> = system.into_iter().map(|p| p.poly).collect();
+            Self {
+                poly: self.poly.reduce(&ideal),
+            }
+        }
+    }
+
     /// Integrate the polynomial in `x`.
     ///
     /// Examples
@@ -10094,7 +10642,7 @@ impl PythonRationalPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_variables().iter() {
@@ -10256,7 +10804,8 @@ impl PythonRationalPolynomial {
         })
     }
 
-    /// Compute the partial fraction decomposition in `x`.
+    /// Compute the partial fraction decomposition in `x`. If `x` is `None`,
+    /// compute the multivariate partial fraction decomposition.
     ///
     /// Examples
     /// --------
@@ -10266,35 +10815,45 @@ impl PythonRationalPolynomial {
     /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
     /// >>> for pp in p.apart(x):
     /// >>>     print(pp)
-    pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
-        let id = match x.expr.as_view() {
-            AtomView::Var(x) => x.get_symbol(),
-            _ => {
-                return Err(exceptions::PyValueError::new_err(
-                    "Invalid variable specified.",
-                ))
-            }
-        };
+    #[pyo3(signature = (x = None))]
+    pub fn apart(&self, x: Option<PythonExpression>) -> PyResult<Vec<Self>> {
+        if let Some(x) = x {
+            let id = match x.expr.as_view() {
+                AtomView::Var(x) => x.get_symbol(),
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Invalid variable specified.",
+                    ))
+                }
+            };
 
-        let x = self
-            .poly
-            .get_variables()
-            .iter()
-            .position(|x| match x {
-                Variable::Symbol(y) => *y == id,
-                _ => false,
-            })
-            .ok_or(exceptions::PyValueError::new_err(format!(
-                "Variable {} not found in polynomial",
-                x.__str__()?
-            )))?;
+            let x = self
+                .poly
+                .get_variables()
+                .iter()
+                .position(|x| match x {
+                    Variable::Symbol(y) => *y == id,
+                    _ => false,
+                })
+                .ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    x.__str__()?
+                )))?;
 
-        Ok(self
-            .poly
-            .apart(x)
-            .into_iter()
-            .map(|f| Self { poly: f })
-            .collect())
+            Ok(self
+                .poly
+                .apart(x)
+                .into_iter()
+                .map(|f| Self { poly: f })
+                .collect())
+        } else {
+            Ok(self
+                .poly
+                .apart_multivariate()
+                .into_iter()
+                .map(|f| Self { poly: f })
+                .collect())
+        }
     }
 
     /// Create a new rational polynomial from a numerator and denominator polynomial.
@@ -10424,7 +10983,7 @@ impl PythonFiniteFieldRationalPolynomial {
     }
 
     /// Get the list of variables in the internal ordering of the polynomial.
-    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+    pub fn get_variables(&self) -> PyResult<Vec<PythonExpression>> {
         let mut var_list = vec![];
 
         for x in self.poly.get_variables().iter() {
@@ -12285,6 +12844,15 @@ impl PythonGraph {
         }
     }
 
+    /// Get all nodes, consisting of the edge indices and the data.
+    fn nodes(&self) -> Vec<(Vec<usize>, PythonExpression)> {
+        self.graph
+            .nodes()
+            .iter()
+            .map(|n| (n.edges.clone(), n.data.clone().into()))
+            .collect()
+    }
+
     /// Get the `idx`th edge, consisting of the the source vertex, target vertex, whether the edge is directed, and the data.
     fn edge(&self, idx: isize) -> PyResult<(usize, usize, bool, PythonExpression)> {
         if idx.unsigned_abs() < self.graph.edges().len() {
@@ -12307,6 +12875,22 @@ impl PythonGraph {
                 self.graph.edges().len(),
             )))
         }
+    }
+
+    /// Get all edges, consisting of the the source vertex, target vertex, whether the edge is directed, and the data.
+    fn edges(&self) -> Vec<(usize, usize, bool, PythonExpression)> {
+        self.graph
+            .edges()
+            .iter()
+            .map(|e| {
+                (
+                    e.vertices.0,
+                    e.vertices.1,
+                    e.directed,
+                    e.data.clone().into(),
+                )
+            })
+            .collect()
     }
 
     /// Write the graph in a canonical form.

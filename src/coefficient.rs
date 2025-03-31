@@ -1141,17 +1141,12 @@ impl<'a> AtomView<'a> {
                     let old_var_map = r.get_variables();
                     if old_var_map != vars {
                         if old_var_map.iter().all(|x| vars.contains(x)) {
-                            // upgrade the polynomial if no variables got removed
-                            let mut r = r.clone();
-                            let order: SmallVec<[Option<usize>; INLINED_EXPONENTS]> = vars
-                                .iter()
-                                .map(|x| old_var_map.iter().position(|xx| xx == x))
-                                .collect();
-
-                            r.numerator = r.numerator.rearrange_with_growth(&order);
-                            r.denominator = r.denominator.rearrange_with_growth(&order);
-                            r.numerator.variables = vars.clone();
-                            r.denominator.variables = r.numerator.variables.clone();
+                            let n = r.numerator.rearrange_with_growth(vars).unwrap();
+                            let d = r.denominator.rearrange_with_growth(vars).unwrap();
+                            let r = RationalPolynomial {
+                                numerator: n,
+                                denominator: d,
+                            };
                             out.to_num(Coefficient::RationalPolynomial(r));
                             true
                         } else {

@@ -1311,6 +1311,20 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         self.mul_coeff(coefficient.clone()).mul_exp(exponents)
     }
 
+    /// Check if the polynomial contains a variable `x`.
+    pub fn contains(&self, x: usize) -> bool {
+        if self.nvars() == 0 {
+            return false;
+        }
+
+        for e in self.exponents.iter().skip(x).step_by(self.nvars()) {
+            if *e != E::zero() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Get the degree of the variable `x`.
     /// This operation is O(n).
     pub fn degree(&self, x: usize) -> E {
@@ -1839,16 +1853,25 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// Change the order of the variables in the polynomial, using `order`.
     /// The order may contain `None`, to signal unmapped indices. This operation
     /// allows the polynomial to grow in size.
-    ///
-    /// Note that the polynomial `var_map` is not updated.
     pub fn rearrange_with_growth(
         &self,
-        order: &[Option<usize>],
-    ) -> MultivariatePolynomial<F, E, LexOrder> {
+        order: &[Variable],
+    ) -> Result<MultivariatePolynomial<F, E, LexOrder>, String> {
+        let new_order: Vec<_> = order
+            .iter()
+            .map(|x| self.variables.iter().position(|e| e == x))
+            .collect();
+
+        for (i, v) in self.variables.iter().enumerate() {
+            if !new_order.contains(&Some(i)) && self.contains(i) {
+                return Err(format!("Variable {} is not in the new order", v));
+            }
+        }
+
         let mut new_exp = vec![E::zero(); self.nterms() * order.len()];
         for (e, er) in new_exp.chunks_mut(order.len()).zip(self.exponents_iter()) {
-            for x in 0..order.len() {
-                if let Some(v) = order[x] {
+            for x in 0..new_order.len() {
+                if let Some(v) = new_order[x] {
                     e[x] = er[v];
                 }
             }
@@ -1858,7 +1881,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         indices.sort_unstable_by_key(|&i| &new_exp[i * order.len()..(i + 1) * order.len()]);
 
         let mut res =
-            MultivariatePolynomial::new(&self.ring, self.nterms().into(), self.variables.clone());
+            MultivariatePolynomial::new(&self.ring, self.nterms().into(), Arc::new(order.to_vec()));
 
         for i in indices {
             res.append_monomial(
@@ -1867,7 +1890,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             );
         }
 
-        res
+        Ok(res)
     }
 
     /// Compute `self^pow`.

@@ -1254,7 +1254,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "\ntemplate<typename T>\n__device__ void {}(T* params, T* Z, T* out) {{\n",
+            "\ntemplate<typename T>\n__device__ void {}(T* params, T* Z, T* out, int index) {{\n",
             function_name
         );
 
@@ -1266,8 +1266,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                 .join(", ")
         );
 
+        res += &format!(
+            "\tint params_offset = index * {};\n",
+            self.param_count
+        );
+        res += &format!(
+            "\tint out_offset = index * {};\n",
+            self.result_indices.len()
+        );
+
         for i in 0..self.param_count {
-            res += &format!("\tZ{} = params[{}];\n", i, i);
+            res += &format!("\tZ{} = params[params_offset + {}];\n", i, i);
         }
 
         for i in self.param_count..self.reserved_indices {
@@ -1277,16 +1286,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         Self::export_cpp_impl(&self.instructions, &mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
-            res += &format!("\tout[{}] = Z{};\n", i, r);
+            res += &format!("\tout[out_offset + {}] = Z{};\n", i, r);
         }
 
         res += "\treturn;\n}\n";
 
-        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1,1>>>(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1,1>>>(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1>>>(params, buffer, out,1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }

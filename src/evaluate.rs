@@ -1819,7 +1819,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         *out +=
                                             &format!("\t\t\"fmov d{}, d{}\\n\\t\"\n", out_reg, j);
                                     }
-                                    InlineASM::None | => unreachable!(),
+                                    InlineASM::None => unreachable!(),
                                 }
 
                                 let mut first_skipped = false;

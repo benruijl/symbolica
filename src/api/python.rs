@@ -10910,6 +10910,7 @@ impl PythonExpressionEvaluator {
         function_name: &str,
         filename: &str,
         library_name: &str,
+        format: &str,
         inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
@@ -10920,10 +10921,22 @@ impl PythonExpressionEvaluator {
             options.compiler = compiler_path.to_string();
         }
 
+        let format = match format.to_lowercase().as_str() {
+            "cpp" => CompileFormat::CPP,
+            "cuda" => CompileFormat::CUDA,
+            "asm" => CompileFormat::ASM,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid format specified.",
+                ))
+            }
+        };
+
         let inline_asm = match inline_asm.to_lowercase().as_str() {
             "default" => InlineASM::default(),
             "x64" => InlineASM::X64,
             "aarch64" => InlineASM::AArch64,
+            "cuda" => InlineASM::CUDA,
             "none" => InlineASM::None,
             _ => {
                 return Err(exceptions::PyValueError::new_err(
@@ -10935,7 +10948,7 @@ impl PythonExpressionEvaluator {
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
                 .eval
-                .export_cpp(filename, function_name, true, inline_asm)
+                .export_cpp(filename, function_name, true, format, inline_asm)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
                 .map_err(|e| {

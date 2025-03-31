@@ -1220,6 +1220,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         filename: &str,
         function_name: &str,
         include_header: bool,
+        format : FormatCPP, 
         inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
         let mut filename = filename.to_string();
@@ -1227,10 +1228,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             filename += ".cpp";
         }
 
-        let cpp = match inline_asm {
-            InlineASM::X64 => self.export_asm_str(function_name, include_header, inline_asm),
-            InlineASM::AArch64 => self.export_asm_str(function_name, include_header, inline_asm),
-            InlineASM::None => self.export_cpp_str(function_name, include_header),
+        let cpp = match format {
+            FormatCPP::ASM => self.export_asm_str(function_name, include_header, inline_asm),
+            FormatCPP::CUDA => self.export_cuda_str(function_name, include_header),
+            FormatCPP::CPP => self.export_cpp_str(function_name, include_header),
         };
 
         let _ = std::fs::write(&filename, cpp)?;
@@ -1239,6 +1240,57 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             function_name: function_name.to_string(),
         })
     }
+
+    pub fn export_cuda_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = String::new();
+        if include_header {
+            res += &"#include <cuda_runtime.h>\n#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+        };
+
+        res += &format!(
+            "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
+            function_name,
+            self.stack.len()
+        );
+
+        res += &format!(
+            "\ntemplate<typename T>\n__device__ void {}(T* params, T* Z, T* out) {{\n",
+            function_name
+        );
+
+        res += &format!(
+            "\tT {};\n",
+            (0..self.stack.len())
+                .map(|x| format!("Z{}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        for i in 0..self.param_count {
+            res += &format!("\tZ{} = params[{}];\n", i, i);
+        }
+
+        for i in self.param_count..self.reserved_indices {
+            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
+        }
+
+        Self::export_cpp_impl(&self.instructions, &mut res);
+
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            res += &format!("\tout[{}] = Z{};\n", i, r);
+        }
+
+        res += "\treturn;\n}\n";
+
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1,1>>>(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1,1>>>(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+
+        res
+    }
+
 
     pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
         let mut res = String::new();
@@ -1767,7 +1819,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         *out +=
                                             &format!("\t\t\"fmov d{}, d{}\\n\\t\"\n", out_reg, j);
                                     }
-                                    InlineASM::None => unreachable!(),
+                                    InlineASM::None | => unreachable!(),
                                 }
 
                                 let mut first_skipped = false;
@@ -4347,6 +4399,13 @@ impl ExportedCode {
             function_name: self.function_name.clone(),
         })
     }
+}
+
+#[derive(Copy, Clone)]
+pub enum FormatCPP {
+    CPP,
+    ASM,
+    CUDA,
 }
 
 /// The inline assembly mode used to generate fast

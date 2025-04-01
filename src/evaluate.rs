@@ -1380,33 +1380,34 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                 }
                 Instr::Pow(o, b, e) => {
                     let base = format!("Z{}", b);
-                    *out += format!("\tZ{} = pow({}, {});\n", o, base, e).as_str();
+                    //APN TODO might not work with integer parameter => loop cuCmul, but what about negative powers...
+                    *out += format!("\tZ{} = cuCpow({}, {});\n", o, base, e).as_str();
                 }
                 Instr::Powf(o, b, e) => {
                     let base = format!("Z{}", b);
                     let exp = format!("Z{}", e);
-                    *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
+                    *out += format!("\tZ{} = cuCpow({}, {});\n", o, base, exp).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => match s.0 {
                     Atom::EXP => {
                         let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
+                        *out += format!("\tZ{} = cuCexp({});\n", o, arg).as_str();
                     }
                     Atom::LOG => {
                         let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = log({});\n", o, arg).as_str();
+                        *out += format!("\tZ{} = cuClog({});\n", o, arg).as_str();
                     }
                     Atom::SIN => {
                         let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = sin({});\n", o, arg).as_str();
+                        *out += format!("\tZ{} = cuCsin({});\n", o, arg).as_str();
                     }
                     Atom::COS => {
                         let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cos({});\n", o, arg).as_str();
+                        *out += format!("\tZ{} = cuCcos({});\n", o, arg).as_str();
                     }
                     Atom::SQRT => {
                         let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = sqrt({});\n", o, arg).as_str();
+                        *out += format!("\tZ{} = cuCsqrt({});\n", o, arg).as_str();
                     }
                     _ => unreachable!(),
                 },

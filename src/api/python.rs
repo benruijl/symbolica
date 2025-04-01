@@ -51,7 +51,7 @@ use crate::{
     },
     evaluate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
-        InlineASM, Instruction, OptimizationSettings, Slot,
+        InlineASM, FormatCPP, Instruction, OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -10901,6 +10901,7 @@ impl PythonExpressionEvaluator {
         (function_name,
         filename,
         library_name,
+        format = "cpp",
         inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
@@ -10922,9 +10923,9 @@ impl PythonExpressionEvaluator {
         }
 
         let format = match format.to_lowercase().as_str() {
-            "cpp" => CompileFormat::CPP,
-            "cuda" => CompileFormat::CUDA,
-            "asm" => CompileFormat::ASM,
+            "cpp" => FormatCPP::CPP,
+            "cuda" => FormatCPP::CUDA,
+            "asm" => FormatCPP::ASM,
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Invalid format specified.",
@@ -10932,11 +10933,17 @@ impl PythonExpressionEvaluator {
             }
         };
 
+        if format == FormatCPP::CUDA {
+            options.compiler = "/opt/cuda/bin/nvcc".to_string();        
+            // Add -x cu
+            options.custom.push("-x".to_string());
+            options.custom.push("cu".to_string());
+        }
+
         let inline_asm = match inline_asm.to_lowercase().as_str() {
             "default" => InlineASM::default(),
             "x64" => InlineASM::X64,
             "aarch64" => InlineASM::AArch64,
-            "cuda" => InlineASM::CUDA,
             "none" => InlineASM::None,
             _ => {
                 return Err(exceptions::PyValueError::new_err(

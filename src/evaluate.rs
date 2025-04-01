@@ -1244,7 +1244,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     pub fn export_cuda_str(&self, function_name: &str, include_header: bool) -> String {
         let mut res = String::new();
         if include_header {
-            res += &"#include <cuda_runtime.h>\n#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += &"#include <cuda_runtime.h>\n#include <cuComplex.h>\n#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
         };
 
         res += &format!(
@@ -1280,7 +1280,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
+            res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{Z{} = make_cuDoubleComplexT({});}} else {{Z{} = T({});}}\n", i, self.stack[i], i, self.stack[i]);
         }
 
         Self::export_cpp_impl(&self.instructions, &mut res);
@@ -1292,10 +1292,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         res += "\treturn;\n}\n";
 
         res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  cuDoubleComplex *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1>>>(params, buffer, out,1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  cuDoubleComplex *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }
@@ -4410,7 +4410,7 @@ impl ExportedCode {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum FormatCPP {
     CPP,
     ASM,

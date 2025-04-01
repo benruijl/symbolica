@@ -10901,7 +10901,7 @@ impl PythonExpressionEvaluator {
         (function_name,
         filename,
         library_name,
-        format = "cpp",
+        formatcpp = "cpp",
         inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,

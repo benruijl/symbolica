@@ -1283,7 +1283,11 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{Z{} = make_cuDoubleComplexT({});}} else {{Z{} = T({});}}\n", i, self.stack[i], i, self.stack[i]);
         }
 
+        res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{\n");
+        Self::export_cuda_complex_impl(&self.instructions, &mut res);
+        res += &format!("\t}} else {{\n");
         Self::export_cpp_impl(&self.instructions, &mut res);
+        res += &format!("\t}}\n");
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
             res += &format!("\tout[out_offset + {}] = Z{};\n", i, r);
@@ -1346,6 +1350,67 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
+    }
+
+    fn export_cuda_complex_impl(instr: &[Instr], out: &mut String) {
+        for ins in instr {
+            match ins {
+                Instr::Add(o, a) => {
+                    let args = a.iter().map(|x| format!("Z{}", x)).collect::<Vec<_>>();
+
+                    let addition= if args.len() == 1 {
+                        args[0].clone()
+                    } else {
+                        args.into_iter().reduce(|acc, x| format!("cuCadd({}, {})", acc, x)).unwrap()
+                    };
+                    
+                    *out += format!("\tZ{} = {};\n", o, addition).as_str();
+                }
+                Instr::Mul(o, a) => {
+                    let args = a.iter().map(|x| format!("Z{}", x)).collect::<Vec<_>>();
+
+                    let multiplication = if args.len() == 1 {
+                        args[0].clone()
+                    } else {
+                        args.into_iter().reduce(|acc, x| format!("cuCmul({}, {})", acc, x)).unwrap()
+                    };
+
+                    *out += format!("\tZ{} = {};\n", o, multiplication).as_str();
+                }
+                Instr::Pow(o, b, e) => {
+                    let base = format!("Z{}", b);
+                    *out += format!("\tZ{} = pow({}, {});\n", o, base, e).as_str();
+                }
+                Instr::Powf(o, b, e) => {
+                    let base = format!("Z{}", b);
+                    let exp = format!("Z{}", e);
+                    *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
+                }
+                Instr::BuiltinFun(o, s, a) => match s.0 {
+                    Atom::EXP => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
+                    }
+                    Atom::LOG => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = log({});\n", o, arg).as_str();
+                    }
+                    Atom::SIN => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = sin({});\n", o, arg).as_str();
+                    }
+                    Atom::COS => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = cos({});\n", o, arg).as_str();
+                    }
+                    Atom::SQRT => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = sqrt({});\n", o, arg).as_str();
+                    }
+                    _ => unreachable!(),
+                },
+            }
+        }
     }
 
     fn export_cpp_impl(instr: &[Instr], out: &mut String) {

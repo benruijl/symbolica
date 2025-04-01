@@ -4379,10 +4379,14 @@ impl ExportedCode {
         if !options.compiler.contains("nvcc") {
             builder.arg("-fPIC");
         }
-        if options.fast_math {
+        else {
+            builder.arg("-Xcompiler");
+            builder.arg("-fPIC");
+        }
+        if options.fast_math && !options.compiler.contains("nvcc"){
             builder.arg("-ffast-math");
         }
-        if options.unsafe_math {
+        if options.unsafe_math && !options.compiler.contains("nvcc") {
             builder.arg("-funsafe-math-optimizations");
         }
 
@@ -4400,7 +4404,9 @@ impl ExportedCode {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!(
-                    "Could not compile code: {}",
+                    "Could not compile code: {} {}\n{}",
+                    builder.get_program().to_string_lossy(),
+                    builder.get_args().map(|arg| arg.to_string_lossy().to_string()).collect::<Vec<_>>().join(" "),
                     String::from_utf8_lossy(&r.stderr)
                 ),
             ));

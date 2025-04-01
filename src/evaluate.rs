@@ -1280,7 +1280,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         for i in self.param_count..self.reserved_indices {
-            res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{Z{} = make_cuDoubleComplexT({});}} else {{Z{} = T({});}}\n", i, self.stack[i], i, self.stack[i]);
+            // APN TODO what if the self.stack
+            res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{Z{} = make_cuDoubleComplex({},0.0);}} else {{Z{} = T({});}}\n", i, self.stack[i], i, self.stack[i]);
         }
 
         res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{\n");

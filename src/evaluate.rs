@@ -1220,7 +1220,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         filename: &str,
         function_name: &str,
         include_header: bool,
-        format : FormatCPP, 
+        formatcpp : FormatCPP, 
         inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
         let mut filename = filename.to_string();
@@ -1228,7 +1228,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             filename += ".cpp";
         }
 
-        let cpp = match format {
+        let cpp = match formatcpp {
             FormatCPP::ASM => self.export_asm_str(function_name, include_header, inline_asm),
             FormatCPP::CUDA => self.export_cuda_str(function_name, include_header),
             FormatCPP::CPP => self.export_cpp_str(function_name, include_header),
@@ -1280,7 +1280,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         for i in self.param_count..self.reserved_indices {
-            // APN TODO what if the self.stack
             res += &format!("\tZ{} = {};\n", i, self.stack[i]);
         }
 
@@ -4376,7 +4375,7 @@ impl ExportedCode {
         builder
             .arg("-shared")
             .arg(format!("-O{}", options.optimization_level));
-        // APN TODO this is just a temporary fix , as nvcc does not support -fPIC
+        // APN TODO this is just a temporary fix, as nvcc does not support -fPIC
         if !options.compiler.contains("nvcc") {
             builder.arg("-fPIC");
         }

@@ -10911,7 +10911,7 @@ impl PythonExpressionEvaluator {
         function_name: &str,
         filename: &str,
         library_name: &str,
-        format: &str,
+        formatcpp: &str,
         inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
@@ -10922,7 +10922,7 @@ impl PythonExpressionEvaluator {
             options.compiler = compiler_path.to_string();
         }
 
-        let format = match format.to_lowercase().as_str() {
+        let formatcpp = match formatcpp.to_lowercase().as_str() {
             "cpp" => FormatCPP::CPP,
             "cuda" => FormatCPP::CUDA,
             "asm" => FormatCPP::ASM,
@@ -10933,9 +10933,9 @@ impl PythonExpressionEvaluator {
             }
         };
 
-        if format == FormatCPP::CUDA {
+        if formatcpp == FormatCPP::CUDA {
             options.compiler = "/opt/cuda/bin/nvcc".to_string();        
-            // Add -x cu
+            // Add -x cu, so that nvcc accepts a .cpp file like a .cu file
             options.custom.push("-x".to_string());
             options.custom.push("cu".to_string());
         }
@@ -10955,7 +10955,7 @@ impl PythonExpressionEvaluator {
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
                 .eval
-                .export_cpp(filename, function_name, true, format, inline_asm)
+                .export_cpp(filename, function_name, true, formatcpp, inline_asm)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
                 .map_err(|e| {

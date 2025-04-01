@@ -1244,7 +1244,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     pub fn export_cuda_str(&self, function_name: &str, include_header: bool) -> String {
         let mut res = String::new();
         if include_header {
-            res += &"#include <cuda_runtime.h>\n#include <cuComplex.h>\n#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += &"#include <cuda_runtime.h>\n#include <cuda/std/complex>\n#include <iostream>\n\n";
         };
 
         res += &format!(
@@ -1281,14 +1281,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         for i in self.param_count..self.reserved_indices {
             // APN TODO what if the self.stack
-            res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{Z{} = make_cuDoubleComplex({},0.0);}} else {{Z{} = T({});}}\n", i, self.stack[i], i, self.stack[i]);
+            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
         }
 
-        res += &format!("\tif constexpr (std::is_same<T, cuDoubleComplex>::value) {{\n");
-        Self::export_cuda_complex_impl(&self.instructions, &mut res);
-        res += &format!("\t}} else {{\n");
         Self::export_cpp_impl(&self.instructions, &mut res);
-        res += &format!("\t}}\n");
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
             res += &format!("\tout[out_offset + {}] = Z{};\n", i, r);
@@ -1297,10 +1293,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         res += "\treturn;\n}\n";
 
         res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  cuDoubleComplex *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1>>>(params, buffer, out,1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuDoubleComplex *params, cuDoubleComplex *buffer,  cuDoubleComplex *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }
@@ -1351,68 +1347,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
-    }
-
-    fn export_cuda_complex_impl(instr: &[Instr], out: &mut String) {
-        for ins in instr {
-            match ins {
-                Instr::Add(o, a) => {
-                    let args = a.iter().map(|x| format!("Z{}", x)).collect::<Vec<_>>();
-
-                    let addition= if args.len() == 1 {
-                        args[0].clone()
-                    } else {
-                        args.into_iter().reduce(|acc, x| format!("cuCadd({}, {})", acc, x)).unwrap()
-                    };
-                    
-                    *out += format!("\tZ{} = {};\n", o, addition).as_str();
-                }
-                Instr::Mul(o, a) => {
-                    let args = a.iter().map(|x| format!("Z{}", x)).collect::<Vec<_>>();
-
-                    let multiplication = if args.len() == 1 {
-                        args[0].clone()
-                    } else {
-                        args.into_iter().reduce(|acc, x| format!("cuCmul({}, {})", acc, x)).unwrap()
-                    };
-
-                    *out += format!("\tZ{} = {};\n", o, multiplication).as_str();
-                }
-                Instr::Pow(o, b, e) => {
-                    let base = format!("Z{}", b);
-                    //APN TODO might not work with integer parameter => loop cuCmul, but what about negative powers...
-                    *out += format!("\tZ{} = cuCpow({}, {});\n", o, base, e).as_str();
-                }
-                Instr::Powf(o, b, e) => {
-                    let base = format!("Z{}", b);
-                    let exp = format!("Z{}", e);
-                    *out += format!("\tZ{} = cuCpow({}, {});\n", o, base, exp).as_str();
-                }
-                Instr::BuiltinFun(o, s, a) => match s.0 {
-                    Atom::EXP => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cuCexp({});\n", o, arg).as_str();
-                    }
-                    Atom::LOG => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cuClog({});\n", o, arg).as_str();
-                    }
-                    Atom::SIN => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cuCsin({});\n", o, arg).as_str();
-                    }
-                    Atom::COS => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cuCcos({});\n", o, arg).as_str();
-                    }
-                    Atom::SQRT => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cuCsqrt({});\n", o, arg).as_str();
-                    }
-                    _ => unreachable!(),
-                },
-            }
-        }
     }
 
     fn export_cpp_impl(instr: &[Instr], out: &mut String) {
@@ -4441,8 +4375,11 @@ impl ExportedCode {
         let mut builder = std::process::Command::new(&options.compiler);
         builder
             .arg("-shared")
-            .arg("-fPIC")
             .arg(format!("-O{}", options.optimization_level));
+        // APN TODO this is just a temporary fix , as nvcc does not support -fPIC
+        if !options.compiler.contains("nvcc") {
+            builder.arg("-fPIC");
+        }
         if options.fast_math {
             builder.arg("-ffast-math");
         }

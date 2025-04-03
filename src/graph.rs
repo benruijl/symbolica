@@ -130,7 +130,7 @@ impl<T: Ord, U> Ord for HiddenData<T, U> {
 ///
 /// assert_eq!(g.node(0).edges, [0, 1, 2]);
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Graph<NodeData = Empty, EdgeData = Empty> {
     nodes: Vec<Node<NodeData>>,
     edges: Vec<Edge<EdgeData>>,
@@ -634,11 +634,7 @@ impl<N, E> GenerationSettings<N, E> {
     }
 }
 
-impl<
-        N: Default + Clone + Eq + Hash + Ord + Display,
-        E: Clone + Ord + Eq + Hash + Debug + Display,
-    > Graph<N, E>
-{
+impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, E> {
     /// Generate all connected graphs with `external_edges` half-edges and the given allowed list
     /// of vertex connections.
     ///
@@ -1111,6 +1107,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
         let mut automorphisms = vec![];
         let mut minimal_representatives_per_generator = vec![];
         let mut leaf_nodes: HashMap<_, (Vec<_>, Vec<_>)> = HashMap::default(); // TODO: limit growth
+        let mut left_leaf_invariant: Option<Vec<Invariant<I>>> = None;
         let mut current_best: Option<(Graph<&N, &E>, Vec<I>, Vec<Invariant<I>>)> = None;
 
         let mut node_buffer = vec![];
@@ -1123,23 +1120,44 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                 node.refine(self);
             }
 
+            // the canonical form is defined as the maximal isomorph, prepended with the node invariants of the path
+            // at each tree level, the node invariant must therefore be at least as good as the best
+            // to be a potential canonical form
+            let mut on_best_path = true;
             if let Some((_, _, best_invariant)) = &current_best {
-                // the canonical form is defined as the maximal isomorph, prepended with the node invariants of the path
-                // at each tree level, the node invariant must therefore be at least as good as the best
-                // to be a potential canonical form
-                match node
-                    .invariant
-                    .cmp(&best_invariant[stack.len().min(best_invariant.len() - 1)])
-                {
-                    Ordering::Less => {
-                        node_buffer.push(node);
-                        continue;
+                // do not skip exploring the current node if its invariant is the same as the left leaf invariant
+                // this ensures that the size of the automorphism group is not underestimated
+                let left_leaf_invariant = left_leaf_invariant.as_ref().unwrap();
+                let left_leaf_equivalent = stack.len() < left_leaf_invariant.len()
+                    && node.invariant == left_leaf_invariant[stack.len()];
+
+                // we are on the best path if the ancestral invariants are the same and if the current invariants
+                // list is not larger, as we prefer shorter paths
+                on_best_path = stack.len() < best_invariant.len()
+                    && stack
+                        .iter()
+                        .zip(best_invariant)
+                        .all(|s| &s.0.invariant == s.1);
+
+                if on_best_path {
+                    // we are on the current best path, so check if the current node invariant is better
+                    match node.invariant.cmp(&best_invariant[stack.len()]) {
+                        Ordering::Less => {
+                            on_best_path = false;
+                        }
+                        Ordering::Greater => {
+                            // we will find a better isomorph on this path, so disable any future
+                            // invariant checks until we reach the next leaf
+                            current_best = None;
+                        }
+                        Ordering::Equal => {}
                     }
-                    Ordering::Greater => {
-                        // we will find a better isomorph on this path
-                        current_best = None;
-                    }
-                    Ordering::Equal => {}
+                }
+
+                if !on_best_path && !left_leaf_equivalent {
+                    // we are not on a left leaf equivalent path and the path is not the best, so we can skip this node
+                    node_buffer.push(node);
+                    continue;
                 }
             }
 
@@ -1172,8 +1190,27 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                     g.add_edge(v1, v2, dir, d).unwrap();
                 }
 
-                let path: Vec<_> = stack.iter().map(|x| x.selected_vertex.unwrap()).collect();
+                // update the best isomorph
+                if let Some((b, p, inv)) = &mut current_best {
+                    if on_best_path && *b > g {
+                        *b = g.clone();
+                        *p = partition.clone();
+                        inv.extend(stack.iter().map(|x| x.invariant.clone()));
+                        inv.push(node.invariant.clone());
+                    }
+                } else {
+                    let mut cur_invariant: Vec<_> =
+                        stack.iter().map(|x| x.invariant.clone()).collect();
+                    cur_invariant.push(node.invariant.clone());
 
+                    if left_leaf_invariant.is_none() {
+                        left_leaf_invariant = Some(cur_invariant.clone());
+                    }
+
+                    current_best = Some((g.clone(), partition.clone(), cur_invariant));
+                }
+
+                let path: Vec<_> = stack.iter().map(|x| x.selected_vertex.unwrap()).collect();
                 if let Some((old_partition, old_path)) = leaf_nodes.get(&g) {
                     // construct the automorphism transformation
                     let mut seen = vec![false; partition.len()];
@@ -1181,40 +1218,34 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                     let mut fixed = vec![];
                     let mut minimal_representatives = vec![];
                     let mut orbits = vec![];
-                    for x in &partition {
-                        let mut cur = *x;
+
+                    for x in old_partition {
+                        let mut cur: I = *x;
                         if seen[cur.to_usize()] {
                             continue;
                         }
 
                         let mut orbit = vec![cur];
-
-                        let parts = [old_partition, &partition];
-                        let mut part_i = 0;
                         loop {
-                            cur = parts[(part_i + 1) % 2]
-                                [parts[part_i].iter().position(|y| y == &cur).unwrap()];
-
+                            cur = partition[old_partition.iter().position(|y| y == &cur).unwrap()];
                             if cur == *x {
                                 break;
                             } else {
                                 seen[cur.to_usize()] = true;
                                 orbit.push(cur);
-                                part_i = (part_i + 1) % 2;
                             }
                         }
-
-                        orbit.sort();
 
                         if orbit.len() == 1 {
                             fixed.push(orbit[0]);
                         } else {
                             // only store the minimal representative per orbit
-                            minimal_representatives.push(orbit[0]);
+                            minimal_representatives.push(*orbit.iter().min().unwrap());
                             orbits.push(orbit);
                         }
                     }
 
+                    orbits.sort();
                     minimal_representatives_per_generator.push((fixed, minimal_representatives));
                     automorphisms.push(orbits);
 
@@ -1230,27 +1261,11 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
 
                     // we will pop an extra node at the start of the next loop, hence + 1
                     node_buffer.extend(stack.drain(i + 1..));
-                    continue;
+                } else {
+                    // extend the list of terminal nodes in the hopes of finding new automorphisms faster
+                    leaf_nodes.insert(g, (partition, path));
+                    node_buffer.push(node);
                 }
-
-                if let Some((best, _, _)) = &current_best {
-                    debug_assert!(g != *best);
-                    if g < *best {
-                        // isomorph does not improve the best
-                        // add it to the list of terminal nodes anyway to discover new
-                        // automorphisms
-                        leaf_nodes.insert(g, (partition, path));
-                        node_buffer.push(node);
-                        continue;
-                    }
-                }
-
-                let mut best_invariant: Vec<_> =
-                    stack.iter().map(|x| x.invariant.clone()).collect();
-                best_invariant.push(node.invariant.clone());
-                current_best = Some((g.clone(), partition.clone(), best_invariant));
-                leaf_nodes.insert(g, (partition, path));
-                node_buffer.push(node);
             } else {
                 let (x, p) = if let Some(p) = node.selected_part {
                     // upon a repeat visit, filter the list of possible children with
@@ -1549,9 +1564,23 @@ impl NodeIndex for u16 {
 }
 
 /// A node invariant.
-#[derive(Default, Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct Invariant<N: NodeIndex> {
     partition_lengths: Vec<N>,
+}
+
+impl<N: NodeIndex> PartialOrd for Invariant<N> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<N: NodeIndex> Ord for Invariant<N> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare length first and then lexicographically
+        (self.partition_lengths.len(), &self.partition_lengths)
+            .cmp(&(other.partition_lengths.len(), &other.partition_lengths))
+    }
 }
 
 /// A search tree node used for canonization.
@@ -1632,6 +1661,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
                             } else {
                                 (NodeIndex::from_usize(e.vertices.0), false)
                             };
+                            // TODO: add special flag for self-edge and tag multi-edges differently
                             if j.contains(&k) {
                                 if e.directed {
                                     edge_data.push((&e.data, e.directed, is_source));
@@ -1677,7 +1707,10 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::graph::{GenerationSettings, Graph, SearchTreeNode};
+    use crate::{
+        combinatorics::unique_permutations,
+        graph::{GenerationSettings, Graph, SearchTreeNode},
+    };
 
     #[test]
     fn directed() {
@@ -1768,6 +1801,36 @@ mod test {
         assert_eq!(c.orbit_generators.len(), 2);
         assert_eq!(c.automorphism_group_size, 8);
         assert_eq!(c.graph.edge(0).vertices, (0, 2));
+    }
+
+    #[test]
+    pub fn iso_check_permutations() {
+        let mut gc = None;
+        for p in unique_permutations(&[0, 1, 2, 3, 4]).1 {
+            let mut g = Graph::new();
+            for _ in 0..5 {
+                g.add_node(0);
+            }
+
+            g.add_edge(p[0], p[0], false, 0).unwrap();
+            g.add_edge(p[0], p[3], false, 0).unwrap();
+            g.add_edge(p[0], p[4], false, 0).unwrap();
+            g.add_edge(p[1], p[2], false, 0).unwrap();
+            g.add_edge(p[1], p[3], false, 0).unwrap();
+            g.add_edge(p[1], p[4], false, 0).unwrap();
+            g.add_edge(p[2], p[3], false, 0).unwrap();
+            g.add_edge(p[2], p[4], false, 0).unwrap();
+            g.add_edge(p[3], p[4], false, 0).unwrap();
+            let c = g.canonize();
+
+            if let Some(gg) = &gc {
+                if &c.graph != gg {
+                    panic!("Inequivalent isomorph with permutation {:?}", p);
+                }
+            } else {
+                gc = Some(c.graph);
+            }
+        }
     }
 
     #[test]

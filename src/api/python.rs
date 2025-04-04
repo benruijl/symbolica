@@ -16,8 +16,8 @@ use pyo3::{
     pyfunction, pymethods,
     sync::GILOnceCell,
     types::{
-        PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyInt, PyModule, PyTuple,
-        PyTupleMethods, PyType, PyTypeMethods,
+        IntoPyDict, PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyDict, PyInt, PyModule,
+        PyTuple, PyTupleMethods, PyType, PyTypeMethods,
     },
     wrap_pyfunction, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr,
     PyObject, PyRef, PyResult, PyTypeInfo, Python,
@@ -88,6 +88,46 @@ const LATEX_PRINT_OPTIONS: PrintOptions = PrintOptions {
     hide_namespace: Some("python"),
     ..PrintOptions::latex()
 };
+
+impl<'py> IntoPyDict<'py> for PrintOptions {
+    fn into_py_dict(self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("terms_on_new_line", self.terms_on_new_line)?;
+        dict.set_item("color_top_level_sum", self.color_top_level_sum)?;
+        dict.set_item("color_builtin_symbols", self.color_builtin_symbols)?;
+        dict.set_item("print_finite_field", self.print_finite_field)?;
+        dict.set_item(
+            "symmetric_representation_for_finite_field",
+            self.symmetric_representation_for_finite_field,
+        )?;
+        dict.set_item(
+            "explicit_rational_polynomial",
+            self.explicit_rational_polynomial,
+        )?;
+        dict.set_item(
+            "number_thousands_separator",
+            self.number_thousands_separator,
+        )?;
+        dict.set_item("multiplication_operator", self.multiplication_operator)?;
+        dict.set_item(
+            "double_star_for_exponentiation",
+            self.double_star_for_exponentiation,
+        )?;
+        dict.set_item(
+            "square_brackets_for_function",
+            self.square_brackets_for_function,
+        )?;
+        dict.set_item("num_exp_as_superscript", self.num_exp_as_superscript)?;
+        dict.set_item("latex", self.latex)?;
+        dict.set_item("precision", self.precision)?;
+        dict.set_item("pretty_matrix", self.pretty_matrix)?;
+        dict.set_item("hide_namespace", self.hide_namespace)?;
+        dict.set_item("hide_all_namespaces", self.hide_all_namespaces)?;
+        dict.set_item("color_namespace", self.color_namespace)?;
+        dict.set_item("max_terms", self.max_terms)?;
+        Ok(dict.into())
+    }
+}
 
 /// Create a Symbolica Python module.
 pub fn create_symbolica_module<'a, 'b>(
@@ -210,7 +250,7 @@ fn get_license_key(email: String) -> PyResult<()> {
 }
 
 /// Shorthand notation for :func:`Expression.symbol`.
-#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
+#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None,custom_print=None))]
 fn symbol_shorthand(
     names: &Bound<'_, PyTuple>,
     is_symmetric: Option<bool>,
@@ -218,6 +258,7 @@ fn symbol_shorthand(
     is_cyclesymmetric: Option<bool>,
     is_linear: Option<bool>,
     custom_normalization: Option<PythonTransformer>,
+    custom_print: Option<PyObject>,
     py: Python<'_>,
 ) -> PyResult<PyObject> {
     PythonExpression::symbol(
@@ -229,6 +270,7 @@ fn symbol_shorthand(
         is_cyclesymmetric,
         is_linear,
         custom_normalization,
+        custom_print,
     )
 }
 
@@ -2617,7 +2659,7 @@ impl PythonExpression {
     /// Define a custom normalization function:
     /// >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     /// >>> E("real_log(exp(x)) + real_log(5)")
-    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
+    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None, custom_print=None))]
     #[classmethod]
     pub fn symbol(
         _cls: &Bound<'_, PyType>,
@@ -2628,6 +2670,7 @@ impl PythonExpression {
         is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
         custom_normalization: Option<PythonTransformer>,
+        custom_print: Option<PyObject>,
     ) -> PyResult<PyObject> {
         if names.is_empty() {
             return Err(exceptions::PyValueError::new_err(
@@ -2668,18 +2711,23 @@ impl PythonExpression {
             && is_cyclesymmetric.is_none()
             && is_linear.is_none()
             && custom_normalization.is_none()
+            && custom_print.is_none()
         {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?));
+                let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?))
+                    .build()
+                    .unwrap();
                 let r = PythonExpression::from(Atom::new_var(id));
                 return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?));
+                    let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?))
+                        .build()
+                        .unwrap();
 
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
@@ -2721,7 +2769,9 @@ impl PythonExpression {
             let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
             let name = namespace.attach_namespace(name_check(&*name)?);
 
-            let id = if let Some(f) = custom_normalization {
+            let mut symbol = Symbol::new(name).with_attributes(opts);
+
+            if let Some(f) = custom_normalization {
                 if let Pattern::Transformer(t) = f.expr {
                     if !t.0.is_none() {
                         Err(exceptions::PyValueError::new_err(
@@ -2729,31 +2779,53 @@ impl PythonExpression {
                         ))?;
                     }
 
-                    Symbol::new_with_attributes_and_function(name, &opts, move |input, out| {
-                        Workspace::get_local()
-                            .with(|ws| {
-                                Transformer::execute_chain(input, &t.1, ws, out).map_err(|e| e)
-                            })
-                            .unwrap();
-                        true
-                    })
+                    symbol = symbol.with_normalization_function(Box::new(
+                        move |input: AtomView<'_>, out: &mut Atom| {
+                            Workspace::get_local()
+                                .with(|ws| {
+                                    Transformer::execute_chain(input, &t.1, ws, out).map_err(|e| e)
+                                })
+                                .unwrap();
+                            true
+                        },
+                    ))
                 } else {
                     return Err(exceptions::PyValueError::new_err("Transformer expected"));
                 }
-            } else {
-                Symbol::new_with_attributes(name, &opts)
             }
-            .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
-            let r = PythonExpression::from(Atom::new_var(id));
+            if let Some(f) = custom_print {
+                symbol = symbol.with_print_function(Box::new(
+                    move |input: AtomView<'_>, opts: &PrintOptions| {
+                        Python::with_gil(|py| {
+                            let kwargs = opts.into_py_dict(py).unwrap();
+                            f.call(
+                                py,
+                                (PythonExpression::from(input.to_owned()),),
+                                Some(&kwargs),
+                            )
+                            .unwrap()
+                            .extract::<Option<String>>(py)
+                            .unwrap()
+                        })
+                    },
+                ))
+            }
+
+            let symbol = symbol
+                .build()
+                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+
+            let r = PythonExpression::from(Atom::new_var(symbol));
             r.into_py_any(py)
         } else {
             let mut result = vec![];
             for a in names {
                 let name = a.extract::<PyBackedStr>()?;
                 let name = namespace.attach_namespace(name_check(&*name)?);
+                let mut symbol = Symbol::new(name).with_attributes(opts.clone());
 
-                let id = if let Some(f) = &custom_normalization {
+                if let Some(f) = &custom_normalization {
                     if let Pattern::Transformer(t) = &f.expr {
                         if !t.0.is_none() {
                             Err(exceptions::PyValueError::new_err(
@@ -2762,22 +2834,26 @@ impl PythonExpression {
                         }
 
                         let t = t.1.clone();
-                        Symbol::new_with_attributes_and_function(name, &opts, move |input, out| {
-                            Workspace::get_local()
-                                .with(|ws| {
-                                    Transformer::execute_chain(input, &t, ws, out).map_err(|e| e)
-                                })
-                                .unwrap();
-                            true
-                        })
+                        symbol = symbol.with_normalization_function(Box::new(
+                            move |input: AtomView<'_>, out: &mut Atom| {
+                                Workspace::get_local()
+                                    .with(|ws| {
+                                        Transformer::execute_chain(input, &t, ws, out)
+                                            .map_err(|e| e)
+                                    })
+                                    .unwrap();
+                                true
+                            },
+                        ))
                     } else {
                         return Err(exceptions::PyValueError::new_err("Transformer expected"));
                     }
-                } else {
-                    Symbol::new_with_attributes(name, &opts)
                 }
-                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
-                let r = PythonExpression::from(Atom::new_var(id));
+
+                let symbol = symbol
+                    .build()
+                    .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+                let r = PythonExpression::from(Atom::new_var(symbol));
                 result.push(r);
             }
 
@@ -2967,6 +3043,13 @@ impl PythonExpression {
             },
             PrintState::new(),
         ))
+    }
+
+    /// Convert the expression into a canonical string that
+    /// is independent on the order of the variables and other
+    /// implementation details.
+    pub fn to_canonical_string(&self) -> PyResult<String> {
+        Ok(self.expr.to_canonical_string())
     }
 
     pub fn __contains__(&self, expr: &PythonExpression) -> bool {
@@ -6902,7 +6985,9 @@ impl PythonPolynomial {
         };
 
         for v in vars {
-            let id = Symbol::new(namespace.attach_namespace(&*v));
+            let id = Symbol::new(namespace.attach_namespace(&*v))
+                .build()
+                .unwrap();
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -7916,7 +8001,9 @@ impl PythonFiniteFieldPolynomial {
         };
 
         for v in vars {
-            let id = Symbol::new(namespace.attach_namespace(&*v));
+            let id = Symbol::new(namespace.attach_namespace(&*v))
+                .build()
+                .unwrap();
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10918,7 +11005,9 @@ impl PythonRationalPolynomial {
         };
 
         for v in vars {
-            let id = Symbol::new(namespace.attach_namespace(&*v));
+            let id = Symbol::new(namespace.attach_namespace(&*v))
+                .build()
+                .unwrap();
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -11220,7 +11309,9 @@ impl PythonFiniteFieldRationalPolynomial {
         };
 
         for v in vars {
-            let id = Symbol::new(namespace.attach_namespace(&*v));
+            let id = Symbol::new(namespace.attach_namespace(&*v))
+                .build()
+                .unwrap();
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }

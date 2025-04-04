@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::hash::Hash;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::thread::LocalKey;
 use std::{
     cell::RefCell,
@@ -22,6 +22,7 @@ use smartstring::alias::String;
 use crate::atom::{FunctionAttribute, NamespacedSymbol, NormalizationFunction};
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
+use crate::printer::PrintFunction;
 use crate::wrap_symbol;
 use crate::{
     atom::{Atom, Symbol},
@@ -59,7 +60,8 @@ pub(crate) struct SymbolData {
     pub(crate) namespace: Cow<'static, str>,
     pub(crate) file: Cow<'static, str>,
     pub(crate) line: usize,
-    pub(crate) function: Option<NormalizationFunction>,
+    pub(crate) custom_normalization: Option<NormalizationFunction>,
+    pub(crate) custom_print: Option<PrintFunction>,
 }
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -114,7 +116,7 @@ impl State {
         };
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol_impl(wrap_symbol!(x));
+            state.get_symbol(wrap_symbol!(x));
         }
 
         #[cfg(test)]
@@ -139,43 +141,48 @@ impl State {
         use crate::atom::FunctionAttribute;
 
         for i in 0..30 {
-            let _ = self.get_symbol_impl(wrap_symbol!(format!("v{}", i)));
+            let _ = self.get_symbol(wrap_symbol!(format!("v{}", i)));
         }
         for i in 0..30 {
-            let _ = self.get_symbol_impl(wrap_symbol!(format!("f{}", i)));
+            let _ = self.get_symbol(wrap_symbol!(format!("f{}", i)));
         }
         for i in 0..5 {
-            let _ = self.get_symbol_with_attributes_impl(
+            let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fs{}", i)),
                 &[FunctionAttribute::Symmetric],
                 None,
+                None,
             );
         }
         for i in 0..5 {
-            let _ = self.get_symbol_with_attributes_impl(
+            let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fc{}", i)),
                 &[FunctionAttribute::Cyclesymmetric],
                 None,
+                None,
             );
         }
         for i in 0..5 {
-            let _ = self.get_symbol_with_attributes_impl(
+            let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fa{}", i)),
                 &[FunctionAttribute::Antisymmetric],
                 None,
-            );
-        }
-        for i in 0..5 {
-            let _ = self.get_symbol_with_attributes_impl(
-                wrap_symbol!(format!("fl{}", i)),
-                &[FunctionAttribute::Linear],
                 None,
             );
         }
         for i in 0..5 {
-            let _ = self.get_symbol_with_attributes_impl(
+            let _ = self.get_symbol_with_attributes(
+                wrap_symbol!(format!("fl{}", i)),
+                &[FunctionAttribute::Linear],
+                None,
+                None,
+            );
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fsl{}", i)),
                 &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
+                None,
                 None,
             );
         }
@@ -199,7 +206,7 @@ impl State {
         SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol_impl(wrap_symbol!(x));
+            state.get_symbol(wrap_symbol!(x));
         }
 
         #[cfg(test)]
@@ -237,13 +244,7 @@ impl State {
 
     /// Get the symbol for a certain name if the name is already registered,
     /// else register it and return a new symbol without attributes.
-    ///
-    /// To register a symbol with attributes, use [`symbol!_with_attributes`].
-    pub(crate) fn get_symbol(name: NamespacedSymbol) -> Symbol {
-        STATE.write().unwrap().get_symbol_impl(name)
-    }
-
-    pub(crate) fn get_symbol_impl(&mut self, name: NamespacedSymbol) -> Symbol {
+    pub(crate) fn get_symbol(&mut self, name: NamespacedSymbol) -> Symbol {
         match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
@@ -271,7 +272,8 @@ impl State {
                         file: name.file,
                         namespace: name.namespace,
                         line: name.line,
-                        function: None,
+                        custom_normalization: None,
+                        custom_print: None,
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
@@ -282,19 +284,8 @@ impl State {
         }
     }
 
-    /// Get the symbol for a certain name if the name is already registered,
-    /// else register it and return a new symbol with the given attributes.
-    ///
-    /// This function will return an error when an existing symbol is redefined
-    /// with different attributes.
-    pub(crate) fn get_symbol_with_attributes(
-        name: NamespacedSymbol,
-        attributes: &[FunctionAttribute],
-    ) -> Result<Symbol, String> {
-        STATE
-            .write()
-            .unwrap()
-            .get_symbol_with_attributes_impl(name, attributes, None)
+    pub(crate) fn get_state_mut() -> RwLockWriteGuard<'static, State> {
+        STATE.write().unwrap()
     }
 
     /// Register a new symbol with the given attributes and a specific function
@@ -303,22 +294,12 @@ impl State {
     /// normalization functions must be registered explicitly.
     ///
     /// If the symbol already exists, an error is returned.
-    pub(crate) fn get_symbol_with_attributes_and_function(
-        name: NamespacedSymbol,
-        attributes: &[FunctionAttribute],
-        f: NormalizationFunction,
-    ) -> Result<Symbol, String> {
-        STATE
-            .write()
-            .unwrap()
-            .get_symbol_with_attributes_impl(name, attributes, Some(f))
-    }
-
-    pub(crate) fn get_symbol_with_attributes_impl(
+    pub(crate) fn get_symbol_with_attributes(
         &mut self,
         name: NamespacedSymbol,
         attributes: &[FunctionAttribute],
         normalization_function: Option<NormalizationFunction>,
+        print_function: Option<PrintFunction>,
     ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => {
@@ -380,7 +361,8 @@ impl State {
                         file: name.file,
                         namespace: name.namespace,
                         line: name.line,
-                        function: normalization_function,
+                        custom_normalization: normalization_function,
+                        custom_print: print_function,
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
@@ -436,7 +418,7 @@ impl State {
 
         ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
             .1
-            .function
+            .custom_normalization
             .as_ref()
     }
 
@@ -612,15 +594,15 @@ impl State {
             }
 
             loop {
-                match Symbol::new_with_attributes(
-                    NamespacedSymbol {
-                        symbol: str.to_string().into(),
-                        namespace: namespace.to_string().into(),
-                        file: "".into(),
-                        line: 0,
-                    },
-                    &attributes,
-                ) {
+                match Symbol::new(NamespacedSymbol {
+                    symbol: str.to_string().into(),
+                    namespace: namespace.to_string().into(),
+                    file: "".into(),
+                    line: 0,
+                })
+                .with_attributes(attributes.clone())
+                .build()
+                {
                     Ok(id) => {
                         if x as u32 != id.get_id() {
                             state_map.symbols.insert(x as u32, id);

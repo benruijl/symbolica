@@ -11,6 +11,10 @@ use crate::{
     state::State,
 };
 
+/// A function that takes an atom and prints it in a custom way.
+/// If the function returns `None`, the default printing is used.
+pub type PrintFunction = Box<dyn Fn(AtomView, &PrintOptions) -> Option<String> + Send + Sync>;
+
 /// Various options for printing expressions.
 #[derive(Debug, Copy, Clone)]
 pub struct PrintOptions {
@@ -505,8 +509,15 @@ impl<'a> FormattedPrintVar for VarView<'a> {
         }
 
         let id = self.get_symbol();
-        id.format(opts, f)?;
 
+        if let Some(custom_print) = &State::get_symbol_data(id).custom_print {
+            if let Some(s) = custom_print(self.as_view(), opts) {
+                f.write_str(&s)?;
+                return Ok(false);
+            }
+        }
+
+        id.format(opts, f)?;
         Ok(false)
     }
 
@@ -771,6 +782,13 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         }
 
         let id = self.get_symbol();
+        if let Some(custom_print) = &State::get_symbol_data(id).custom_print {
+            if let Some(s) = custom_print(self.as_view(), opts) {
+                f.write_str(&s)?;
+                return Ok(false);
+            }
+        }
+
         id.format(opts, f)?;
 
         if opts.latex {
@@ -997,7 +1015,7 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::AtomCore,
+        atom::{AtomCore, AtomView},
         domains::{finite_field::Zp, integer::Z, SelfRing},
         parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
@@ -1140,5 +1158,37 @@ mod test {
             a.to_canonical_string(),
             "(symbolica::canon_x+symbolica::canon_y)*symbolica::canon_y^2+2*symbolica::canon_x*symbolica::canon_y+symbolica::canon_f(symbolica::canon_x,symbolica::canon_y)+symbolica::canon_x^2"
         );
+    }
+
+    #[test]
+    fn custom_print() {
+        let _ = symbol!("mu";;;|a, opt| {
+            if !opt.latex {
+                return None; // use default printer
+            }
+
+            let mut fmt = String::new();
+            fmt.push_str("\\mu");
+            if let AtomView::Fun(f) = a {
+                fmt.push_str("_{");
+                let n_args = f.get_nargs();
+
+                for (i, a) in f.iter().enumerate() {
+                    a.format(&mut fmt, opt, PrintState::new()).unwrap();
+                    if i < n_args - 1 {
+                        fmt.push_str(",");
+                    }
+                }
+
+                fmt.push_str("}");
+            }
+
+            Some(fmt)
+        })
+        .unwrap();
+
+        let e = crate::parse!("mu^2 + mu(1) + mu(1,2)").unwrap();
+        let s = format!("{}", e.printer(PrintOptions::latex()));
+        assert_eq!(s, "\\mu^{2}+\\mu_{1}+\\mu_{1,2}");
     }
 }

@@ -49,7 +49,7 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     coefficient::Coefficient,
     parser::Token,
-    printer::{AtomPrinter, PrintOptions},
+    printer::{AtomPrinter, PrintFunction, PrintOptions},
     state::{RecycledAtom, State, Workspace},
     transformer::StatsOptions,
 };
@@ -66,6 +66,7 @@ use self::representation::{FunView, RawAtom};
 /// A symbol with a namespace, and optional positional data (file and line) of its definition.
 /// Can be created with the [wrap_symbol!](crate::wrap_symbol) macro or by converting from a string that is
 /// written as `namespace::symbol`.
+#[derive(Clone)]
 pub struct NamespacedSymbol {
     pub namespace: Cow<'static, str>,
     pub symbol: Cow<'static, str>,
@@ -328,21 +329,24 @@ impl std::fmt::Display for Symbol {
     }
 }
 
-impl Symbol {
-    /// Get the symbol associated with `name` if it was already defined,
-    /// otherwise define it without special attributes.
-    ///
+/// A builder for creating symbols with optional attributes.
+pub struct SymbolBuilder {
+    symbol: NamespacedSymbol,
+    attributes: Option<Cow<'static, [FunctionAttribute]>>,
+    normalization_function: Option<NormalizationFunction>,
+    print_function: Option<PrintFunction>,
+}
+
+impl SymbolBuilder {
+    /// Create a new symbol builder with the given name and namespace.
     /// Use the [symbol!](crate::symbol) macro instead to define symbols with the current namespace.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use symbolica::{atom::Symbol, wrap_symbol};
-    ///
-    /// let x = Symbol::new(wrap_symbol!("x"));
-    /// ```
-    pub fn new(name: NamespacedSymbol) -> Symbol {
-        State::get_symbol(name)
+    pub fn new(symbol: NamespacedSymbol) -> Self {
+        SymbolBuilder {
+            symbol,
+            attributes: None,
+            normalization_function: None,
+            print_function: None,
+        }
     }
 
     /// Get the symbol associated with `name` if it is already registered,
@@ -358,30 +362,20 @@ impl Symbol {
     /// ```
     /// use symbolica::{atom::{Symbol, FunctionAttribute}, wrap_symbol};
     ///
-    /// let f = Symbol::new_with_attributes(wrap_symbol!("f"), &[FunctionAttribute::Symmetric]).unwrap();
+    /// let f = Symbol::new(wrap_symbol!("f")).with_attributes(&[FunctionAttribute::Symmetric]).build().unwrap();
     /// ```
-    pub fn new_with_attributes(
-        name: NamespacedSymbol,
-        attributes: &[FunctionAttribute],
-    ) -> Result<Symbol, SmartString<LazyCompact>> {
-        State::get_symbol_with_attributes(name, attributes)
+    pub fn with_attributes(
+        mut self,
+        attributes: impl Into<Cow<'static, [FunctionAttribute]>>,
+    ) -> Self {
+        self.attributes = Some(attributes.into());
+        self
     }
 
-    /// Register a new symbol with the given attributes and a specific function
-    /// that is called after normalization of the arguments. This function cannot
-    /// be exported, and therefore before importing a state, symbols with special
-    /// normalization functions must be registered explicitly.
-    ///
-    /// If the symbol already exists, an error is returned.
-    ///
-    /// Use the [symbol!](crate::symbol) macro instead to define symbols with the current namespace.
-    ///
-    /// # Examples
-    ///
     /// ```
-    /// use symbolica::{atom::{AtomView, Symbol, FunctionAttribute}, wrap_symbol};
+    /// use symbolica::{atom::{AtomView, Symbol}, wrap_symbol};
     ///
-    /// let f = Symbol::new_with_attributes_and_function(wrap_symbol!("f"), &[], |view, out| {
+    /// let f = Symbol::new(wrap_symbol!("f")).with_normalization_function(|view, out| {
     ///     // Example normalization logic that sets odd-length function to 0
     ///     if let AtomView::Fun(f) = view {
     ///         if f.get_nargs() % 2 == 1 {
@@ -393,14 +387,62 @@ impl Symbol {
     ///     } else {
     ///         unreachable!()
     ///     }
-    /// }).unwrap();
+    /// }).build().unwrap();
     /// ```
-    pub fn new_with_attributes_and_function(
-        name: NamespacedSymbol,
-        attributes: &[FunctionAttribute],
-        f: impl Fn(AtomView<'_>, &mut Atom) -> bool + Send + Sync + 'static,
-    ) -> Result<Symbol, SmartString<LazyCompact>> {
-        State::get_symbol_with_attributes_and_function(name, attributes, Box::new(f))
+    pub fn with_normalization_function(
+        mut self,
+        normalization_function: impl Fn(AtomView, &mut Atom) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.normalization_function = Some(Box::new(normalization_function));
+        self
+    }
+
+    /// ```
+    /// use symbolica::{atom::Symbol, wrap_symbol};
+    ///
+    /// let f = Symbol::new(wrap_symbol!("mu")).with_print_function(|view, opt| {
+    ///     if !opt.latex {
+    ///       None
+    ///     } else {
+    ///        Some("\\mu".to_string())
+    ///     }
+    /// }).build().unwrap();
+    /// ```
+    pub fn with_print_function(
+        mut self,
+        print_function: impl Fn(AtomView, &PrintOptions) -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        self.print_function = Some(Box::new(print_function));
+        self
+    }
+
+    /// Create a new symbol or return the existing symbol with the same name.
+    ///
+    /// This function will return an error when an existing symbol is redefined
+    /// with different attributes.
+    pub fn build(self) -> Result<Symbol, SmartString<LazyCompact>> {
+        if self.attributes.is_none()
+            && self.normalization_function.is_none()
+            && self.print_function.is_none()
+        {
+            Ok(State::get_state_mut().get_symbol(self.symbol))
+        } else {
+            State::get_state_mut().get_symbol_with_attributes(
+                self.symbol,
+                self.attributes.as_ref().map(|x| x.as_ref()).unwrap_or(&[]),
+                self.normalization_function,
+                self.print_function,
+            )
+        }
+    }
+}
+
+impl Symbol {
+    /// Create a builder for a new symbol with the given name and namespace.
+    ///
+    /// Use the [symbol!](crate::symbol) macro instead to define symbols in the current namespace.
+    pub fn new(name: NamespacedSymbol) -> SymbolBuilder {
+        SymbolBuilder::new(name)
     }
 
     /// Get the name of the symbol.
@@ -1599,22 +1641,57 @@ macro_rules! function {
 ///     false
 /// });
 /// ```
+///
+/// You can also define a custom printing function by adding another `;`:
+/// ```
+/// use symbolica::symbol;
+/// use symbolica::atom::{AtomCore, AtomView};
+/// use symbolica::printer::PrintState;
+/// let _ = symbol!("mu";;;|a, opt| {
+///     if !opt.latex {
+///         return None; // use default printer
+///     }
+///
+///     let mut fmt = "\\mu".to_string();
+///     if let AtomView::Fun(f) = a {
+///         fmt.push_str("_{");
+///         let n_args = f.get_nargs();
+///         for (i, a) in f.iter().enumerate() {
+///             a.format(&mut fmt, opt, PrintState::new()).unwrap();
+///             if i < n_args - 1 {
+///                 fmt.push_str(",");
+///             }
+///         }
+///         fmt.push_str("}");
+///     }
+///
+///     Some(fmt)
+/// })
+/// .unwrap();
+/// ```
+/// which renders the symbol/function as `\mu_{...}` in LaTeX.
 #[macro_export]
 macro_rules! symbol {
     ($id: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id))
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap()
     };
     ($id: expr; $($attr: ident),*) => {
-        $crate::atom::Symbol::new_with_attributes($crate::wrap_symbol!($id), &[$($crate::atom::FunctionAttribute::$attr,)*])
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build()
     };
     ($id: expr; $($attr: ident),*; $norm: expr) => {
-        $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symbol!($id), &[$($crate::atom::FunctionAttribute::$attr,)*], $norm)
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).build()
+    };
+    ($id: expr; $($attr: ident),*;; $print: expr) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_print_function($print).build()
+    };
+    ($id: expr; $($attr: ident),*; $norm: expr; $print: expr) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).with_print_function($print).build()
     };
     ($($id: expr),*) => {
         {
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap(),
                 )+
             )
         }
@@ -1629,22 +1706,7 @@ macro_rules! symbol {
 
             (
                 $(
-                    $crate::atom::Symbol::new_with_attributes($crate::wrap_symbol!($id), gen_attr!()),
-                )+
-            )
-        }
-    };
-    ($($id: expr),*; $($attr: ident),*; $norm: expr) => {
-        {
-            macro_rules! gen_attr {
-                () => {
-                    &[$($crate::atom::FunctionAttribute::$attr,)*]
-                };
-            }
-
-            (
-                $(
-                    $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symbol!($id), gen_attr!(), $norm),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).build(),
                 )+
             )
         }

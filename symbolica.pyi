@@ -55,7 +55,8 @@ def S(name: str,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
-      custom_normalization: Optional[Transformer] = None) -> Expression:
+      custom_normalization: Optional[Transformer] = None,
+      custom_print: Optional[Callable[..., Optional[str]]] = None) -> Expression:
     """
     Create new symbols from `names`. Symbols can have attributes,
     such as symmetries. If no attributes
@@ -94,6 +95,19 @@ def S(name: str,
     >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     >>> E("real_log(exp(x)) + real_log(5)")
 
+    Define a custom print function:
+    >>> def print_mu(mu: Expression, latex: bool, **kwargs) -> str | None:
+    >>>     if latex:
+    >>>         if mu.get_type() == AtomType.Fn:
+    >>>             return "\\mu_{" + ",".join(a.format() for a in mu) + "}"
+    >>>         else:
+    >>>             return "\\mu"
+    >>> mu = S("mu", custom_print=print_mu)
+    >>> expr = E("mu + mu(1,2)")
+    >>> print(expr.to_latex())
+
+    If the function returns `None`, the default print function is used.
+
     Parameters
     ----------
     name : str
@@ -108,8 +122,12 @@ def S(name: str,
         Set to true if the symbol is linear.
     custom_normalization : Optional[Transformer]
         A transformer that is called after every normalization. Note that the symbol
-        name cannot be used in the transformer as this will lead to a definition of the 
+        name cannot be used in the transformer as this will lead to a definition of the
         symbol. Use a wildcard with the same attributes instead.
+    custom_print : Optional[Callable[..., Optional[str]]]:
+        A function that is called when printing the variable/function, which is provided as its first argument.
+        This function should return a string, or `None` if the default print function should be used.
+        The custom print function takes in keyword arguments that are the same as the arguments of the `format` function.
     """
 
 
@@ -118,8 +136,7 @@ def S(*names: str,
       is_symmetric: Optional[bool] = None,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
-      is_linear: Optional[bool] = None,
-      custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
+      is_linear: Optional[bool] = None) -> Sequence[Expression]:
     """
     Create new symbols from `names`. Symbols can have attributes,
     such as symmetries. If no attributes
@@ -149,10 +166,6 @@ def S(*names: str,
         Set to true if the symbol is cyclesymmetric.
     is_linear : Optional[bool]
         Set to true if the symbol is multilinear.
-    custom_normalization : Optional[Transformer]
-        A transformer that is called after every normalization. Note that the symbol
-        name cannot be used in the transformer as this will lead to a definition of the 
-        symbol. Use a wildcard with the same attributes instead.
     """
 
 
@@ -204,11 +217,17 @@ class AtomType(Enum):
     """Specifies the type of the atom."""
 
     Num = 1
+    """The expression is a number."""
     Var = 2
+    """The expression is a variable."""
     Fn = 3
+    """The expression is a function."""
     Add = 4
+    """The expression is a sum."""
     Mul = 5
+    """The expression is a product."""
     Pow = 6
+    """The expression is a power."""
 
 
 class AtomTree:
@@ -283,7 +302,8 @@ class Expression:
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
                is_linear: Optional[bool] = None,
-               custom_normalization: Optional[Transformer] = None) -> Expression:
+               custom_normalization: Optional[Transformer] = None,
+               custom_print: Optional[Callable[[Expression], Optional[str]]] = None) -> Expression:
         """
         Create new symbols from `names`. Symbols can have attributes,
         such as symmetries. If no attributes
@@ -322,6 +342,19 @@ class Expression:
         >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
         >>> E("real_log(exp(x)) + real_log(5)")
 
+        Define a custom print function:
+        >>> def print_mu(mu: Expression, latex: bool, **kwargs) -> str | None:
+        >>>     if latex:
+        >>>         if mu.get_type() == AtomType.Fn:
+        >>>             return "\\mu_{" + ",".join(a.format() for a in mu) + "}"
+        >>>         else:
+        >>>             return "\\mu"
+        >>> mu = S("mu", custom_print=print_mu)
+        >>> expr = E("mu + mu(1,2)")
+        >>> print(expr.to_latex())
+
+        If the function returns `None`, the default print function is used.
+
         Parameters
         ----------
         name : str
@@ -336,8 +369,12 @@ class Expression:
             Set to true if the symbol is linear.
         custom_normalization : Optional[Transformer]
             A transformer that is called after every normalization. Note that the symbol
-            name cannot be used in the transformer as this will lead to a definition of the 
+            name cannot be used in the transformer as this will lead to a definition of the
             symbol. Use a wildcard with the same attributes instead.
+        custom_print : Optional[Callable[..., Optional[str]]]:
+            A function that is called when printing the variable/function, which is provided as its first argument.
+            This function should return a string, or `None` if the default print function should be used.
+            The custom print function takes in keyword arguments that are the same as the arguments of the `format` function.
         """
 
     @overload
@@ -347,8 +384,7 @@ class Expression:
                is_symmetric: Optional[bool] = None,
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
-               is_linear: Optional[bool] = None,
-               custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
+               is_linear: Optional[bool] = None) -> Sequence[Expression]:
         """
         Create new symbols from `names`. Symbols can have attributes,
         such as symmetries. If no attributes
@@ -378,10 +414,6 @@ class Expression:
             Set to true if the symbol is cyclesymmetric.
         is_linear : Optional[bool]
             Set to true if the symbol is multilinear.
-        custom_normalization : Optional[Transformer]
-            A transformer that is called after every normalization. Note that the symbol
-            name cannot be used in the transformer as this will lead to a definition of the 
-            symbol. Use a wildcard with the same attributes instead.
         """
 
     @overload
@@ -469,6 +501,13 @@ class Expression:
     def __str__(self) -> str:
         """
         Convert the expression into a human-readable string.
+        """
+
+    def to_canonical_string(self) -> str:
+        """
+        Convert the expression into a canonical string that
+        is independent on the order of the variables and other
+        implementation details.
         """
 
     @classmethod
@@ -3900,7 +3939,7 @@ class Evaluator:
 
 
 class CompiledEvaluator:
-    """An compiled evaluator of an expression. This will give the highest performance of 
+    """An compiled evaluator of an expression. This will give the highest performance of
     all evaluators."""
 
     @classmethod

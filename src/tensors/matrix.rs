@@ -30,7 +30,7 @@ use crate::{
     domains::{
         integer::Z,
         rational::{Rational, Q},
-        Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+        Derivable, EuclideanDomain, EuclideanNormRing, Field, InternalOrdering, Ring, SelfRing,
     },
     poly::Variable,
     printer::{PrintOptions, PrintState},
@@ -509,6 +509,23 @@ impl<F: Field> Vector<F> {
             system[s] = res;
         }
     }
+
+    /// Apply the Gram-Schmidt method in-place and compute its factors.
+    pub fn orthonormalize(system: &mut [Self], factor: &mut [<F as Ring>::Element])
+    where
+        F: EuclideanNormRing,
+    {
+        Self::gram_schmidt(system, factor);
+        let field = system[0].field.clone();
+        let n = system.len();
+
+        for s in 0..n {
+            let norm = field.euclidean_norm(&system[s].data);
+            factor[s * n + s] = norm.clone();
+            let inv_norm = field.inv(&norm);
+            system[s] = (&system[s]).mul(inv_norm);
+        }
+    }
 }
 
 impl Vector<Z> {
@@ -795,6 +812,40 @@ impl<F: Ring> Matrix<F> {
         })
     }
 
+    pub fn from_columns(columns: Vec<Vector<F>>, field: F) -> Result<Self, MatrixError<F>> {
+        if columns.is_empty() {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let nrows = columns[0].len();
+        let ncols = columns.len();
+
+        if !columns.iter().all(|col| col.data.len() == nrows) {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let mut data = Vec::with_capacity(ncols * nrows);
+        for row in 0..nrows {
+            for col in &columns {
+                data.push(col.data[row].clone());
+            }
+        }
+
+        Ok(Matrix::from_linear(data, nrows as u32, ncols as u32, field).unwrap())
+    }
+
+    pub fn from_rows(rows: Vec<Vector<F>>, field: F) -> Result<Self, MatrixError<F>> {
+        if rows.is_empty() {
+            return Err(MatrixError::ShapeMismatch);
+        }
+        let ncols = rows[0].len();
+        if !rows.iter().all(|row| row.data.len() == ncols) {
+            return Err(MatrixError::ShapeMismatch);
+        }
+        let nested_vec: Vec<_> = rows.into_iter().map(|row| row.data).collect();
+        Ok(Matrix::from_nested_vec(nested_vec, field).unwrap())
+    }
+
     /// Return the number of rows.
     pub fn nrows(&self) -> usize {
         self.nrows as usize
@@ -949,7 +1000,7 @@ impl<F: Ring> Matrix<F> {
 
     /// Split the matrix into two matrices at the `index`-th column.
     pub fn split_col(&self, index: u32) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
-        if index == 0 || index >= self.ncols - 1 {
+        if index == 0 || index >= self.ncols {
             return Err(MatrixError::ShapeMismatch);
         }
 
@@ -967,6 +1018,49 @@ impl<F: Ring> Matrix<F> {
         }
 
         Ok((m1, m2))
+    }
+
+    /// Split the matrix into two matrices at the `index`-th row.
+    pub fn split_row(&self, index: u32) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
+        if index == 0 || index >= self.nrows {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let mut m1 = Matrix::new(index, self.ncols, self.field.clone());
+        let mut m2 = Matrix::new(self.nrows - index, self.ncols, self.field.clone());
+
+        m1.data
+            .clone_from_slice(&self.data[..(index as usize * self.ncols as usize)]);
+        m2.data
+            .clone_from_slice(&self.data[(index as usize * self.ncols as usize)..]);
+
+        Ok((m1, m2))
+    }
+
+    /// Split the matrix into its row vectors.
+    pub fn rows(&self) -> Vec<Vector<F>> {
+        self.row_iter()
+            .map(|row| Vector::new(row.to_vec(), self.field.clone()))
+            .collect()
+    }
+
+    /// Split the matrix into its column vectors.
+    pub fn columns(&self) -> Vec<Vector<F>> {
+        let mut cols = vec![
+            Vector {
+                data: vec![self.field.zero(); self.nrows as usize],
+                field: self.field.clone(),
+            };
+            self.ncols as usize
+        ];
+
+        for i in 0..self.nrows as usize {
+            for j in 0..self.ncols as usize {
+                cols[j].data[i] = self[(i as u32, j as u32)].clone();
+            }
+        }
+
+        cols
     }
 }
 
@@ -1645,13 +1739,91 @@ impl<F: Field> Matrix<F> {
     pub fn rank(&self) -> usize {
         self.clone().partial_row_reduce(self.ncols) as usize
     }
+
+    /// Perform a full QR decomposition of the matrix.
+    ///
+    /// Decomposes the matrix `A [m x n]` into an orthogonal matrix `Q [m x m]`
+    /// and an upper triangular matrix `R [m x n]` such that `A = Q * R`.
+    pub fn qr_decompose(&self) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>>
+    where
+        F: EuclideanNormRing,
+    {
+        if self.nrows < self.ncols {
+            return Err(MatrixError::ShapeMismatch);
+        }
+        let mut cols = self.columns();
+        let mut factors = vec![self.field.zero(); (self.ncols * self.ncols) as usize];
+        Vector::orthonormalize(&mut cols, &mut factors[..]);
+
+        if self.ncols < self.nrows {
+            let extra_vectors = Matrix::identity(self.nrows, self.field.clone()).columns();
+            for mut v in extra_vectors {
+                if cols.len() == self.nrows as usize {
+                    break;
+                }
+                for q in &cols {
+                    let proj = v.project(q);
+                    v -= &proj;
+                }
+                if !v.is_zero() {
+                    let norm = self.field.euclidean_norm(&v.data);
+                    let inv_norm = self.field.inv(&norm);
+                    v = v.mul(inv_norm);
+                    cols.push(v);
+                }
+            }
+        }
+
+        let q = Matrix::from_columns(cols, self.field.clone())?;
+        let mut r = Matrix::new(self.nrows, self.ncols, self.field.clone());
+        for i in 0..self.ncols {
+            for j in i..self.ncols {
+                if i == j {
+                    r[(i as u32, j as u32)] = factors[(i * self.ncols + i) as usize].clone();
+                } else {
+                    let raw_proj = &factors[(j * self.ncols + i) as usize];
+                    let diag_norm = &factors[(i * self.ncols + i) as usize];
+                    r[(i as u32, j as u32)] = self.field.mul(raw_proj, diag_norm);
+                }
+            }
+        }
+
+        Ok((q, r))
+    }
+
+    /// Perform a reduced QR decomposition of the matrix.
+    ///
+    /// Decomposes the matrix `A [m x n]` into an orthogonal matrix `Q1 [m x n]`
+    /// and an upper triangular matrix `R1 [n x n]` such that `A = Q1 * R1`.
+    pub fn reduced_qr_decompose(&self) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>>
+    where
+        F: EuclideanNormRing,
+    {
+        let (mut q, mut r) = self.qr_decompose()?;
+
+        // when squared, Q = Q1 and R = R1
+        if self.ncols != self.nrows {
+            q = q.split_col(self.ncols)?.0;
+            r = r.split_row(self.ncols)?.0;
+        }
+
+        Ok((q, r))
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::ops::{Mul, Sub};
+
     use crate::{
-        atom::Atom,
-        domains::{atom::AtomField, integer::Z, rational::Q},
+        atom::{Atom, AtomCore, AtomView},
+        domains::{
+            atom::AtomField,
+            float::{FloatField, F64},
+            integer::Z,
+            rational::Q,
+            Ring, SelfRing,
+        },
         parse, symbol,
         tensors::matrix::{Matrix, Vector},
     };
@@ -1697,6 +1869,54 @@ mod test {
 
         let c_m = c.map(|x| x * 2u64, Z);
         assert_eq!(c_m.data, vec![116, 128, 278, 308]);
+    }
+
+    #[test]
+    fn break_downs_and_rebuilds() {
+        let matrix = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), 5.into(), 9.into()],
+                vec![2.into(), 6.into(), 10.into()],
+                vec![3.into(), 7.into(), 11.into()],
+                vec![4.into(), 8.into(), 12.into()],
+            ],
+            Z,
+        )
+        .unwrap();
+
+        let cols = matrix.columns();
+
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0].data, vec![1, 2, 3, 4]);
+        assert_eq!(cols[1].data, vec![5, 6, 7, 8]);
+        assert_eq!(cols[2].data, vec![9, 10, 11, 12]);
+
+        let rebuilt = Matrix::from_columns(cols, Z).unwrap();
+        assert_eq!(rebuilt.ncols, matrix.ncols);
+        assert_eq!(rebuilt.nrows, matrix.nrows);
+        assert_eq!(rebuilt.data, matrix.data);
+
+        let matrix = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), 2.into(), 3.into(), 4.into()],
+                vec![5.into(), 6.into(), 7.into(), 8.into()],
+                vec![9.into(), 10.into(), 11.into(), 12.into()],
+            ],
+            Z,
+        )
+        .unwrap();
+
+        let rows = matrix.rows();
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].data, vec![1, 2, 3, 4]);
+        assert_eq!(rows[1].data, vec![5, 6, 7, 8]);
+        assert_eq!(rows[2].data, vec![9, 10, 11, 12]);
+
+        let rebuilt = Matrix::from_rows(rows, Z).unwrap();
+        assert_eq!(rebuilt.ncols, matrix.ncols);
+        assert_eq!(rebuilt.nrows, matrix.nrows);
+        assert_eq!(rebuilt.data, matrix.data);
     }
 
     #[test]
@@ -1956,5 +2176,141 @@ mod test {
 
         let r = a.solve_fraction_free(&rhs).unwrap();
         assert_eq!(r.data, [2, -1, 1]);
+    }
+
+    #[test]
+    fn orthonormalize() {
+        let field = FloatField::<F64>::new();
+        let mut system = vec![
+            Vector::new(
+                vec![
+                    F64::from(1 as f64),
+                    F64::from(2 as f64),
+                    F64::from(3 as f64),
+                ],
+                field.clone(),
+            ),
+            Vector::new(
+                vec![
+                    F64::from(2 as f64),
+                    F64::from(3 as f64),
+                    F64::from(4 as f64),
+                ],
+                field.clone(),
+            ),
+            Vector::new(
+                vec![
+                    F64::from(3 as f64),
+                    F64::from(4 as f64),
+                    F64::from(6 as f64),
+                ],
+                field.clone(),
+            ),
+        ];
+        let mut factor = vec![field.zero(); system.len() * system[0].len() as usize];
+        Vector::<FloatField<F64>>::orthonormalize(&mut system, &mut factor);
+
+        let eps = 1e-6;
+        for (i, v) in system.iter().enumerate() {
+            assert!((v.norm_squared().into_inner() - 1.).abs() < eps);
+            for j in (i + 1)..system.len() {
+                let w = &system[j];
+                assert!(v.dot(&w).into_inner().abs() < eps);
+            }
+        }
+
+        println!("{}", Matrix::from_linear(factor, 3, 3, field).unwrap());
+    }
+
+    #[test]
+    fn qr_decompose() {
+        let ff = FloatField::<F64>::new();
+        let matrix = Matrix::from_linear(
+            vec![
+                F64::from(1 as f64),
+                F64::from(2 as f64),
+                F64::from(3 as f64),
+                F64::from(4 as f64),
+            ],
+            2,
+            2,
+            ff.clone(),
+        )
+        .unwrap();
+        let (q, r) = matrix.qr_decompose().unwrap();
+        assert_eq!(q.nrows, 2);
+        assert_eq!(q.ncols, 2);
+        assert_eq!(r.nrows, 2);
+        assert_eq!(r.ncols, 2);
+        assert!(q
+            .mul(&q.transpose())
+            .sub(&Matrix::identity(2, ff.clone()))
+            .data
+            .iter()
+            .all(|e| &ff.mul(e, e) < &F64::from(1e-6 as f64)));
+        assert!(q
+            .mul(&r)
+            .sub(&matrix)
+            .data
+            .iter()
+            .all(|e| &ff.mul(e, e) < &F64::from(1e-6 as f64)));
+
+        let field = AtomField {
+            cancel_check_on_division: true,
+            custom_normalization: Some(Box::new(|a: AtomView, out: &mut Atom| {
+                *out = a.expand().collect_num();
+                true
+            })),
+            statistical_zero_test: true,
+        };
+        let matrix = Matrix::from_linear(
+            vec![
+                Atom::new_num(1),
+                Atom::new_num(2),
+                Atom::new_num(3),
+                Atom::new_num(4),
+            ],
+            2,
+            2,
+            field.clone(),
+        )
+        .unwrap();
+        let (q, r) = matrix.qr_decompose().unwrap();
+        assert_eq!(q.nrows, 2);
+        assert_eq!(q.ncols, 2);
+        assert_eq!(r.nrows, 2);
+        assert_eq!(r.ncols, 2);
+        assert!(q.mul(&q.transpose()).is_one());
+        assert!(q.mul(&r).sub(&matrix).is_zero());
+
+        let matrix = Matrix::from_linear(
+            vec![
+                Atom::new_num(1),
+                Atom::new_num(2),
+                Atom::new_num(3),
+                Atom::new_num(4),
+                Atom::new_num(5),
+                Atom::new_num(6),
+            ],
+            3,
+            2,
+            field.clone(),
+        )
+        .unwrap();
+        let (q, r) = matrix.qr_decompose().unwrap();
+        assert_eq!(q.nrows, 3);
+        assert_eq!(q.ncols, 3);
+        assert_eq!(r.nrows, 3);
+        assert_eq!(r.ncols, 2);
+        assert!(q.mul(&q.transpose()).is_one());
+        assert!(q.mul(&r).sub(&matrix).is_zero());
+
+        let (q, r) = matrix.reduced_qr_decompose().unwrap();
+        assert_eq!(q.nrows, 3);
+        assert_eq!(q.ncols, 2);
+        assert_eq!(r.nrows, 2);
+        assert_eq!(r.ncols, 2);
+        assert!(q.transpose().mul(&q).is_one());
+        assert!(q.mul(&r).sub(&matrix).is_zero());
     }
 }

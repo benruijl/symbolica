@@ -86,7 +86,11 @@ impl_internal_ordering_range!(Vec<T>);
 /// A ring that supports a derivative.
 pub trait Derivable: Ring {
     /// Take the derivative of `e` in `x`.
-    fn derivative(&self, e: &<Self as Ring>::Element, x: &Variable) -> <Self as Ring>::Element;
+    fn derivative(
+        &self,
+        e: &<Self as Ring>::Element,
+        x: &Variable,
+    ) -> <Self as Ring>::Element;
 }
 
 /// Rings whose elements contain all the knowledge of the ring itself,
@@ -253,7 +257,7 @@ impl<'a, R: Ring> Display for RingPrinter<'a, R> {
 #[derive(Clone)]
 pub struct WrappedRingElement<R: Ring, C: Clone + Borrow<R>> {
     pub ring: C,
-    pub element: R::Element,
+    pub element: <R as Ring>::Element,
 }
 
 impl<R: Ring, C: Clone + Borrow<R>> WrappedRingElement<R, C> {
@@ -538,4 +542,8 @@ impl<R: Field, C: Clone + Borrow<R>> Field for WrappedRingElement<R, C> {
             element: self.ring().inv(&a.element),
         }
     }
+}
+
+pub trait EuclideanNormRing: Ring {
+    fn euclidean_norm(&self, values: &[Self::Element]) -> Self::Element;
 }

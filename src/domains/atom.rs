@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+    integer::Integer, Derivable, EuclideanDomain, EuclideanNormRing, Field, InternalOrdering, Ring, SelfRing
 };
 
 use dyn_clone::DynClone;
@@ -31,6 +31,7 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 ///     statistical_zero_test: false,
 ///     cancel_check_on_division: true,
 ///     custom_normalization: None,
+///     statistical_zero_test: true,
 /// };
 ///
 /// let r = field.div(
@@ -229,6 +230,16 @@ impl Ring for AtomField {
         f: &mut W,
     ) -> Result<bool, std::fmt::Error> {
         element.as_view().format(f, opts, state)
+    }
+}
+
+impl EuclideanNormRing for AtomField {
+    fn euclidean_norm(&self, values: &[Self::Element]) -> Self::Element {
+        let mut sum = self.zero();
+        for value in values {
+            sum = sum + value.pow(Atom::new_num(2));
+        }
+        sum.pow(Atom::new_num((1, 2)))
     }
 }
 

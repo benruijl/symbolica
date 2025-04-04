@@ -300,7 +300,7 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
             Some(&self.settings),
             &mut out,
         ) {
-            if !self.repeat {
+            if !self.repeat || expr_ref == out.as_view() {
                 break;
             }
 
@@ -330,7 +330,7 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
             out,
         ) {
             replaced = true;
-            if !self.repeat {
+            if !self.repeat || expr_ref == out.as_view() {
                 break;
             }
 
@@ -4312,6 +4312,18 @@ mod test {
         a = a.replace(p1).when(rest).repeat().with(rhs1);
 
         let res = parse!("f(0)").unwrap();
+        assert_eq!(a, res);
+    }
+
+    #[test]
+    fn repeat_replace_same_input_output() {
+        let mut a = parse!("2").unwrap();
+        let p1 = parse!("x_").unwrap().to_pattern();
+        let rhs1 = parse!("x_").unwrap().to_pattern();
+
+        a = a.replace(p1).repeat().with(rhs1); // should not lead to an infinite loop
+
+        let res = parse!("2").unwrap();
         assert_eq!(a, res);
     }
 

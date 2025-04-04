@@ -54,6 +54,11 @@ impl<A, T> EvaluationFn<A, T> {
     }
 }
 
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
 #[derive(Clone)]
 pub struct FunctionMap<T = Rational> {
     map: HashMap<Atom, ConstOrExpr<T>>,
@@ -87,8 +92,15 @@ impl<T> FunctionMap<T> {
             }
         }
 
-        self.tagged_fn_map
-            .insert((name, vec![]), ConstOrExpr::Expr(rename, 0, args, body));
+        self.tagged_fn_map.insert(
+            (name, vec![]),
+            ConstOrExpr::Expr(Expr {
+                name: rename,
+                tag_len: 0,
+                args,
+                body,
+            }),
+        );
 
         Ok(())
     }
@@ -108,8 +120,15 @@ impl<T> FunctionMap<T> {
         }
 
         let tag_len = tags.len();
-        self.tagged_fn_map
-            .insert((name, tags), ConstOrExpr::Expr(rename, tag_len, args, body));
+        self.tagged_fn_map.insert(
+            (name, tags),
+            ConstOrExpr::Expr(Expr {
+                name: rename,
+                tag_len,
+                args,
+                body,
+            }),
+        );
 
         Ok(())
     }
@@ -144,10 +163,73 @@ impl<T> FunctionMap<T> {
     }
 }
 
-#[derive(Clone)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode))]
+#[derive(Clone, Debug)]
 enum ConstOrExpr<T> {
     Const(T),
-    Expr(String, usize, Vec<Symbol>, Atom),
+    Expr(Expr),
+}
+
+#[cfg(feature = "bincode")]
+impl<'de, T: bincode::BorrowDecode<'de, crate::state::StateMap>>
+    bincode::BorrowDecode<'de, crate::state::StateMap> for ConstOrExpr<T>
+{
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = crate::state::StateMap>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let variant_index = <u32 as bincode::Decode<D::Context>>::decode(decoder)?;
+        match variant_index {
+            0u32 => core::result::Result::Ok(Self::Const(<T as bincode::de::BorrowDecode<
+                'de,
+                crate::state::StateMap,
+            >>::borrow_decode(decoder)?)),
+            1u32 => core::result::Result::Ok(Self::Expr(Expr::borrow_decode(decoder)?)),
+            variant => {
+                core::result::Result::Err(::bincode::error::DecodeError::UnexpectedVariant {
+                    found: variant,
+                    type_name: "ConstOrExpr",
+                    allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 1 },
+                })
+            }
+        }
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<T: bincode::Decode<crate::state::StateMap>> bincode::Decode<crate::state::StateMap>
+    for ConstOrExpr<T>
+{
+    fn decode<D: bincode::de::Decoder<Context = crate::state::StateMap>>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let variant_index = <u32 as bincode::Decode<D::Context>>::decode(decoder)?;
+        match variant_index {
+            0u32 => core::result::Result::Ok(Self::Const(<T as bincode::Decode<
+                crate::state::StateMap,
+            >>::decode(decoder)?)),
+            1u32 => core::result::Result::Ok(Self::Expr(Expr::decode(decoder)?)),
+            variant => {
+                core::result::Result::Err(::bincode::error::DecodeError::UnexpectedVariant {
+                    found: variant,
+                    type_name: "ConstOrExpr",
+                    allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 1 },
+                })
+            }
+        }
+    }
+}
+
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
+#[derive(Clone, Debug)]
+struct Expr {
+    name: String,
+    tag_len: usize,
+    args: Vec<Symbol>,
+    body: Atom,
 }
 
 #[derive(Debug, Clone)]
@@ -632,6 +714,7 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Clone)]
 
 pub struct ExpressionEvaluator<T> {
@@ -4620,7 +4703,12 @@ impl<'a> AtomView<'a> {
 
                 match fun {
                     ConstOrExpr::Const(t) => Ok(Expression::Const(t.clone())),
-                    ConstOrExpr::Expr(name, tag_len, arg_spec, e) => {
+                    ConstOrExpr::Expr(Expr {
+                        name,
+                        tag_len,
+                        args: arg_spec,
+                        body: e,
+                    }) => {
                         if f.get_nargs() != arg_spec.len() + *tag_len {
                             return Err(format!(
                                 "Function {} called with wrong number of arguments: {} vs {}",

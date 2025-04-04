@@ -1051,10 +1051,6 @@ where
     /// Compute the multivariate partial fraction decomposition.
     /// Based on [MultivariateApart](https://arxiv.org/abs/2101.08283v1) by Heller and von Manteuffel.
     pub fn apart_multivariate(&self) -> Vec<Self> {
-        if self.numerator.nterms() == 1 {
-            return vec![self.clone()];
-        }
-
         let mut fs = self.denominator.factor();
 
         // sort by number of variables

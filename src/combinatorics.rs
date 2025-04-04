@@ -213,6 +213,7 @@ pub fn unique_permutations<T: Clone + Hash + Ord>(list: &[T]) -> (Integer, Vec<V
         *unique.entry(e).or_insert(0) += 1;
     }
     let mut unique: Vec<_> = unique.into_iter().collect();
+    unique.sort();
 
     // determine pre-factor
     let mut prefactor = Integer::one();

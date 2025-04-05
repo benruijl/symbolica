@@ -39,6 +39,9 @@ pub struct Node<NodeData = Empty> {
     pub data: NodeData,
     /// Indices of the edges connected to the node.
     pub edges: Vec<usize>,
+    /// The valence of the node, i.e., the number of edges connected to it.
+    /// A self-loop counts twice.
+    pub valence: usize,
 }
 
 /// An edge in a graph, with arbitrary data.
@@ -50,6 +53,13 @@ pub struct Edge<EdgeData = Empty> {
     pub directed: bool,
     /// Arbitrary data associated with the edge.
     pub data: EdgeData,
+}
+
+impl<EdgeData> Edge<EdgeData> {
+    #[inline]
+    pub fn is_self_loop(&self) -> bool {
+        self.vertices.0 == self.vertices.1
+    }
 }
 
 /// Empty data type.
@@ -311,6 +321,7 @@ impl<N, E> Graph<N, E> {
         self.nodes.push(Node {
             edges: Vec::new(),
             data,
+            valence: 0,
         });
         index
     }
@@ -339,10 +350,13 @@ impl<N, E> Graph<N, E> {
             data,
         });
         self.nodes[source].edges.push(index);
+        self.nodes[source].valence += 1;
+        self.nodes[target].valence += 1;
 
         if source != target {
             self.nodes[target].edges.push(index);
         }
+
         Ok(index)
     }
 
@@ -365,6 +379,8 @@ impl<N, E> Graph<N, E> {
     pub fn delete_last_edge(&mut self) -> Option<Edge<E>> {
         if let Some(edge) = self.edges.pop() {
             self.nodes[edge.vertices.0].edges.pop();
+            self.nodes[edge.vertices.0].valence -= 1;
+            self.nodes[edge.vertices.1].valence -= 1;
             if edge.vertices.0 != edge.vertices.1 {
                 self.nodes[edge.vertices.1].edges.pop();
             }
@@ -423,7 +439,7 @@ impl<N, E> Graph<N, E> {
                 position: None,
                 parent: 0,
                 chain_id: None,
-                external: n.edges.len() == 1,
+                external: n.valence == 1,
                 back_edges: vec![],
             })
             .collect();
@@ -727,8 +743,8 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                 .map(|(i, x)| {
                     if i < external_edges.len() && x.edges.is_empty() {
                         1
-                    } else if i >= external_edges.len() && x.edges.len() < settings.min_degree {
-                        settings.min_degree - x.edges.len()
+                    } else if i >= external_edges.len() && x.valence < settings.min_degree {
+                        settings.min_degree - x.valence
                     } else {
                         0
                     }
@@ -776,7 +792,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         // find completions for the current vertex
         if cur_vertex < external_edges.len() {
             // generate a single connection with the external edge
-            let n = self.node(cur_vertex).edges.len();
+            let n = self.node(cur_vertex).valence;
             if n == 0 {
                 let mut edges_left: Vec<(_, usize)> =
                     vec![(external_edges[cur_vertex].1.clone(), 1)];
@@ -894,6 +910,25 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
+            // check if the source is not a bridge
+            if settings.settings.allow_self_loops && settings.settings.max_bridges == Some(0) {
+                if source > external_edges.len()
+                    && self.node(source).edges.len()
+                        - self
+                            .node(source)
+                            .edges
+                            .iter()
+                            .filter(|e| {
+                                let e = self.edge(**e);
+                                e.vertices.0 == source && e.vertices.1 == source
+                            })
+                            .count()
+                        == 1
+                {
+                    return Ok(());
+                }
+            }
+
             return self.generate_impl(external_edges, source + 1, settings, edge_signatures, out);
         }
 
@@ -994,7 +1029,33 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             settings.max_degree
         };
 
-        if self.node(cur_target).edges.len() + 1 > max_degree {
+        if self.node(cur_target).valence + 1 > max_degree {
+            return Ok(());
+        }
+
+        // check if there is a previous node with the same signature
+        // if so, skip assigning to this node as this is symmetric w.r.t
+        // assigning to the previous node
+        'next_v: for v in source + 1..cur_target {
+            if self.node(v).data != self.node(cur_target).data
+                || self.node(v).edges.len() != self.node(cur_target).edges.len()
+            {
+                continue;
+            }
+
+            for (e1, e2) in self.node(v).edges.iter().zip(&self.node(cur_target).edges) {
+                let e1 = self.edge(*e1);
+                let e2 = self.edge(*e2);
+
+                if e1.data != e2.data
+                    || e1.directed != e2.directed
+                    || (e1.vertices.0 == v && e1.vertices.1 != e2.vertices.1)
+                    || (e1.vertices.1 == v && e1.vertices.0 != e2.vertices.0)
+                {
+                    continue 'next_v;
+                }
+            }
+
             return Ok(());
         }
 

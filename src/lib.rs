@@ -133,6 +133,29 @@ impl Default for LicenseManager {
     }
 }
 
+const OEM_LICENSE_KEY: Option<&str> = option_env!("SYMBOLICA_OEM_LICENSE");
+
+/// Activate an OEM license key. Regular users should call [LicenseManager::set_license_key] instead.
+#[macro_export]
+macro_rules! activate_oem_license {
+    ($key: literal) => {{
+        const KEY2: [u32; 6] = {
+            let mut h: u32 = 5381;
+            let b = env!("CARGO_CRATE_NAME").as_bytes();
+            let mut i = 0;
+            while i < b.len() {
+                h = h.wrapping_mul(33).wrapping_add(b[i] as u32);
+                i += 1;
+            }
+            [124124564, 26352342, 63345, 3812471234, 23523, h]
+        };
+
+        symbolica::LicenseManager::set_oem_license_key($key, &KEY2).unwrap_or_else(|e| {
+            panic!("{}", e);
+        });
+    }};
+}
+
 impl LicenseManager {
     /// Create a new license manager.
     pub(crate) fn new() -> LicenseManager {
@@ -417,6 +440,49 @@ Error: {}",
         }
 
         Self::check_license_key()
+    }
+
+    /// Activate an OEM license key. Should not be called directly, use [activate_oem_license] instead.
+    pub fn set_oem_license_key(
+        key1: &'static str,
+        key2: &'static [u32; 6],
+    ) -> Result<(), &'static str> {
+        let Some(oom_key) = OEM_LICENSE_KEY else {
+            return Err("OEM license key not set");
+        };
+
+        if !oom_key.starts_with("SYMBOLICA_OEM_") {
+            return Err("Invalid OEM license key");
+        }
+
+        if !key1.starts_with("SYMBOLICA_OEM_KEY_") {
+            return Err("Invalid OEM license key part");
+        }
+
+        let mut h: u32 = 5381;
+        for b in oom_key.as_bytes() {
+            h = h.wrapping_mul(33).wrapping_add(*b as u32);
+        }
+        for b in key2 {
+            h = h.wrapping_mul(33).wrapping_add(*b);
+        }
+
+        if key1 == format!("SYMBOLICA_OEM_KEY_{:x}", h) {
+            LICENSED.store(true, Relaxed);
+
+            std::thread::spawn(|| {
+                if let Err(e) = Self::check_registration(oom_key.to_owned()) {
+                    if e.contains("Unknown license") {
+                        println!("{}", e);
+                        abort();
+                    }
+                }
+            });
+
+            Ok(())
+        } else {
+            Err("Invalid OEM license key: key does not match")
+        }
     }
 
     /// Returns `true` iff this instance has a valid license key set.

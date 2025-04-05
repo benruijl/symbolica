@@ -28,7 +28,6 @@ use colored::{Color, Colorize};
 
 use crate::{
     domains::{
-        finite_field::FiniteFieldWorkspace,
         integer::{Integer, Z},
         rational::{Rational, Q},
         Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
@@ -987,7 +986,7 @@ impl<F: Ring> Matrix<F> {
             }
             let start = row_index * self.ncols;
             let end = &start + self.ncols;
-            data.extend_from_slice(&self.data[start.to_u64() as usize..end.to_u64() as usize]);
+            data.extend_from_slice(&self.data[start as usize..end as usize]);
         }
 
         Ok(Matrix {

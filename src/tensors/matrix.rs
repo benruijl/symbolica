@@ -28,7 +28,7 @@ use colored::{Color, Colorize};
 
 use crate::{
     domains::{
-        integer::Z,
+        integer::{Integer, Z},
         rational::{Rational, Q},
         Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     },
@@ -968,6 +968,34 @@ impl<F: Ring> Matrix<F> {
 
         Ok((m1, m2))
     }
+
+    /// Permutes the rows of the matrix based on the provided permutation vector.
+    pub fn permute_rows(&self, pv: &[u32]) -> Result<Self, MatrixError<F>> {
+        if self.nrows as usize != pv.len() {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let mut data = Vec::with_capacity(self.data.len());
+        for row_index in pv {
+            if row_index.ge(&Integer::from(self.nrows)) {
+                return Err(MatrixError::IndexOutOfBounds {
+                    row: Some(row_index.clone()),
+                    col: None,
+                    shape: (self.nrows, self.ncols),
+                });
+            }
+            let start = row_index * self.ncols;
+            let end = &start + self.ncols;
+            data.extend_from_slice(&self.data[start as usize..end as usize]);
+        }
+
+        Ok(Matrix {
+            ncols: self.ncols,
+            nrows: self.nrows,
+            data: data,
+            field: self.field.clone(),
+        })
+    }
 }
 
 impl<F: Ring> SelfRing for Matrix<F> {
@@ -1241,9 +1269,18 @@ pub enum MatrixError<F: Ring> {
     Inconsistent,
     NotSquare,
     Singular,
+    RankDeficient {
+        rank: u32,
+        expected: u32,
+    },
     ShapeMismatch,
     RightHandSideIsNotVector,
     ResultNotInDomain,
+    IndexOutOfBounds {
+        row: Option<u32>,
+        col: Option<u32>,
+        shape: (u32, u32),
+    },
 }
 
 impl<F: Ring> std::fmt::Display for MatrixError<F> {
@@ -1263,6 +1300,11 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
             MatrixError::Inconsistent => write!(f, "The system is inconsistent"),
             MatrixError::NotSquare => write!(f, "The matrix is not square"),
             MatrixError::Singular => write!(f, "The matrix is singular"),
+            MatrixError::RankDeficient { rank, expected } => write!(
+                f,
+                "The matrix is rank-deficient: rank = {}, expected at least {}",
+                rank, expected
+            ),
             MatrixError::ShapeMismatch => write!(f, "The shape of the matrix is not compatible"),
             MatrixError::RightHandSideIsNotVector => {
                 write!(f, "The right-hand side is not a vector")
@@ -1271,6 +1313,15 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
                 f,
                 "The result does not belong to the same domain as the matrix."
             ),
+            MatrixError::IndexOutOfBounds { row, col, shape } => {
+                let row = row.map_or("?".to_string(), |r| r.to_string());
+                let col = col.map_or("?".to_string(), |c| c.to_string());
+                write!(
+                    f,
+                    "Index out of bounds: tried to access element at ({}, {}), but the matrix has shape {:?}.",
+                    row, col, shape
+                )
+            }
         }
     }
 }
@@ -1494,7 +1545,29 @@ impl<F: Field> Matrix<F> {
     /// Write the first `max_col` columns of the matrix in (non-reduced) echelon form.
     /// Returns the matrix rank.
     pub fn partial_row_reduce(&mut self, max_col: u32) -> u32 {
+        let (res, _) = self.partial_row_reduce_impl(max_col, false);
+        res
+    }
+
+    /// Write the first `max_col` columns of the matrix in (non-reduced) echelon form.
+    /// Returns the matrix rank, and optionally the history of manipulation.
+    fn partial_row_reduce_impl(
+        &mut self,
+        max_col: u32,
+        require_history: bool,
+    ) -> (u32, Option<(Vec<(u32, u32)>, Vec<Vec<F::Element>>)>) {
         let zero = self.field.zero();
+
+        let mut multipliers = if require_history {
+            Some(vec![vec![zero.clone(); self.nrows()]; self.nrows()])
+        } else {
+            None
+        };
+        let mut swaps = if require_history {
+            Some(Vec::new())
+        } else {
+            None
+        };
 
         let mut i = 0;
         for j in 0..max_col.min(self.ncols) {
@@ -1503,6 +1576,9 @@ impl<F: Field> Matrix<F> {
                 for k in i + 1..self.nrows {
                     if !self.field.is_zero(&self[(k, j)]) {
                         // Swap i-th row and k-th row.
+                        if let Some(ref mut s) = swaps {
+                            s.push((i, k));
+                        }
                         for l in j..self.ncols {
                             self.data
                                 .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
@@ -1521,6 +1597,9 @@ impl<F: Field> Matrix<F> {
             for k in i + 1..self.nrows {
                 if !self.field.is_zero(&self[(k, j)]) {
                     let s = self.field.mul(&self[(k, j)], &inv_x);
+                    if let Some(ref mut m) = multipliers {
+                        m[k as usize][i as usize] = s.clone();
+                    };
                     self[(k, j)] = self.field.zero();
                     for l in j + 1..self.ncols {
                         let mut e = std::mem::replace(&mut self[(k, l)], zero.clone());
@@ -1536,7 +1615,12 @@ impl<F: Field> Matrix<F> {
             }
         }
 
-        i
+        let history = if require_history {
+            Some((swaps.unwrap(), multipliers.unwrap()))
+        } else {
+            None
+        };
+        (i, history)
     }
 
     /// Create a row-reduced matrix from a matrix in echelon form.
@@ -1645,13 +1729,70 @@ impl<F: Field> Matrix<F> {
     pub fn rank(&self) -> usize {
         self.clone().partial_row_reduce(self.ncols) as usize
     }
+
+    /// Compute an LU decomposition for a possibly non-square matrix A (size m x n).
+    ///
+    /// Returns (P, L, U) such that:
+    ///    A.permute_rows(P) = L * U
+    ///
+    /// - P is a vector of length m
+    /// - L is m x rank
+    /// - U is rank x n
+    ///
+    /// If rank < min(m, n), the matrix is rank-deficient and a MatrixError::Singluar is raised.
+    pub fn lu_decompose(&self) -> Result<(Vec<u32>, Matrix<F>, Matrix<F>), MatrixError<F>> {
+        let m = self.nrows;
+        let n = self.ncols;
+        let one = self.field.one();
+
+        let mut mat = self.clone();
+
+        let (rank, history) = mat.partial_row_reduce_impl(mat.nrows, true);
+        let (swaps, multipliers) = history.unwrap();
+
+        if rank < m.min(n) {
+            return Err(MatrixError::RankDeficient {
+                rank: rank,
+                expected: m.min(n),
+            });
+        }
+
+        let mut pv: Vec<u32> = (0..m).collect();
+        for &(i, k) in &swaps {
+            pv.swap(i as usize, k as usize);
+        }
+
+        let mut l = Matrix::new(m, rank, self.field.clone());
+        for i in 0..rank.min(m) {
+            l[(i, i)] = one.clone();
+        }
+        for r in 0..m {
+            for i in 0..r {
+                let val = &multipliers[r as usize][i as usize];
+                if !self.field.is_zero(val) {
+                    l[(r, i)] = val.clone();
+                }
+            }
+        }
+
+        let mut u = Matrix::new(rank, n, self.field.clone());
+        for i in 0..rank {
+            for j in 0..n {
+                u[(i, j)] = mat[(i, j)].clone();
+            }
+        }
+
+        Ok((pv, l, u))
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::ops::Mul;
+
     use crate::{
-        atom::Atom,
-        domains::{atom::AtomField, integer::Z, rational::Q},
+        atom::{Atom, AtomCore, AtomView},
+        domains::{atom::AtomField, integer::Z, rational::Q, Ring},
         parse, symbol,
         tensors::matrix::{Matrix, Vector},
     };
@@ -1956,5 +2097,115 @@ mod test {
 
         let r = a.solve_fraction_free(&rhs).unwrap();
         assert_eq!(r.data, [2, -1, 1]);
+    }
+
+    #[test]
+    fn test_matrix_permutation() {
+        let a = Matrix::from_linear(
+            vec![
+                11.into(),
+                12.into(),
+                13.into(),
+                21.into(),
+                22.into(),
+                23.into(),
+                31.into(),
+                32.into(),
+                33.into(),
+            ],
+            3,
+            3,
+            Z,
+        )
+        .unwrap();
+
+        let pv = vec![2 as u32, 0 as u32, 1 as u32];
+        let permuted = a.permute_rows(&pv).unwrap();
+        assert_eq!(permuted.data, [31, 32, 33, 11, 12, 13, 21, 22, 23]);
+    }
+
+    #[test]
+    fn test_lu_decompose() {
+        let l = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), 0.into(), 0.into()],
+                vec![3.into(), 1.into(), 0.into()],
+                vec![(-5).into(), 7.into(), 1.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let u = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), (-10).into(), 8.into()],
+                vec![0.into(), 1.into(), 0.into()],
+                vec![0.into(), 0.into(), 1.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let m = l.mul(&u);
+        let (res_pv, res_l, res_u) = m.lu_decompose().unwrap();
+        assert_eq!(res_l, l);
+        assert_eq!(res_u, u);
+        assert_eq!(res_pv, [0, 1, 2]);
+
+        let m2 = Matrix::from_nested_vec(
+            vec![
+                vec![0.into(), 2.into(), 3.into()],
+                vec![4.into(), 5.into(), 6.into()],
+                vec![7.into(), 8.into(), 9.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let (res_pv, res_l, res_u) = m2.lu_decompose().unwrap();
+        assert_eq!(res_l.mul(&res_u), m2.permute_rows(&res_pv).unwrap());
+
+        let field = AtomField {
+            cancel_check_on_division: true,
+            custom_normalization: Some(Box::new(|a: AtomView, out: &mut Atom| {
+                *out = a.expand().collect_num();
+                true
+            })),
+            statistical_zero_test: true,
+        };
+        let zero = &field.zero();
+        let m3 = Matrix::from_nested_vec(
+            vec![
+                vec![Atom::new_num(2), Atom::new_num(3), Atom::new_num(5)],
+                vec![
+                    parse!("(x+3)^2-x^2-6*x-2").unwrap(),
+                    Atom::new_num(11),
+                    Atom::new_num(13),
+                ],
+                vec![Atom::new_num(17), Atom::new_num(23), Atom::new_num(31)],
+            ],
+            field.clone(),
+        )
+        .unwrap();
+        let (res_pv, res_l, res_u) = m3.lu_decompose().unwrap();
+
+        let prod = res_l.mul(&res_u);
+        let perm = m3.permute_rows(&res_pv).unwrap();
+        for i in 0..3 {
+            for j in 0..3 {
+                let lhs = &prod[(i, j)];
+                let rhs = &perm[(i, j)];
+                assert_eq!(&zero.clone(), &field.sub(lhs, rhs));
+            }
+        }
+
+        let m4 = Matrix::from_nested_vec(
+            vec![
+                vec![0.into(), 2.into(), 3.into(), 4.into()],
+                vec![5.into(), 6.into(), 7.into(), 8.into()],
+                vec![9.into(), 10.into(), 11.into(), 12.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let (res_pv, res_l, res_u) = m4.lu_decompose().unwrap();
+        assert_eq!(res_l.mul(&res_u), m4.permute_rows(&res_pv).unwrap());
     }
 }

@@ -8,7 +8,6 @@ use std::{
 };
 
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
@@ -20,7 +19,9 @@ use rug::{
 };
 
 /// A field of floating point type `T`. For `f64` fields, use [`FloatField<F64>`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FloatField<T> {
     rep: T,
 }
@@ -653,6 +654,8 @@ impl From<Rational> for f64 {
 
 /// A wrapper around `f64` that implements `Eq`, `Ord`, and `Hash`.
 /// All `NaN` values are considered equal, and `-0` is considered equal to `0`.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Copy, Clone)]
 pub struct F64(f64);
 
@@ -1099,8 +1102,36 @@ impl Hash for F64 {
 ///
 /// Floating point output with less than five significant binary digits
 /// should be considered unreliable.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone)]
 pub struct Float(MultiPrecisionFloat);
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for Float {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.0.prec().encode(encoder)?;
+        self.0.to_string_radix(16, None).encode(encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(Float);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for Float {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let prec = u32::decode(decoder)?;
+        let r = String::decode(decoder)?;
+        let val = MultiPrecisionFloat::parse_radix(&r, 16)
+            .map_err(|_| bincode::error::DecodeError::Other("Failed to parse float from string"))?
+            .complete(prec);
+        Ok(Float(val))
+    }
+}
 
 impl Debug for Float {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -3057,7 +3088,9 @@ impl RealNumberLike for Rational {
 }
 
 /// A complex number, `re + i * im`, where `i` is the imaginary unit.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Complex<T> {
     pub re: T,
@@ -4116,5 +4149,16 @@ mod test {
         let b = Float::with_val(53, 0.1);
         let c = a.powf(&b);
         assert_eq!(c.get_precision(), 57);
+    }
+
+    #[cfg(feature = "bincode")]
+    #[test]
+    fn bincode_export() {
+        let a = Float::with_val(15, 1.127361273);
+        let encoded = bincode::encode_to_vec(&a, bincode::config::standard()).unwrap();
+        let b: Float = bincode::decode_from_slice(&encoded, bincode::config::standard())
+            .unwrap()
+            .0;
+        assert_eq!(a, b);
     }
 }

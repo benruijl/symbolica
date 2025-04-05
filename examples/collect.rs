@@ -9,7 +9,7 @@ fn main() {
     let key = symbol!("key");
     let coeff = symbol!("val");
 
-    let r = input.coefficient_list::<i8, _>(std::slice::from_ref(&x));
+    let r = input.coefficient_list::<i8>(std::slice::from_ref(&x));
 
     println!("> Coefficient list:");
     for (key, val) in r {
@@ -17,7 +17,7 @@ fn main() {
     }
 
     println!("> Collect in x:");
-    let out = input.collect::<i8, _>(
+    let out = input.collect::<i8>(
         &x,
         Some(Box::new(|x, out| {
             out.set_from_view(&x);
@@ -27,7 +27,7 @@ fn main() {
     println!("\t{}", out);
 
     println!("> Collect in x with wrapping:");
-    let out = input.collect::<i8, _>(
+    let out = input.collect::<i8>(
         &x,
         Some(Box::new(move |a, out| {
             out.set_from_view(&a);

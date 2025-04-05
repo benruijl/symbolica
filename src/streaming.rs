@@ -8,14 +8,17 @@ use std::{
 };
 
 use brotli::{CompressorWriter, Decompressor};
-use rand::{thread_rng, Rng};
+use byteorder::{LittleEndian, WriteBytesExt};
 use rayon::{prelude::*, ThreadPool};
+use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     atom::{Atom, AtomView},
-    state::{RecycledAtom, Workspace},
+    state::{RecycledAtom, State, Workspace},
     LicenseManager,
 };
+
+static TEMP_FILES_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// A stream that can be read from by using `name`.
 pub trait ReadableNamedStream: Read + Send {
@@ -149,9 +152,10 @@ pub struct TermStreamer<W: WriteableNamedStream> {
 }
 
 impl<W: WriteableNamedStream> Drop for TermStreamer<W> {
+    /// Remove all temporary files created by the term streamer.
     fn drop(&mut self) {
         for x in &mut (0..self.file_buf.len()) {
-            std::fs::remove_file(&format!("{}_{}_{}", self.filename, self.generation, x)).unwrap();
+            std::fs::remove_file(&self.get_filename(x)).unwrap();
         }
     }
 }
@@ -202,12 +206,9 @@ impl<W: WriteableNamedStream> Add<Atom> for TermStreamer<W> {
 impl<W: WriteableNamedStream> TermStreamer<W> {
     /// Create a new term streamer.
     pub fn new(config: TermStreamerConfig) -> Self {
-        let filename = loop {
-            let name = format!("{}/{:x}", config.path, thread_rng().gen::<u64>());
-            if !std::path::Path::new(&name).exists() {
-                break name;
-            }
-        };
+        let pid = std::process::id();
+        let uid = TEMP_FILES_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let filename = format!("{}/{}_{:x}", config.path, pid, uid);
 
         Self {
             mem_buf: vec![],
@@ -245,6 +246,10 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         }
     }
 
+    fn get_filename(&self, index: usize) -> String {
+        format!("{}_{}_{}.tmp", self.filename, self.generation, index)
+    }
+
     /// Returns true iff the stream fits in memory.
     pub fn fits_in_memory(&self) -> bool {
         self.file_buf.is_empty()
@@ -277,20 +282,82 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
             self.sort();
 
             if self.mem_size * 2 > self.config.max_mem_bytes {
-                self.file_buf.push(W::create(&format!(
-                    "{}_{}_{}",
-                    self.filename,
-                    self.generation,
-                    self.file_buf.len()
-                )));
-
-                let f = self.file_buf.last_mut().unwrap();
-                for x in self.mem_buf.drain(..) {
-                    x.as_view().write(&mut *f).unwrap();
-                }
-                self.mem_size = 0;
+                self.flush();
             }
         }
+    }
+
+    /// Write the memory buffer to a new file.
+    fn flush(&mut self) {
+        self.file_buf
+            .push(W::create(&self.get_filename(self.file_buf.len())));
+
+        let f = self.file_buf.last_mut().unwrap();
+        for x in self.mem_buf.drain(..) {
+            x.as_view().write(&mut *f).unwrap();
+        }
+        self.mem_size = 0;
+    }
+
+    /// Import terms and their state from a binary stream into the term streamer.
+    /// The number of imported terms is returned.
+    ///
+    /// The state will be merged with the current one. If a symbol has conflicting attributes, the conflict
+    /// can be resolved using the renaming function `conflict_fn`.
+    ///
+    /// A term stream can be exported using [TermStreamer::export].
+    pub fn import<R: Read>(
+        &mut self,
+        mut source: R,
+        conflict_fn: Option<Box<dyn Fn(&str) -> SmartString<LazyCompact>>>,
+    ) -> Result<u64, std::io::Error> {
+        let state_map = State::import(&mut source, conflict_fn)?;
+
+        let mut n_terms_buf = [0; 8];
+        source.read_exact(&mut n_terms_buf)?;
+        let n_terms = u64::from_le_bytes(n_terms_buf);
+
+        for _ in 0..n_terms {
+            let mut tmp = Atom::new();
+            tmp.read(&mut source)?;
+            self.push(tmp.as_view().rename(&state_map));
+        }
+
+        self.normalize();
+
+        Ok(n_terms)
+    }
+
+    /// Export terms and their state to a binary stream.
+    /// The resulting file can be read back using [TermStreamer::import] or
+    /// by using [Atom::import]. In the latter case, the whole term stream will be read into memory
+    /// as a single expression.
+    pub fn export<S: std::io::Write>(&mut self, mut dest: S) -> Result<(), std::io::Error> {
+        self.normalize();
+
+        State::export(&mut dest)?;
+
+        dest.write_u64::<LittleEndian>(self.num_terms as u64)?;
+
+        for t in &self.mem_buf {
+            t.as_view().write(&mut dest)?;
+        }
+
+        for x in &mut self.file_buf {
+            x.flush().unwrap();
+        }
+
+        let mut tmp = Atom::new();
+        for i in 0..self.file_buf.len() {
+            let mut r = W::Reader::open(&self.get_filename(i));
+
+            // note that we cannot use read_to_end as the file may still be opened by a writer
+            while let Ok(()) = tmp.read(&mut r) {
+                tmp.as_view().write(&mut dest)?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Sort all the terms in the memory buffer.
@@ -364,7 +431,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         }
 
         let mut files: Vec<_> = (0..n_files)
-            .map(|i| W::Reader::open(&format!("{}_{}_{}", self.filename, self.generation, i)))
+            .map(|i| W::Reader::open(&self.get_filename(i)))
             .collect();
 
         for ff in &mut files {
@@ -432,6 +499,12 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
             new_stream.push_sorted_impl(last.clone());
         }
 
+        if !new_stream.file_buf.is_empty() {
+            // the memory buffer has the larger elements than the
+            // file streams, so write the elements to a file
+            new_stream.flush();
+        }
+
         *self = new_stream;
     }
 
@@ -466,7 +539,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         TermInputStream {
             mem_buf: &self.mem_buf,
             file_buf: (0..num_files)
-                .map(|i| W::Reader::open(&format!("{}_{}_{}", self.filename, self.generation, i)))
+                .map(|i| W::Reader::open(&self.get_filename(i)))
                 .collect(),
             pos: 0,
             mem_pos: 0,
@@ -515,6 +588,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         new_out
     }
 
+    /// Check if two term streams are equal. This will normalize both streams.
     pub fn eq(&mut self, other: &mut Self) -> bool {
         self.normalize();
         other.normalize();
@@ -522,8 +596,23 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         self.reader().eq(other.reader())
     }
 
+    /// Get the total size of the term stream in bytes.
     pub fn get_byte_size(&self) -> usize {
         self.total_size
+    }
+
+    /// Clear all terms from the term streamer.
+    pub fn clear(&mut self) {
+        self.mem_buf.clear();
+        self.mem_size = 0;
+        self.num_terms = 0;
+        self.total_size = 0;
+
+        for x in &mut (0..self.file_buf.len()) {
+            std::fs::remove_file(&self.get_filename(x)).unwrap();
+        }
+
+        self.file_buf.clear();
     }
 }
 
@@ -612,17 +701,47 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::BufWriter};
+    use std::{
+        fs::File,
+        io::{BufWriter, Cursor},
+    };
 
     use brotli::CompressorWriter;
 
     use crate::{
         atom::{Atom, AtomCore, AtomType},
+        function,
         id::WildcardRestriction,
         parse,
         streaming::{TermStreamer, TermStreamerConfig},
         symbol,
     };
+
+    #[test]
+    fn import_export() {
+        let mut streamer =
+            TermStreamer::<CompressorWriter<BufWriter<File>>>::new(TermStreamerConfig {
+                n_cores: 1,
+                path: ".".to_owned(),
+                max_mem_bytes: 180,
+            });
+
+        for i in (0..100).rev() {
+            streamer.push(function!(symbol!("f1"), i));
+        }
+
+        let mut r = vec![];
+        streamer.export(&mut r).unwrap();
+
+        let b = Atom::import(Cursor::new(&r), None).unwrap();
+
+        streamer.clear();
+
+        streamer.import(Cursor::new(&r), None).unwrap();
+
+        let c = streamer.to_expression();
+        assert_eq!(b, c);
+    }
 
     #[test]
     fn file_stream() {
@@ -645,7 +764,7 @@ mod test {
         let pattern = parse!("f1(x_)").unwrap().to_pattern();
         let rhs = parse!("f1(v1) + v1").unwrap().to_pattern();
 
-        streamer = streamer.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
+        streamer = streamer.map(|x| x.replace(&pattern).with(&rhs).expand());
 
         streamer.normalize();
 
@@ -671,19 +790,10 @@ mod test {
         let rhs = parse!("v1").unwrap().to_pattern();
 
         streamer = streamer.map(|x| {
-            x.replace_all(
-                &pattern,
-                &rhs,
-                Some(
-                    &(
-                        symbol!("v1_"),
-                        WildcardRestriction::IsAtomType(AtomType::Var),
-                    )
-                        .into(),
-                ),
-                None,
-            )
-            .expand()
+            x.replace(&pattern)
+                .when(symbol!("v1_").restrict(WildcardRestriction::IsAtomType(AtomType::Var)))
+                .with(&rhs)
+                .expand()
         });
 
         streamer.normalize();
@@ -704,7 +814,7 @@ mod test {
         stream.push(input);
 
         // map every term in the expression
-        stream = stream.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
+        stream = stream.map(|x| x.replace(&pattern).with(&rhs).expand());
 
         let r = stream.to_expression();
 

@@ -12,7 +12,7 @@ fn gcd_integer_poly() {
 
     let b = parse!("5 + 5*x - 2*y + 3*x*y - 3*y^2")
         .unwrap()
-        .to_polynomial::<_, u8>(&Z, a.variables.clone().into());
+        .to_polynomial::<_, u8>(&Z, a.variables.clone());
 
     println!("> Polynomial gcd of {} and {} =", a, b);
     println!("\t{}", a.gcd(&b));
@@ -25,7 +25,7 @@ fn gcd_rat_poly() {
 
     let b = parse!("3/2*x^2 + 2*y + 9/20*x^2*y + 3/5*y^2 + 2*z - 3/4*x^2*z - 2/5*y*z - z^2")
         .unwrap()
-        .to_rational_polynomial::<_, _, u8>(&Q, &Z, a.get_variables().clone().into());
+        .to_rational_polynomial::<_, _, u8>(&Q, &Z, a.get_variables().clone());
 
     println!("> Polynomial gcd of {} and {} =", a, b);
     println!("\t{}", a.gcd(&b));

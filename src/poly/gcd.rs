@@ -11,7 +11,8 @@ use tracing::{debug, instrument};
 
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::finite_field::{
-    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, ToFiniteField, Zp,
+    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, PrimeIteratorU64,
+    ToFiniteField, Zp,
 };
 use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES, Z};
 use crate::domains::rational::{Rational, RationalField, Q};
@@ -21,97 +22,6 @@ use crate::tensors::matrix::{Matrix, MatrixError};
 
 use super::polynomial::MultivariatePolynomial;
 use super::PositiveExponent;
-
-/// 100 large `u32` primes starting from the 203213901st prime number
-pub const LARGE_U32_PRIMES: [u32; 100] = [
-    4293490987, 4293491603, 4293492277, 4293492857, 4293491017, 4293491621, 4293492283, 4293492881,
-    4293491023, 4293491639, 4293492293, 4293492893, 4293491051, 4293491659, 4293492331, 4293492941,
-    4293491149, 4293491701, 4293492349, 4293492977, 4293491171, 4293491711, 4293492383, 4293493037,
-    4293491221, 4293491747, 4293492403, 4293493049, 4293491261, 4293491779, 4293492421, 4293493069,
-    4293491269, 4293491791, 4293492431, 4293493081, 4293491273, 4293491819, 4293492487, 4293493091,
-    4293491281, 4293491849, 4293492499, 4293493117, 4293491299, 4293491863, 4293492523, 4293493121,
-    4293491303, 4293491887, 4293492583, 4293493159, 4293491311, 4293491897, 4293492587, 4293493163,
-    4293491327, 4293491911, 4293492649, 4293493207, 4293491329, 4293491953, 4293492661, 4293493229,
-    4293491399, 4293491957, 4293492673, 4293493241, 4293491431, 4293492017, 4293492701, 4293493261,
-    4293491467, 4293492023, 4293492739, 4293493319, 4293491509, 4293492097, 4293492751, 4293493363,
-    4293491539, 4293492101, 4293492769, 4293493367, 4293491551, 4293492107, 4293492779, 4293493409,
-    4293491561, 4293492113, 4293492781, 4293493423, 4293491567, 4293492139, 4293492811, 4293493433,
-    4293491591, 4293492169, 4293492821, 4293493487,
-];
-
-/// 50 large 64-bit primes, starting from `18446744073709551557`.
-pub const LARGE_U64_PRIMES: [u64; 50] = [
-    18446744073709551557,
-    18446744073709551533,
-    18446744073709551521,
-    18446744073709551437,
-    18446744073709551427,
-    18446744073709551359,
-    18446744073709551337,
-    18446744073709551293,
-    18446744073709551263,
-    18446744073709551253,
-    18446744073709551191,
-    18446744073709551163,
-    18446744073709551113,
-    18446744073709550873,
-    18446744073709550791,
-    18446744073709550773,
-    18446744073709550771,
-    18446744073709550719,
-    18446744073709550717,
-    18446744073709550681,
-    18446744073709550671,
-    18446744073709550593,
-    18446744073709550591,
-    18446744073709550539,
-    18446744073709550537,
-    18446744073709550381,
-    18446744073709550341,
-    18446744073709550293,
-    18446744073709550237,
-    18446744073709550147,
-    18446744073709550141,
-    18446744073709550129,
-    18446744073709550111,
-    18446744073709550099,
-    18446744073709550047,
-    18446744073709550033,
-    18446744073709550009,
-    18446744073709549951,
-    18446744073709549861,
-    18446744073709549817,
-    18446744073709549811,
-    18446744073709549777,
-    18446744073709549757,
-    18446744073709549733,
-    18446744073709549667,
-    18446744073709549621,
-    18446744073709549613,
-    18446744073709549583,
-    18446744073709549571,
-    18446744073709549519,
-];
-
-/// Large primes of [Self].
-pub trait LargePrimes: Sized {
-    /// Get a list of large primes that fit in this type.
-    fn get_primes() -> &'static [Self];
-}
-
-impl LargePrimes for u32 {
-    #[inline(always)]
-    fn get_primes() -> &'static [Self] {
-        &LARGE_U32_PRIMES
-    }
-}
-
-impl LargePrimes for u64 {
-    #[inline(always)]
-    fn get_primes() -> &'static [Self] {
-        &LARGE_U64_PRIMES
-    }
-}
 
 /// The maximum power of a variable that is cached
 pub(crate) const POW_CACHE_SIZE: usize = 1000;
@@ -1376,11 +1286,11 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
                     .map(|i| (*i, a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
                     .collect();
 
-                let g1 = gc.replace_all_except(vars[0], &r, &mut cache);
+                let g1 = gc.replace_except(vars[0], &r, &mut cache);
 
                 if g1.ldegree(vars[0]) == gc.degree(vars[0]) {
-                    let a1 = a.replace_all_except(vars[0], &r, &mut cache);
-                    let b1 = b.replace_all_except(vars[0], &r, &mut cache);
+                    let a1 = a.replace_except(vars[0], &r, &mut cache);
+                    let b1 = b.replace_except(vars[0], &r, &mut cache);
                     break (g1, a1, b1);
                 }
             };
@@ -2205,7 +2115,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
     /// Compute the gcd of two multivariate polynomials using Zippel's algorithm.
     /// TODO: provide a parallel implementation?
     #[instrument(level = "debug", skip_all)]
-    fn gcd_zippel<UField: LargePrimes + FiniteFieldWorkspace + 'static>(
+    fn gcd_zippel<UField: FiniteFieldWorkspace + 'static>(
         &self,
         b: &Self,
         vars: &[usize], // variables
@@ -2230,22 +2140,23 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
             .gcd(&self.lcoeff_varorder(vars), &b.lcoeff_varorder(vars));
         debug!("gamma {}", gamma);
 
-        let mut pi = 0;
-        let primes = UField::get_primes();
+        let mut primes =
+            PrimeIteratorU64::new(UField::get_large_prime().to_u64().unwrap_or(1 << 63));
 
         'newfirstprime: loop {
-            pi += 1;
-
-            if pi == primes.len() {
-                self.check_consistency();
-                b.check_consistency();
+            let Some(p) = primes.next() else {
                 panic!(
                     "Ran out of primes for gcd reconstruction.\ngcd({},{})",
                     self, b
                 );
-            }
+            };
+            let Some(p) = UField::try_from_integer(p.into()) else {
+                panic!(
+                    "Ran out of primes for gcd reconstruction.\ngcd({},{})",
+                    self, b
+                );
+            };
 
-            let mut p = &primes[pi];
             let mut finite_field = FiniteField::<UField>::new(p.clone());
             let mut gammap = gamma.to_finite_field(&finite_field);
 
@@ -2346,18 +2257,19 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 old_gm = gm.clone();
 
                 loop {
-                    pi += 1;
-
-                    if pi == LARGE_U32_PRIMES.len() {
-                        self.check_consistency();
-                        b.check_consistency();
+                    let Some(p) = primes.next() else {
                         panic!(
                             "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
                             self, b, gm, vars, bounds, tight_bounds
                         );
-                    }
+                    };
+                    let Some(p) = UField::try_from_integer(p.into()) else {
+                        panic!(
+                            "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
+                            self, b, gm, vars, bounds, tight_bounds
+                        );
+                    };
 
-                    p = &primes[pi];
                     finite_field = FiniteField::<UField>::new(p.clone());
 
                     gammap = gamma.to_finite_field(&finite_field);
@@ -2565,7 +2477,17 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         bounds: &mut [E],
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
-        MultivariatePolynomial::gcd_zippel::<u32>(a, b, vars, bounds, tight_bounds)
+        if a.coefficients
+            .iter()
+            .any(|x| !matches!(x, Integer::Natural(_)))
+            || b.coefficients
+                .iter()
+                .any(|x| !matches!(x, Integer::Natural(_)))
+        {
+            MultivariatePolynomial::gcd_zippel::<u64>(a, b, vars, bounds, tight_bounds)
+        } else {
+            MultivariatePolynomial::gcd_zippel::<u32>(a, b, vars, bounds, tight_bounds)
+        }
     }
 
     fn get_gcd_var_bounds(
@@ -2575,9 +2497,10 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
-        let mut i = 0;
 
-        let mut f = Zp::new(LARGE_U32_PRIMES[i]);
+        let mut primes = PrimeIteratorU64::new(u32::get_large_prime() as u64);
+
+        let mut f = Zp::new(primes.next().unwrap() as u32);
         let mut ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
         let mut bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
 
@@ -2588,9 +2511,15 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
 
             while ap.degree(*var) != a.degree(*var) || bp.degree(*var) != b.degree(*var) {
                 debug!("Variable bounds failed due to bad prime");
-                i += 1;
 
-                f = Zp::new(LARGE_U32_PRIMES[i]);
+                let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
+                    panic!(
+                        "Ran out of primes for gcd var bound detection.\ngcd({},{})",
+                        a, b
+                    );
+                };
+
+                f = Zp::new(p);
                 ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
                 bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
             }
@@ -2671,7 +2600,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
         let a_int = a.map_coeff(|c| a.ring.div(c, &content).numerator(), Z);
         let b_int = b.map_coeff(|c| b.ring.div(c, &content).numerator(), Z);
 
-        MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds)
+        PolynomialGCD::gcd(&a_int, &b_int, vars, bounds, tight_bounds)
             .map_coeff(|c| c.to_rational(), Q)
     }
 
@@ -2801,24 +2730,17 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
             b.check_consistency();
         }
 
-        let mut pi = 0;
-        let primes = u32::get_primes();
+        let mut primes = PrimeIteratorU64::new(u32::get_large_prime() as u64);
 
         'newfirstprime: loop {
-            pi += 1;
-
-            if pi == primes.len() {
-                a.check_consistency();
-                b.check_consistency();
+            let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
                 panic!(
                     "Ran out of primes for gcd reconstruction.\ngcd({},{})",
                     a, b
                 );
-            }
+            };
 
-            let mut p = &primes[pi];
-
-            let mut finite_field = Zp::new(*p);
+            let mut finite_field = Zp::new(p);
             let mut algebraic_field_ff = a.ring.to_finite_field(&finite_field);
 
             let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
@@ -2916,19 +2838,14 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
             // add new primes until we can reconstruct the full gcd
             'newprime: loop {
                 loop {
-                    pi += 1;
-
-                    if pi == LARGE_U32_PRIMES.len() {
-                        a.check_consistency();
-                        b.check_consistency();
+                    let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
                         panic!(
                             "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
                             a, b, gm, vars, bounds, tight_bounds
                         );
-                    }
+                    };
 
-                    p = &primes[pi];
-                    finite_field = Zp::new(*p);
+                    finite_field = Zp::new(p);
                     algebraic_field_ff = a.ring.to_finite_field(&finite_field);
 
                     let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
@@ -3121,9 +3038,9 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
         loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
-        let mut i = 0;
+        let mut primes = PrimeIteratorU64::new(u32::get_large_prime() as u64);
 
-        let mut f = Zp::new(LARGE_U32_PRIMES[i]);
+        let mut f = Zp::new(primes.next().unwrap() as u32);
         let mut algebraic_field_ff = a.ring.to_finite_field(&f);
         let mut ap = a.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
         let mut bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
@@ -3135,9 +3052,15 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
 
             while ap.degree(*var) != a.degree(*var) || bp.degree(*var) != b.degree(*var) {
                 debug!("Variable bounds failed due to bad prime");
-                i += 1;
 
-                f = Zp::new(LARGE_U32_PRIMES[i]);
+                let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
+                    panic!(
+                        "Ran out of primes for gcd var bound detection.\ngcd({},{})",
+                        a, b
+                    );
+                };
+
+                f = Zp::new(p);
                 algebraic_field_ff = a.ring.to_finite_field(&f);
                 ap = a.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
                 bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());

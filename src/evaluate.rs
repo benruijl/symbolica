@@ -15,7 +15,6 @@ use ahash::{AHasher, HashMap};
 use rand::{thread_rng, Rng};
 
 use self_cell::self_cell;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
@@ -55,6 +54,11 @@ impl<A, T> EvaluationFn<A, T> {
     }
 }
 
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
 #[derive(Clone)]
 pub struct FunctionMap<T = Rational> {
     map: HashMap<Atom, ConstOrExpr<T>>,
@@ -88,8 +92,15 @@ impl<T> FunctionMap<T> {
             }
         }
 
-        self.tagged_fn_map
-            .insert((name, vec![]), ConstOrExpr::Expr(rename, 0, args, body));
+        self.tagged_fn_map.insert(
+            (name, vec![]),
+            ConstOrExpr::Expr(Expr {
+                name: rename,
+                tag_len: 0,
+                args,
+                body,
+            }),
+        );
 
         Ok(())
     }
@@ -109,8 +120,15 @@ impl<T> FunctionMap<T> {
         }
 
         let tag_len = tags.len();
-        self.tagged_fn_map
-            .insert((name, tags), ConstOrExpr::Expr(rename, tag_len, args, body));
+        self.tagged_fn_map.insert(
+            (name, tags),
+            ConstOrExpr::Expr(Expr {
+                name: rename,
+                tag_len,
+                args,
+                body,
+            }),
+        );
 
         Ok(())
     }
@@ -145,10 +163,73 @@ impl<T> FunctionMap<T> {
     }
 }
 
-#[derive(Clone)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode))]
+#[derive(Clone, Debug)]
 enum ConstOrExpr<T> {
     Const(T),
-    Expr(String, usize, Vec<Symbol>, Atom),
+    Expr(Expr),
+}
+
+#[cfg(feature = "bincode")]
+impl<'de, T: bincode::BorrowDecode<'de, crate::state::StateMap>>
+    bincode::BorrowDecode<'de, crate::state::StateMap> for ConstOrExpr<T>
+{
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = crate::state::StateMap>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let variant_index = <u32 as bincode::Decode<D::Context>>::decode(decoder)?;
+        match variant_index {
+            0u32 => core::result::Result::Ok(Self::Const(<T as bincode::de::BorrowDecode<
+                'de,
+                crate::state::StateMap,
+            >>::borrow_decode(decoder)?)),
+            1u32 => core::result::Result::Ok(Self::Expr(Expr::borrow_decode(decoder)?)),
+            variant => {
+                core::result::Result::Err(::bincode::error::DecodeError::UnexpectedVariant {
+                    found: variant,
+                    type_name: "ConstOrExpr",
+                    allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 1 },
+                })
+            }
+        }
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<T: bincode::Decode<crate::state::StateMap>> bincode::Decode<crate::state::StateMap>
+    for ConstOrExpr<T>
+{
+    fn decode<D: bincode::de::Decoder<Context = crate::state::StateMap>>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let variant_index = <u32 as bincode::Decode<D::Context>>::decode(decoder)?;
+        match variant_index {
+            0u32 => core::result::Result::Ok(Self::Const(<T as bincode::Decode<
+                crate::state::StateMap,
+            >>::decode(decoder)?)),
+            1u32 => core::result::Result::Ok(Self::Expr(Expr::decode(decoder)?)),
+            variant => {
+                core::result::Result::Err(::bincode::error::DecodeError::UnexpectedVariant {
+                    found: variant,
+                    type_name: "ConstOrExpr",
+                    allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 1 },
+                })
+            }
+        }
+    }
+}
+
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode),
+    bincode(decode_context = "crate::state::StateMap")
+)]
+#[derive(Clone, Debug)]
+struct Expr {
+    name: String,
+    tag_len: usize,
+    args: Vec<Symbol>,
+    body: Atom,
 }
 
 #[derive(Debug, Clone)]
@@ -185,23 +266,56 @@ pub struct EvalTree<T> {
     param_count: usize,
 }
 
+/// A built-in symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BuiltinSymbol(Symbol);
 
-impl Serialize for BuiltinSymbol {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+#[cfg(feature = "serde")]
+impl serde::Serialize for BuiltinSymbol {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.get_id().serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for BuiltinSymbol {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BuiltinSymbol {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let id: u32 = u32::deserialize(deserializer)?;
         Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg(feature = "bincode")]
+impl bincode::Encode for BuiltinSymbol {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        u32::encode(&self.0.get_id(), encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(BuiltinSymbol);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for BuiltinSymbol {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let id: u32 = u32::decode(decoder)?;
+        Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
+    }
+}
+
+impl BuiltinSymbol {
+    pub fn get_symbol(&self) -> Symbol {
+        self.0
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Expression<T> {
     Const(T),
     Parameter(usize),
@@ -599,7 +713,9 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Clone)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -2010,13 +2126,14 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                                 (self.reserved_indices - self.param_count) * 8
                                             );
                                             *out += &format!(
-                                                "\t\t\"fdiv d{}, d{}, d31\\n\\t\"\n",
+                                                "\t\t\"fdiv d{}, d31, d{}\\n\\t\"\n",
                                                 out_reg, out_reg
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
                                     }
                                 } else {
+                                    // load 1 into out_reg
                                     match asm_flavour {
                                         InlineASM::X64 => {
                                             *out += &format!(
@@ -2046,7 +2163,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{}, d{}, d{}\\n\\t\"\n",
-                                                    out_reg, j, out_reg
+                                                    out_reg, out_reg, j
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2062,7 +2179,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             InlineASM::AArch64 => {
                                                 let addr = asm_load!(*k);
                                                 *out +=
-                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
+                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr);
 
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{}, d{}, d31\\n\\t\"\n",
@@ -2105,7 +2222,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{}, d{}, d{}\\n\\t\"\n",
-                                                    out_reg, j, out_reg
+                                                    out_reg, out_reg, j
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2124,7 +2241,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                                     &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
 
                                                 *out += &format!(
-                                                    "\t\t\"fdiv d{}, d{}, d31\\n\\t\"\n",
+                                                    "\t\t\"fdiv d{}, d31, d{}\\n\\t\"\n",
                                                     out_reg, out_reg
                                                 );
                                             }
@@ -2254,10 +2371,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         match asm_flavour {
             InlineASM::X64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n",  function_name);
+                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
             }
             InlineASM::AArch64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\");\n",  function_name);
+                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
             }
             InlineASM::None => unreachable!(),
         }
@@ -2567,10 +2684,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 );
 
                                 if *o * 16 < 450 {
-                                    *out += &format!("\t\t\"stp d0, d1, {}\\n\\t\"", addr_o.0);
+                                    *out += &format!("\t\t\"stp d0, d1, {}\\n\\t\"\n", addr_o.0);
                                 } else {
                                     *out += &format!("\t\t\"str d0, {}\\n\\t\"", addr_o.0);
-                                    *out += &format!("\t\t\"str d1, {}\\n\\t\"", addr_o.1);
+                                    *out += &format!("\t\t\"str d1, {}\\n\\t\"\n", addr_o.1);
                                 }
                             }
                             InlineASM::None => unreachable!(),
@@ -2671,10 +2788,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         match asm_flavour {
             InlineASM::X64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n", function_name);
+                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
             }
             InlineASM::AArch64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\");\n", function_name);
+                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
             }
             InlineASM::None => unreachable!(),
         }
@@ -2683,7 +2800,151 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A slot in a list that contains a numerical value.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
+pub enum Slot {
+    /// An entry in the list of parameters.
+    Param(usize),
+    /// An entry in the list of constants.
+    Const(usize),
+    /// An entry in the list of temporary storage.
+    Temp(usize),
+    /// An entry in the list of results.
+    Out(usize),
+}
+
+impl std::fmt::Display for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Slot::Param(i) => write!(f, "p{}", i),
+            Slot::Const(i) => write!(f, "c{}", i),
+            Slot::Temp(i) => write!(f, "t{}", i),
+            Slot::Out(i) => write!(f, "o{}", i),
+        }
+    }
+}
+
+/// An evaluation instruction.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    /// `Add(o, [i0,...,i_n])` means `o = i0 + ... + i_n`.
+    Add(Slot, Vec<Slot>),
+    /// `Mul(o, [i0,...,i_n])` means `o = i0 * ... * i_n`.
+    Mul(Slot, Vec<Slot>),
+    /// `Pow(o, b, e)` means `o = b^e`.
+    Pow(Slot, Slot, i64),
+    /// `Powf(o, b, e)` means `o = b^e`.
+    Powf(Slot, Slot, Slot),
+    /// `Fun(o, s, a)` means `o = s(a)`, where `s` is assumed to
+    /// be a built-in function such as `sin`.
+    Fun(Slot, BuiltinSymbol, Slot),
+}
+
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Instruction::Add(o, a) => {
+                write!(
+                    f,
+                    "{} = {}",
+                    o,
+                    a.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("+")
+                )
+            }
+            Instruction::Mul(o, a) => {
+                write!(
+                    f,
+                    "{} = {}",
+                    o,
+                    a.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("*")
+                )
+            }
+            Instruction::Pow(o, b, e) => {
+                write!(f, "{} = {}^{}", o, b, e)
+            }
+            Instruction::Powf(o, b, e) => {
+                write!(f, "{} = {}^{}", o, b, e)
+            }
+            Instruction::Fun(o, s, a) => {
+                write!(f, "{} = {}({})", o, s.0, a)
+            }
+        }
+    }
+}
+
+impl<T: Clone> ExpressionEvaluator<T> {
+    /// Export the instructions, the size of the temporary storage, and the list of constants.
+    /// This function can be used to create an evaluator in a different language.
+    pub fn export_instructions(&self) -> (Vec<Instruction>, usize, Vec<T>) {
+        let mut instr = vec![];
+        let constants: Vec<_> = self.stack[self.param_count..self.reserved_indices]
+            .iter()
+            .cloned()
+            .collect();
+
+        macro_rules! get_slot {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    Slot::Param($i)
+                } else if $i < self.reserved_indices {
+                    Slot::Const($i - self.param_count)
+                } else {
+                    if self.result_indices.contains(&$i) {
+                        Slot::Out(self.result_indices.iter().position(|x| *x == $i).unwrap())
+                    } else {
+                        Slot::Temp($i - self.reserved_indices)
+                    }
+                }
+            };
+        }
+
+        for i in &self.instructions {
+            match i {
+                Instr::Add(o, a) => {
+                    instr.push(Instruction::Add(
+                        get_slot!(*o),
+                        a.iter().map(|x| get_slot!(*x)).collect(),
+                    ));
+                }
+                Instr::Mul(o, a) => {
+                    instr.push(Instruction::Mul(
+                        get_slot!(*o),
+                        a.iter().map(|x| get_slot!(*x)).collect(),
+                    ));
+                }
+                Instr::Pow(o, b, e) => {
+                    instr.push(Instruction::Pow(get_slot!(*o), get_slot!(*b), *e));
+                }
+                Instr::Powf(o, b, e) => {
+                    instr.push(Instruction::Powf(
+                        get_slot!(*o),
+                        get_slot!(*b),
+                        get_slot!(*e),
+                    ));
+                }
+                Instr::BuiltinFun(o, s, a) => {
+                    instr.push(Instruction::Fun(get_slot!(*o), s.clone(), get_slot!(*a)));
+                }
+            }
+        }
+
+        (instr, self.stack.len() - self.reserved_indices, constants)
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
@@ -4442,7 +4703,12 @@ impl<'a> AtomView<'a> {
 
                 match fun {
                     ConstOrExpr::Const(t) => Ok(Expression::Const(t.clone())),
-                    ConstOrExpr::Expr(name, tag_len, arg_spec, e) => {
+                    ConstOrExpr::Expr(Expr {
+                        name,
+                        tag_len,
+                        args: arg_spec,
+                        body: e,
+                    }) => {
                         if f.get_nargs() != arg_spec.len() + *tag_len {
                             return Err(format!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
@@ -4685,14 +4951,7 @@ impl<'a> AtomView<'a> {
 
                 is_zero
             }
-            AtomView::Add(_) => {
-                // an expanded polynomial is only zero if it is a literal zero
-                if self.is_polynomial(false, true).is_some() {
-                    ConditionResult::False
-                } else {
-                    self.zero_test_impl(iterations, tolerance)
-                }
-            }
+            AtomView::Add(_) => self.zero_test_impl(iterations, tolerance),
         }
     }
 

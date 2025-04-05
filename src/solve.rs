@@ -385,11 +385,9 @@ mod test {
         let res = res
             .iter()
             .map(|x| {
-                parse!(x).unwrap().to_rational_polynomial(
-                    &Z,
-                    &Z,
-                    m.data[0].get_variables().clone().into(),
-                )
+                parse!(x)
+                    .unwrap()
+                    .to_rational_polynomial(&Z, &Z, m.data[0].get_variables().clone())
             })
             .collect::<Vec<_>>();
 

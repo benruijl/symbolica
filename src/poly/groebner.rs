@@ -41,7 +41,7 @@
 //! .iter()
 //! .map(|x| {
 //!     let a = parse!(x).unwrap();
-//!     a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+//!     a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
 //! })
 //! .collect();
 //!
@@ -415,6 +415,67 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
     }
 }
 
+impl<R: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
+    /// Completely reduce the polynomial w.r.t the polynomials `gs`.
+    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
+    pub fn reduce(
+        &self,
+        gs: &[MultivariatePolynomial<R, E, O>],
+    ) -> MultivariatePolynomial<R, E, O> {
+        if gs.iter().any(|x| self.variables != x.variables) {
+            let mut sys: Vec<_> = vec![self.clone()];
+            sys.extend_from_slice(gs);
+            Self::unify_variables_list(&mut sys);
+            return sys[0].reduce(&sys[1..]);
+        }
+
+        let mut q = self.zero_with_capacity(self.nterms());
+        let mut r = self.clone();
+
+        let mut rest_coeff = vec![];
+        let mut rest_exponents = vec![];
+
+        let mut monom = vec![E::zero(); self.nvars()];
+
+        'term: while !r.is_zero() {
+            // find a divisor that has the least amount of terms
+            while let Some(g) = gs
+                .iter()
+                .filter(|g| {
+                    r.max_exp()
+                        .iter()
+                        .zip(g.max_exp())
+                        .all(|(h1, h2)| *h1 >= *h2)
+                })
+                .min_by_key(|g| g.nterms())
+            {
+                for ((e, e1), e2) in monom.iter_mut().zip(r.max_exp()).zip(g.max_exp()) {
+                    *e = *e1 - *e2;
+                }
+
+                let ratio = g.ring.div(r.max_coeff(), g.max_coeff());
+                r = r - g.clone().mul_exp(&monom).mul_coeff(ratio);
+
+                if r.is_zero() {
+                    break 'term;
+                }
+            }
+
+            // strip leading monomial that is not reducible
+            rest_exponents.extend_from_slice(r.exponents(r.nterms() - 1));
+            rest_coeff.push(r.coefficients.pop().unwrap());
+        }
+
+        // append in sorted order
+        while let Some(c) = rest_coeff.pop() {
+            let l = rest_coeff.len();
+            q.append_monomial(c, &rest_exponents[l * self.nvars()..(l + 1) * self.nvars()]);
+        }
+
+        q
+    }
+}
+
 impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
     /// Add a new polynomial to the basis, updating and filtering the existing
     /// basis and critical pairs, based on Gebauer and Moeller's redundant pair criteria.
@@ -475,58 +536,6 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         basis.push((index, f));
     }
 
-    /// Completely reduce the polynomial `f` w.r.t the polynomials `gs`.
-    /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
-    pub fn reduce(
-        p: &MultivariatePolynomial<R, E, O>,
-        gs: &[MultivariatePolynomial<R, E, O>],
-    ) -> MultivariatePolynomial<R, E, O> {
-        let mut q = p.zero_with_capacity(p.nterms());
-        let mut r = p.clone();
-
-        let mut rest_coeff = vec![];
-        let mut rest_exponents = vec![];
-
-        let mut monom = vec![E::zero(); p.nvars()];
-
-        'term: while !r.is_zero() {
-            // find a divisor that has the least amount of terms
-            while let Some(g) = gs
-                .iter()
-                .filter(|g| {
-                    r.max_exp()
-                        .iter()
-                        .zip(g.max_exp())
-                        .all(|(h1, h2)| *h1 >= *h2)
-                })
-                .min_by_key(|g| g.nterms())
-            {
-                for ((e, e1), e2) in monom.iter_mut().zip(r.max_exp()).zip(g.max_exp()) {
-                    *e = *e1 - *e2;
-                }
-
-                let ratio = g.ring.div(r.max_coeff(), g.max_coeff());
-                r = r - g.clone().mul_exp(&monom).mul_coeff(ratio);
-
-                if r.is_zero() {
-                    break 'term;
-                }
-            }
-
-            // strip leading monomial that is not reducible
-            rest_exponents.extend_from_slice(r.exponents(r.nterms() - 1));
-            rest_coeff.push(r.coefficients.pop().unwrap());
-        }
-
-        // append in sorted order
-        while let Some(c) = rest_coeff.pop() {
-            let l = rest_coeff.len();
-            q.append_monomial(c, &rest_exponents[l * p.nvars()..(l + 1) * p.nvars()]);
-        }
-
-        q
-    }
-
     pub fn reduce_basis(mut self) -> Self {
         // filter lead-reducible polynomials
         let mut res = vec![true; self.system.len()];
@@ -556,7 +565,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         let mut basis = vec![];
         for i in 0..lead_reduced.len() {
             lead_reduced.swap(0, i);
-            let h = Self::reduce(&lead_reduced[0], &lead_reduced[1..]);
+            let h = lead_reduced[0].reduce(&lead_reduced[1..]);
             if !h.is_zero() {
                 let i = h.ring.inv(h.max_coeff());
                 basis.push(h.mul_coeff(i));
@@ -604,7 +613,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
 
                 let s = new_f1 - new_f2;
 
-                if !Self::reduce(&s, system).is_zero() {
+                if !s.reduce(system).is_zero() {
                     return false;
                 }
             }
@@ -1024,7 +1033,7 @@ mod test {
             .iter()
             .map(|x| {
                 let a = parse!(x).unwrap().expand();
-                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
             })
             .collect();
 
@@ -1048,7 +1057,7 @@ mod test {
             .iter()
             .map(|x| {
                 let a = parse!(x).unwrap().expand();
-                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
                     .reorder::<GrevLexOrder>()
             })
             .collect();

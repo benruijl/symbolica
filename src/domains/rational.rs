@@ -7,16 +7,17 @@ use std::{
 };
 
 use crate::{
-    poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
+    poly::{polynomial::PolynomialRing, Exponent},
     printer::{PrintOptions, PrintState},
 };
 
 use super::{
     finite_field::{
-        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
+        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField, Two,
+        Zp, Z2,
     },
     integer::{Integer, IntegerRing, Z},
-    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, UpgradeToField,
 };
 
 /// The field of rational numbers.
@@ -114,10 +115,55 @@ impl<T: Field> FractionNormalization for T {
 }
 
 /// A fraction of two elements of a ring. Create a new one through [FractionField::to_element].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Fraction<R: Ring> {
     numerator: R::Element,
     denominator: R::Element,
+}
+
+#[cfg(feature = "bincode")]
+impl<R: Ring> bincode::enc::Encode for Fraction<R>
+where
+    R::Element: bincode::enc::Encode,
+{
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.numerator.encode(encoder)?;
+        self.denominator.encode(encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<C, R: Ring> bincode::de::Decode<C> for Fraction<R>
+where
+    R::Element: bincode::de::Decode<C>,
+{
+    fn decode<D: bincode::de::Decoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Fraction {
+            numerator: R::Element::decode(decoder)?,
+            denominator: R::Element::decode(decoder)?,
+        })
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<'de, C, R: Ring> bincode::de::BorrowDecode<'de, C> for Fraction<R>
+where
+    R::Element: bincode::de::BorrowDecode<'de, C>,
+{
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Fraction {
+            numerator: R::Element::borrow_decode(decoder)?,
+            denominator: R::Element::borrow_decode(decoder)?,
+        })
+    }
 }
 
 impl<R: Ring> Fraction<R> {
@@ -531,6 +577,21 @@ impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<Fra
 /// A rational number.
 pub type Rational = Fraction<IntegerRing>;
 
+impl UpgradeToField for IntegerRing {
+    type Upgraded = Q;
+
+    fn upgrade(self) -> Self::Upgraded {
+        Q
+    }
+
+    fn upgrade_element(
+        &self,
+        element: <Self as Ring>::Element,
+    ) -> <Self::Upgraded as Ring>::Element {
+        Rational::from(element)
+    }
+}
+
 impl Default for Rational {
     fn default() -> Self {
         Rational::zero()
@@ -917,16 +978,17 @@ impl Rational {
         let mut cur_result = Integer::one();
         let mut prime_accum = Integer::one();
         let mut prime_sample_point = vec![];
-        let mut prime_start = prime_start.unwrap_or(0);
+        let mut primes =
+            PrimeIteratorU64::new(u32::get_large_prime() as u64 + prime_start.unwrap_or(0) as u64);
 
         let mut last_guess = Rational::zero();
         for i in 0..sample.len() {
-            if prime_start + i >= LARGE_U32_PRIMES.len() {
+            let Some(p) = primes.next() else {
                 return Err("Ran out of primes for rational reconstruction");
-            }
-
-            let p = LARGE_U32_PRIMES[prime_start]; // TODO: support u64
-            prime_start += 1;
+            };
+            let Some(p) = u32::try_from_integer(p.into()) else {
+                return Err("Ran out of primes for rational reconstruction");
+            };
 
             let field = FiniteField::<u32>::new(p);
             prime_sample_point.clear();
@@ -936,8 +998,7 @@ impl Rational {
 
             let eval = f(&field, &prime_sample_point);
 
-            // NOTE: check bounds if upgraded to u64 primes!
-            let eval_conv = Integer::Natural(field.from_element(&eval).to_u64() as i64);
+            let eval_conv = field.from_element(&eval).to_integer();
 
             if i == 0 {
                 cur_result = eval_conv;

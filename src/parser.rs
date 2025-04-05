@@ -417,7 +417,7 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol_impl(namespace.attach_namespace(x)));
+                out.to_var(state.get_symbol(namespace.attach_namespace(x)));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -482,7 +482,7 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(state.get_symbol_impl(namespace.attach_namespace(name)));
+                let fun = out.to_fun(state.get_symbol(namespace.attach_namespace(name)));
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
@@ -1389,7 +1389,7 @@ mod test {
             input,
             parse!("5+2748*v1^2*v2")
                 .unwrap()
-                .to_polynomial(&Z, var_map.clone().into())
+                .to_polynomial(&Z, var_map.clone())
         );
     }
 }

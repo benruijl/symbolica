@@ -2,54 +2,45 @@ use symbolica::{
     atom::{AtomCore, AtomView},
     coefficient::CoefficientView,
     domains::finite_field,
-    id::{Condition, Match, MatchSettings, WildcardRestriction},
+    id::{Match, MatchSettings, WildcardRestriction},
     parse, symbol,
 };
 fn main() {
     let expr = parse!("f(1,2,3,4,5,6,7)").unwrap();
     let pat_expr = parse!("f(x__,y__,z__,w__)").unwrap();
 
-    let pattern = pat_expr.as_view().to_pattern();
+    let pattern = pat_expr.to_pattern();
 
     let x = symbol!("x__");
     let y = symbol!("y__");
     let z = symbol!("z__");
     let w = symbol!("w__");
 
-    let conditions = Condition::from((x, WildcardRestriction::Length(0, Some(2))))
-        & (y, WildcardRestriction::Length(0, Some(4)))
-        & (
-            y,
-            WildcardRestriction::Cmp(
-                x,
-                Box::new(|y, x| {
-                    let len_x = match x {
-                        Match::Multiple(_, s) => s.len(),
-                        _ => 1,
-                    };
-                    let len_y = match y {
-                        Match::Multiple(_, s) => s.len(),
-                        _ => 1,
-                    };
-                    len_x >= len_y
-                }),
-            ),
-        )
-        & (
-            z,
-            WildcardRestriction::Filter(Box::new(|x: &Match| {
-                if let Match::Single(AtomView::Num(num)) = x {
-                    if let CoefficientView::Natural(x, y) = num.get_coeff_view() {
-                        y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
-                    } else {
-                        false
-                    }
+    let conditions = x.restrict(WildcardRestriction::Length(0, Some(2)))
+        & y.restrict(WildcardRestriction::Length(0, Some(4)))
+        & y.restrict(WildcardRestriction::cmp(x, |y, x| {
+            let len_x = match x {
+                Match::Multiple(_, s) => s.len(),
+                _ => 1,
+            };
+            let len_y = match y {
+                Match::Multiple(_, s) => s.len(),
+                _ => 1,
+            };
+            len_x >= len_y
+        }))
+        & z.restrict(WildcardRestriction::filter(|x: &Match| {
+            if let Match::Single(AtomView::Num(num)) = x {
+                if let CoefficientView::Natural(x, y) = num.get_coeff_view() {
+                    y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
                 } else {
                     false
                 }
-            })),
-        )
-        & (w, WildcardRestriction::Length(0, None));
+            } else {
+                false
+            }
+        }))
+        & w.restrict(WildcardRestriction::Length(0, None));
     let settings = MatchSettings::default();
 
     println!(

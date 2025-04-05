@@ -1,5 +1,7 @@
+use ahash::HashMap;
+
 use crate::{
-    atom::{Add, Atom, AtomCore, AtomView, Symbol},
+    atom::{Add, Atom, AtomCore, AtomOrView, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{integer::Z, rational::Q},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Exponent},
@@ -23,6 +25,21 @@ impl<'a> AtomView<'a> {
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
         self.collect_multiple::<E, T>(std::slice::from_ref(&x), key_map, coeff_map)
+    }
+
+    pub(crate) fn collect_symbol<E: Exponent>(
+        &self,
+        x: Symbol,
+        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+    ) -> Atom {
+        let vars: Vec<_> = self
+            .get_all_indeterminates(false)
+            .into_iter()
+            .filter(|v| v.get_symbol().unwrap() == x)
+            .collect();
+
+        self.collect_multiple::<E, AtomView>(&vars, key_map, coeff_map)
     }
 
     pub(crate) fn collect_multiple<E: Exponent, T: AtomCore>(
@@ -226,6 +243,32 @@ impl<'a> AtomView<'a> {
         } else {
             out.set_from_view(self);
         }
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators in all variables.
+    pub fn apart_multivariate(&self) -> Atom {
+        let mut out = Atom::new();
+
+        Workspace::get_local().with(|ws| {
+            self.apart_multivariate_with_ws_into(ws, &mut out);
+        });
+
+        out
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators in all variables.
+    pub fn apart_multivariate_with_ws_into(&self, ws: &Workspace, out: &mut Atom) {
+        let poly = self.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+
+        let mut a = ws.new_atom();
+        let add = a.to_add();
+        let mut tmp = ws.new_atom();
+        for x in poly.apart_multivariate() {
+            x.to_expression_into(&mut tmp);
+            add.extend(tmp.as_view());
+        }
+
+        add.as_view().normalize(ws, out);
     }
 
     /// Cancel all common factors between numerators and denominators.
@@ -569,6 +612,165 @@ impl<'a> AtomView<'a> {
             }
         }
     }
+
+    pub(crate) fn collect_factors(&self) -> Atom {
+        let mut factors = HashMap::default();
+        Workspace::get_local().with(|ws| {
+            self.collect_factors_impl(ws, &mut factors);
+
+            if factors.len() == 1 {
+                let (f, p) = factors.into_iter().next().unwrap();
+                if p == 1 {
+                    f.into_owned()
+                } else {
+                    let mut res = Atom::new();
+                    let mut pow = ws.new_atom();
+                    let exp = ws.new_num(p as i64);
+                    pow.to_pow(f.as_view(), exp.as_view());
+                    pow.as_view().normalize(ws, &mut res);
+                    res
+                }
+            } else {
+                let mut res = Atom::new();
+                let mut mul = ws.new_atom();
+                let mul_view = mul.to_mul();
+                for (a, n) in factors {
+                    let mut pow = ws.new_atom();
+                    let exp = ws.new_num(n as i64);
+                    pow.to_pow(a.as_view(), exp.as_view());
+                    mul_view.extend(pow.as_view());
+                }
+                mul.as_view().normalize(ws, &mut res);
+                res
+            }
+        })
+    }
+
+    fn collect_factors_impl(&self, ws: &Workspace, factors: &mut HashMap<AtomOrView<'a>, isize>) {
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) | AtomView::Fun(_) => {
+                *factors.entry(self.into()).or_insert(0) += 1;
+            }
+            AtomView::Add(a) => {
+                let mut subfactors = Vec::with_capacity(a.get_nargs());
+
+                for arg in a {
+                    let mut h = HashMap::default();
+                    arg.collect_factors_impl(ws, &mut h);
+                    subfactors.push(h);
+                }
+
+                let mut first = true;
+                for f in &subfactors {
+                    for (k, v) in f {
+                        if let Some(p) = factors.get_mut(k) {
+                            *p = (*p).min(*v);
+                        } else {
+                            if first {
+                                factors.insert(k.clone(), *v);
+                            } else {
+                                factors.insert(k.clone(), 0.min(*v));
+                            }
+                        }
+                    }
+
+                    first = false;
+                }
+
+                for (ff, p) in &mut *factors {
+                    for f in &subfactors {
+                        if !f.contains_key(ff) {
+                            *p = 0.min(*p)
+                        }
+                    }
+
+                    for f in &mut subfactors {
+                        if let Some(v) = f.get_mut(ff) {
+                            *v -= *p;
+                        } else {
+                            f.insert(ff.clone(), -*p);
+                        }
+                    }
+                }
+
+                factors.retain(|_, p| *p != 0);
+
+                // construct the sum factor
+                let mut sum = ws.new_atom();
+                let mut mm = ws.new_atom();
+                let a = sum.to_add();
+                for f in subfactors {
+                    let m = mm.to_mul();
+                    for (k, v) in f {
+                        if v == 0 {
+                            if m.get_nargs() == 0 {
+                                m.extend(ws.new_num(1).as_view());
+                            }
+                        } else if v == 1 {
+                            m.extend(k.as_view());
+                        } else {
+                            let mut pow = ws.new_atom();
+                            let exp = ws.new_num(v as i64);
+                            pow.to_pow(k.as_view(), exp.as_view());
+                            m.extend(pow.as_view());
+                        }
+                    }
+
+                    a.extend(mm.as_view());
+                }
+
+                let mut out = Atom::new();
+                sum.as_view().normalize(ws, &mut out);
+
+                *factors.entry(out.into()).or_insert(0) += 1;
+            }
+            AtomView::Mul(m) => {
+                let mut new_factors = HashMap::default();
+                for arg in m {
+                    arg.collect_factors_impl(ws, &mut new_factors);
+
+                    // merge factors
+                    for (k, v) in new_factors.drain() {
+                        *factors.entry(k).or_insert(0) += v;
+                    }
+                }
+            }
+            AtomView::Pow(p) => {
+                let (b, e) = p.get_base_exp();
+
+                let mut new_factors = HashMap::default();
+                b.collect_factors_impl(ws, &mut new_factors);
+
+                if let Ok(n) = i64::try_from(e) {
+                    for (f, p) in new_factors {
+                        *factors.entry(f.into()).or_insert(0) += n as isize * p;
+                    }
+                } else {
+                    // TODO: extract number from sum in exponent, e.g. x^(a+2)?
+                    let mut pow = ws.new_atom();
+                    let mut prod = ws.new_atom();
+                    let p = prod.to_mul();
+                    for (k, v) in new_factors {
+                        if v == 1 {
+                            p.extend(k.as_view());
+                        } else {
+                            let mut pow = ws.new_atom();
+                            let exp = ws.new_num(v as i64);
+                            pow.to_pow(k.as_view(), exp.as_view());
+                            p.extend(pow.as_view());
+                        }
+                    }
+
+                    pow.to_pow(prod.as_view(), e);
+
+                    let mut out = Atom::new();
+                    pow.as_view().normalize(ws, &mut out);
+
+                    *factors.entry(out.into()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -577,6 +779,24 @@ mod test {
         atom::{representation::InlineVar, Atom, AtomCore},
         function, parse, symbol,
     };
+
+    #[test]
+    fn collect_factors() {
+        let input = parse!("v1*(v1+v2*v1+v1^2+v2*(v1+v1^2))").unwrap();
+        let r = input.collect_factors();
+        let res = parse!("v1^2*(1+v1+v2+v2*(1+v1))").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn collect_symbol() {
+        let input = parse!("f1 + v1*f1 + f1(5,3)*v1 + f1(5,3)*v2 + f1(5,3)*f1(7,5)").unwrap();
+        let x = symbol!("f1");
+
+        let r = input.collect_symbol::<i8>(x, None, None);
+        let res = parse!("f1*(v1+1)+(v1+v2)*f1(5,3)+f1(5,3)*f1(7,5)").unwrap();
+        assert_eq!(r, res);
+    }
 
     #[test]
     fn collect_num() {
@@ -601,7 +821,7 @@ mod test {
         let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
         let x = symbol!("v1");
 
-        let r = input.coefficient_list::<i8, InlineVar>(&[x.into()]);
+        let r = input.coefficient_list::<i8>(&[InlineVar::new(x)]);
 
         let res = vec![
             (parse!("1").unwrap(), parse!("v2^2+f1(5,v1)+2").unwrap()),
@@ -618,7 +838,7 @@ mod test {
         let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
         let x = symbol!("v1");
 
-        let out = input.collect::<i8, InlineVar>(x.into(), None, None);
+        let out = input.collect::<i8>(InlineVar::new(x), None, None);
 
         let ref_out = parse!("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
         assert_eq!(out, ref_out)
@@ -629,7 +849,7 @@ mod test {
         let input = parse!("(1+v1)^2*v1+(1+v2)^100").unwrap();
         let x = symbol!("v1");
 
-        let out = input.collect::<i8, InlineVar>(x.into(), None, None);
+        let out = input.collect::<i8>(InlineVar::new(x), None, None);
 
         let ref_out = parse!("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
         assert_eq!(out, ref_out)
@@ -642,8 +862,8 @@ mod test {
         let key = symbol!("f3");
         let coeff = symbol!("f4");
         println!("> Collect in x with wrapping:");
-        let out = input.collect::<i8, InlineVar>(
-            x.into(),
+        let out = input.collect::<i8>(
+            InlineVar::new(x),
             Some(Box::new(move |a, out| {
                 out.set_from_view(&a);
                 *out = function!(key, out);

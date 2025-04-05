@@ -1,6 +1,6 @@
 use symbolica::{
-    atom::{Atom, AtomCore, AtomView},
-    id::{Match, WildcardRestriction},
+    atom::{Atom, AtomCore},
+    id::Match,
     parse, symbol,
 };
 
@@ -13,14 +13,7 @@ fn main() {
     let rhs_one = Atom::new_num(1).to_pattern();
 
     // prepare the pattern restriction `x_ > 1`
-    let restrictions = (
-        symbol!("x_"),
-        WildcardRestriction::Filter(Box::new(|v: &Match| match v {
-            Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
-            _ => false,
-        })),
-    )
-        .into();
+    let restrictions = symbol!("x_").filter(|v: &Match| v.to_atom() > 1);
 
     let mut target = parse!("f(10)").unwrap();
 
@@ -31,10 +24,14 @@ fn main() {
 
     for _ in 0..9 {
         let out = target
-            .replace_all(&pattern, &rhs, Some(&restrictions), None)
+            .replace(&pattern)
+            .when(&restrictions)
+            .with(&rhs)
             .expand()
-            .replace_all(&lhs_zero_pat, &rhs_one, None, None)
-            .replace_all(&lhs_one_pat, &rhs_one, None, None);
+            .replace(&lhs_zero_pat)
+            .with(&rhs_one)
+            .replace(&lhs_one_pat)
+            .with(&rhs_one);
 
         println!("\t{}", out);
 

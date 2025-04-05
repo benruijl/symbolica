@@ -10,8 +10,8 @@ use crate::{
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
     id::{
-        BorrowPatternOrMap, Condition, Evaluate, MatchSettings, Pattern, PatternOrMap,
-        PatternRestriction, Relation, Replacement,
+        Condition, Evaluate, MatchSettings, Pattern, PatternRestriction, Relation, ReplaceWith,
+        Replacement,
     },
     printer::{AtomPrinter, PrintOptions},
     state::{RecycledAtom, Workspace},
@@ -130,12 +130,16 @@ pub enum Transformer {
     Series(Symbol, Atom, Rational, bool),
     ///Collect all terms in powers of a variable.
     Collect(Vec<Atom>, Vec<Transformer>, Vec<Transformer>),
+    ///Collect all terms in powers of a variable name.
+    CollectSymbol(Symbol, Vec<Transformer>, Vec<Transformer>),
+    /// Collect common factors from (nested) sums.
+    CollectFactors,
     /// Collect numbers.
     CollectNum,
     /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
-        PatternOrMap,
+        ReplaceWith<'static>,
         Condition<PatternRestriction>,
         MatchSettings,
     ),
@@ -184,6 +188,13 @@ impl std::fmt::Debug for Transformer {
             Transformer::Collect(x, a, b) => {
                 f.debug_tuple("Collect").field(x).field(a).field(b).finish()
             }
+            Transformer::CollectFactors => f.debug_tuple("CollectFactors").finish(),
+            Transformer::CollectSymbol(x, a, b) => f
+                .debug_tuple("CollectSymbol")
+                .field(x)
+                .field(a)
+                .field(b)
+                .finish(),
             Transformer::CollectNum => f.debug_tuple("CollectNum").finish(),
             Transformer::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
@@ -561,6 +572,32 @@ impl Transformer {
                         },
                         out,
                     ),
+                Transformer::CollectSymbol(x, key_map, coeff_map) => {
+                    *out = cur_input.collect_symbol::<i16>(
+                        *x,
+                        if key_map.is_empty() {
+                            None
+                        } else {
+                            let key_map = key_map.clone();
+                            Some(Box::new(move |i, o| {
+                                Workspace::get_local()
+                                    .with(|ws| Self::execute_chain(i, &key_map, ws, o).unwrap());
+                            }))
+                        },
+                        if coeff_map.is_empty() {
+                            None
+                        } else {
+                            let coeff_map = coeff_map.clone();
+                            Some(Box::new(move |i, o| {
+                                Workspace::get_local()
+                                    .with(|ws| Self::execute_chain(i, &coeff_map, ws, o).unwrap());
+                            }))
+                        },
+                    );
+                }
+                Transformer::CollectFactors => {
+                    *out = cur_input.collect_factors();
+                }
                 Transformer::CollectNum => {
                     *out = cur_input.collect_num();
                 }
@@ -577,9 +614,9 @@ impl Transformer {
                     }
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
-                    cur_input.replace_all_with_ws_into(
+                    cur_input.replace_with_ws_into(
                         pat,
-                        rhs.borrow(),
+                        rhs,
                         workspace,
                         cond.into(),
                         settings.into(),
@@ -587,7 +624,7 @@ impl Transformer {
                     );
                 }
                 Transformer::ReplaceAllMultiple(replacements) => {
-                    cur_input.replace_all_multiple_into(&replacements, out);
+                    cur_input.replace_multiple_into(&replacements, out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = cur_input {

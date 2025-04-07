@@ -894,6 +894,25 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
+            // check if the source is not a bridge
+            if settings.settings.allow_self_loops && settings.settings.max_bridges == Some(0) {
+                if source > external_edges.len()
+                    && self.node(source).edges.len()
+                        - self
+                            .node(source)
+                            .edges
+                            .iter()
+                            .filter(|e| {
+                                let e = self.edge(**e);
+                                e.vertices.0 == source && e.vertices.1 == source
+                            })
+                            .count()
+                        == 1
+                {
+                    return Ok(());
+                }
+            }
+
             return self.generate_impl(external_edges, source + 1, settings, edge_signatures, out);
         }
 
@@ -995,6 +1014,32 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         };
 
         if self.node(cur_target).edges.len() + 1 > max_degree {
+            return Ok(());
+        }
+
+        // check if there is a previous node with the same signature
+        // if so, skip assigning to this node as this is symmetric w.r.t
+        // assigning to the previous node
+        'next_v: for v in source + 1..cur_target {
+            if self.node(v).data != self.node(cur_target).data
+                || self.node(v).edges.len() != self.node(cur_target).edges.len()
+            {
+                continue;
+            }
+
+            for (e1, e2) in self.node(v).edges.iter().zip(&self.node(cur_target).edges) {
+                let e1 = self.edge(*e1);
+                let e2 = self.edge(*e2);
+
+                if e1.data != e2.data
+                    || e1.directed != e2.directed
+                    || (e1.vertices.0 == v && e1.vertices.1 != e2.vertices.1)
+                    || (e1.vertices.1 == v && e1.vertices.0 != e2.vertices.0)
+                {
+                    continue 'next_v;
+                }
+            }
+
             return Ok(());
         }
 

@@ -299,6 +299,11 @@ pub enum FunctionAttribute {
 /// let f = symbol!("f"; Symmetric).unwrap();
 /// ```
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap),
+)]
 pub struct Symbol {
     id: u32,
     wildcard_level: u8,
@@ -855,15 +860,36 @@ impl Hash for AtomOrView<'_> {
     }
 }
 
+impl<'a, T> From<T> for AtomOrView<'a>
+where
+    T: Into<Coefficient>,
+{
+    fn from(v: T) -> AtomOrView<'a> {
+        AtomOrView::Atom(Atom::new_num(v.into()))
+    }
+}
+
 impl<'a> From<Symbol> for AtomOrView<'a> {
     fn from(s: Symbol) -> AtomOrView<'a> {
         AtomOrView::Atom(Atom::new_var(s))
     }
 }
 
+impl<'a> From<&'a Symbol> for AtomOrView<'a> {
+    fn from(s: &'a Symbol) -> AtomOrView<'a> {
+        AtomOrView::Atom(Atom::new_var(*s))
+    }
+}
+
 impl<'a> From<Atom> for AtomOrView<'a> {
     fn from(a: Atom) -> AtomOrView<'a> {
         AtomOrView::Atom(a)
+    }
+}
+
+impl<'a> From<&'a Atom> for AtomOrView<'a> {
+    fn from(a: &'a Atom) -> AtomOrView<'a> {
+        AtomOrView::View(a.as_view())
     }
 }
 
@@ -1129,6 +1155,11 @@ impl AtomView<'_> {
 /// ```
 #[must_use]
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
 pub enum Atom {
     Num(Num),
     Var(Var),
@@ -1501,19 +1532,22 @@ impl FunctionBuilder {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<T: AtomCore>(mut self, arg: T) -> FunctionBuilder {
+    pub fn add_arg<'a, T: Into<AtomOrView<'a>>>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
-            f.add_arg(arg.as_atom_view());
+            f.add_arg(arg.into().as_view());
         }
 
         self
     }
 
     /// Add multiple arguments to the function.
-    pub fn add_args<T: AtomCore>(mut self, args: &[T]) -> FunctionBuilder {
+    pub fn add_args<'a, T>(mut self, args: &'a [T]) -> FunctionBuilder
+    where
+        &'a T: Into<AtomOrView<'a>>,
+    {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             for a in args {
-                f.add_arg(a.as_atom_view());
+                f.add_arg(a.into().as_view());
             }
         }
 
@@ -1850,499 +1884,7 @@ impl Atom {
     }
 }
 
-impl std::ops::Add<Atom> for Atom {
-    type Output = Atom;
-
-    fn add(self, rhs: Atom) -> Atom {
-        self + rhs.as_view()
-    }
-}
-
-impl std::ops::Add<Atom> for &Atom {
-    type Output = Atom;
-
-    fn add(self, rhs: Atom) -> Atom {
-        rhs + self.as_view()
-    }
-}
-
-impl std::ops::Sub<Atom> for Atom {
-    type Output = Atom;
-
-    fn sub(self, mut rhs: Atom) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view()
-                .sub_no_norm(ws, rhs.as_view())
-                .as_view()
-                .normalize(ws, &mut t);
-            std::mem::swap(&mut rhs, &mut t);
-        });
-
-        rhs
-    }
-}
-
-impl std::ops::Sub<Atom> for &Atom {
-    type Output = Atom;
-
-    fn sub(self, mut rhs: Atom) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view()
-                .sub_no_norm(ws, rhs.as_view())
-                .as_view()
-                .normalize(ws, &mut t);
-            std::mem::swap(&mut rhs, &mut t);
-        });
-
-        rhs
-    }
-}
-
-impl std::ops::Mul<Atom> for &Atom {
-    type Output = Atom;
-
-    fn mul(self, rhs: Atom) -> Atom {
-        rhs * self.as_view()
-    }
-}
-
-impl std::ops::Mul<Atom> for Atom {
-    type Output = Atom;
-
-    fn mul(self, rhs: Atom) -> Atom {
-        self * rhs.as_view()
-    }
-}
-
-impl std::ops::Div<Atom> for Atom {
-    type Output = Atom;
-
-    fn div(self, mut rhs: Atom) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().div_with_ws_into(ws, rhs.as_view(), &mut t);
-            std::mem::swap(&mut rhs, &mut t);
-        });
-
-        rhs
-    }
-}
-
-impl std::ops::Div<Atom> for &Atom {
-    type Output = Atom;
-
-    fn div(self, mut rhs: Atom) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().div_with_ws_into(ws, rhs.as_view(), &mut t);
-            std::mem::swap(&mut rhs, &mut t);
-        });
-
-        rhs
-    }
-}
-
-impl std::ops::Add<&Atom> for &Atom {
-    type Output = Atom;
-
-    fn add(self, rhs: &Atom) -> Atom {
-        self.as_view() + rhs.as_view()
-    }
-}
-
-impl std::ops::Sub<&Atom> for &Atom {
-    type Output = Atom;
-
-    fn sub(self, rhs: &Atom) -> Atom {
-        self.as_view() - rhs.as_view()
-    }
-}
-
-impl std::ops::Mul<&Atom> for &Atom {
-    type Output = Atom;
-
-    fn mul(self, rhs: &Atom) -> Atom {
-        self.as_view() * rhs.as_view()
-    }
-}
-
-impl std::ops::Div<&Atom> for &Atom {
-    type Output = Atom;
-
-    fn div(self, rhs: &Atom) -> Atom {
-        self.as_view() / rhs.as_view()
-    }
-}
-
-impl std::ops::Neg for &Atom {
-    type Output = Atom;
-
-    fn neg(self) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().neg_with_ws_into(ws, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl std::ops::Add<&Atom> for Atom {
-    type Output = Atom;
-
-    fn add(self, rhs: &Atom) -> Atom {
-        self + rhs.as_view()
-    }
-}
-
-impl std::ops::Sub<&Atom> for Atom {
-    type Output = Atom;
-
-    fn sub(self, rhs: &Atom) -> Atom {
-        self - rhs.as_view()
-    }
-}
-
-impl std::ops::Mul<&Atom> for Atom {
-    type Output = Atom;
-
-    fn mul(self, rhs: &Atom) -> Atom {
-        self * rhs.as_view()
-    }
-}
-
-impl std::ops::Div<&Atom> for Atom {
-    type Output = Atom;
-
-    fn div(self, rhs: &Atom) -> Atom {
-        self / rhs.as_view()
-    }
-}
-
-impl std::ops::Add<AtomView<'_>> for Atom {
-    type Output = Atom;
-
-    fn add(mut self, rhs: AtomView) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().add_with_ws_into(ws, rhs, &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl<'a> std::ops::Sub<AtomView<'a>> for Atom {
-    type Output = Atom;
-
-    fn sub(mut self, rhs: AtomView<'a>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().sub_with_ws_into(ws, rhs, &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl<'a> std::ops::Mul<AtomView<'a>> for Atom {
-    type Output = Atom;
-
-    fn mul(mut self, rhs: AtomView<'a>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().mul_with_ws_into(ws, rhs, &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl<'a> std::ops::Div<AtomView<'a>> for Atom {
-    type Output = Atom;
-
-    fn div(mut self, rhs: AtomView<'a>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().div_with_ws_into(ws, rhs, &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl std::ops::Add<Symbol> for Atom {
-    type Output = Atom;
-
-    fn add(self, rhs: Symbol) -> Atom {
-        let v = InlineVar::new(rhs);
-        self + v.as_view()
-    }
-}
-
-impl std::ops::Sub<Symbol> for Atom {
-    type Output = Atom;
-
-    fn sub(self, rhs: Symbol) -> Atom {
-        let v = InlineVar::new(rhs);
-        self - v.as_view()
-    }
-}
-
-impl std::ops::Mul<Symbol> for Atom {
-    type Output = Atom;
-
-    fn mul(self, rhs: Symbol) -> Atom {
-        let v = InlineVar::new(rhs);
-        self * v.as_view()
-    }
-}
-
-impl std::ops::Div<Symbol> for Atom {
-    type Output = Atom;
-
-    fn div(self, rhs: Symbol) -> Atom {
-        let v = InlineVar::new(rhs);
-        self / v.as_view()
-    }
-}
-
-impl std::ops::Add<Symbol> for Symbol {
-    type Output = Atom;
-
-    fn add(self, rhs: Symbol) -> Atom {
-        let s = InlineVar::new(self);
-        let r = InlineVar::new(rhs);
-        s.as_view() + r.as_view()
-    }
-}
-
-impl std::ops::Sub<Symbol> for Symbol {
-    type Output = Atom;
-
-    fn sub(self, rhs: Symbol) -> Atom {
-        let s = InlineVar::new(self);
-        let r = InlineVar::new(rhs);
-        s.as_view() - r.as_view()
-    }
-}
-
-impl std::ops::Mul<Symbol> for Symbol {
-    type Output = Atom;
-
-    fn mul(self, rhs: Symbol) -> Atom {
-        let s = InlineVar::new(self);
-        let r = InlineVar::new(rhs);
-        s.as_view() * r.as_view()
-    }
-}
-
-impl std::ops::Div<Symbol> for Symbol {
-    type Output = Atom;
-
-    fn div(self, rhs: Symbol) -> Atom {
-        let s = InlineVar::new(self);
-        let r = InlineVar::new(rhs);
-        s.as_view() / r.as_view()
-    }
-}
-
-impl std::ops::Neg for Atom {
-    type Output = Atom;
-
-    fn neg(mut self) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.as_view().neg_with_ws_into(ws, &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl std::ops::Add<AtomView<'_>> for AtomView<'_> {
-    type Output = Atom;
-
-    fn add(self, rhs: AtomView<'_>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.add_with_ws_into(ws, rhs, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl std::ops::Sub<AtomView<'_>> for AtomView<'_> {
-    type Output = Atom;
-
-    fn sub(self, rhs: AtomView<'_>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.sub_no_norm(ws, rhs).as_view().normalize(ws, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl std::ops::Mul<AtomView<'_>> for AtomView<'_> {
-    type Output = Atom;
-
-    fn mul(self, rhs: AtomView<'_>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.mul_with_ws_into(ws, rhs, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl std::ops::Div<AtomView<'_>> for AtomView<'_> {
-    type Output = Atom;
-
-    fn div(self, rhs: AtomView<'_>) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.div_with_ws_into(ws, rhs, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl std::ops::Neg for AtomView<'_> {
-    type Output = Atom;
-
-    fn neg(self) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut t = ws.new_atom();
-            self.neg_with_ws_into(ws, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Add<T> for &Atom {
-    type Output = Atom;
-
-    fn add(self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view().add_with_ws_into(ws, n.as_view(), &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Sub<T> for &Atom {
-    type Output = Atom;
-
-    fn sub(self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view()
-                .sub_no_norm(ws, n.as_view())
-                .as_view()
-                .normalize(ws, &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Mul<T> for &Atom {
-    type Output = Atom;
-
-    fn mul(self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view().mul_with_ws_into(ws, n.as_view(), &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Div<T> for &Atom {
-    type Output = Atom;
-
-    fn div(self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view().div_with_ws_into(ws, n.as_view(), &mut t);
-            t.into_inner()
-        })
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Add<T> for Atom {
-    type Output = Atom;
-
-    fn add(mut self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view().add_with_ws_into(ws, n.as_view(), &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Sub<T> for Atom {
-    type Output = Atom;
-
-    fn sub(mut self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view()
-                .sub_no_norm(ws, n.as_view())
-                .as_view()
-                .normalize(ws, &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Mul<T> for Atom {
-    type Output = Atom;
-
-    fn mul(mut self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view().mul_with_ws_into(ws, n.as_view(), &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
-
-impl<T: Into<Coefficient>> std::ops::Div<T> for Atom {
-    type Output = Atom;
-
-    fn div(mut self, rhs: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let n = ws.new_num(rhs);
-            let mut t = ws.new_atom();
-            self.as_view().div_with_ws_into(ws, n.as_view(), &mut t);
-            std::mem::swap(&mut self, &mut t);
-        });
-
-        self
-    }
-}
+mod ops;
 
 impl AsRef<Atom> for Atom {
     fn as_ref(&self) -> &Atom {
@@ -2356,6 +1898,8 @@ mod test {
         atom::{Atom, AtomCore},
         function,
     };
+
+    use super::FunctionBuilder;
 
     #[test]
     fn parse_macro() {
@@ -2393,5 +1937,19 @@ mod test {
 
         let res = parse!("1/4*(v2^v1)^-1*(-6*v2*(v1+v2+2))^5*f1(v1,v2,2)").unwrap();
         assert_eq!(res, r);
+    }
+
+    #[test]
+    fn building() {
+        let f = FunctionBuilder::new(symbol!("a"))
+            .add_arg(1)
+            .add_args(&[1, 2])
+            .add_arg(&symbol!("a"))
+            .add_args(&[symbol!("b")])
+            .add_args(&[parse!("a").unwrap()])
+            .add_arg(&parse!("a").unwrap())
+            .add_arg(parse!("a").unwrap())
+            .add_arg(parse!("a").unwrap().as_view())
+            .finish();
     }
 }

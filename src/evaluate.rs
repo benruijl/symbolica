@@ -1303,6 +1303,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         filename: &str,
         function_name: &str,
         include_header: bool,
+        formatcpp : FormatCPP, 
         inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
         let mut filename = filename.to_string();
@@ -1310,10 +1311,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             filename += ".cpp";
         }
 
-        let cpp = match inline_asm {
-            InlineASM::X64 => self.export_asm_str(function_name, include_header, inline_asm),
-            InlineASM::AArch64 => self.export_asm_str(function_name, include_header, inline_asm),
-            InlineASM::None => self.export_cpp_str(function_name, include_header),
+        let cpp = match formatcpp {
+            FormatCPP::ASM => self.export_asm_str(function_name, include_header, inline_asm),
+            FormatCPP::CUDA => self.export_cuda_str(function_name, include_header),
+            FormatCPP::CPP => self.export_cpp_str(function_name, include_header),
         };
 
         let _ = std::fs::write(&filename, cpp)?;
@@ -1322,6 +1323,66 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             function_name: function_name.to_string(),
         })
     }
+
+    pub fn export_cuda_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = String::new();
+        if include_header {
+            res += &"#include <cuda_runtime.h>\n#include <cuda/std/complex>\n#include <iostream>\n\n";
+        };
+
+        res += &format!(
+            "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
+            function_name,
+            self.stack.len()
+        );
+
+        res += &format!(
+            "\ntemplate<typename T>\n__device__ void {}(T* params, T* Z, T* out, int index) {{\n",
+            function_name
+        );
+
+        res += &format!(
+            "\tT {};\n",
+            (0..self.stack.len())
+                .map(|x| format!("Z{}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        res += &format!(
+            "\tint params_offset = index * {};\n",
+            self.param_count
+        );
+        res += &format!(
+            "\tint out_offset = index * {};\n",
+            self.result_indices.len()
+        );
+
+        for i in 0..self.param_count {
+            res += &format!("\tZ{} = params[params_offset + {}];\n", i, i);
+        }
+
+        for i in self.param_count..self.reserved_indices {
+            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
+        }
+
+        Self::export_cpp_impl(&self.instructions, &mut res);
+
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            res += &format!("\tout[out_offset + {}] = Z{};\n", i, r);
+        }
+
+        res += "\treturn;\n}\n";
+
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out, int n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
+
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1>>>(params, buffer, out,1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
+
+        res
+    }
+
 
     pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
         let mut res = String::new();
@@ -4396,12 +4457,19 @@ impl ExportedCode {
         let mut builder = std::process::Command::new(&options.compiler);
         builder
             .arg("-shared")
-            .arg("-fPIC")
             .arg(format!("-O{}", options.optimization_level));
-        if options.fast_math {
+        if !options.compiler.contains("nvcc") {
+            builder.arg("-fPIC");
+        }
+        else {
+            // order is important here for nvcc
+            builder.arg("-Xcompiler");
+            builder.arg("-fPIC");
+        }
+        if options.fast_math && !options.compiler.contains("nvcc"){
             builder.arg("-ffast-math");
         }
-        if options.unsafe_math {
+        if options.unsafe_math && !options.compiler.contains("nvcc") {
             builder.arg("-funsafe-math-optimizations");
         }
 
@@ -4419,7 +4487,9 @@ impl ExportedCode {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!(
-                    "Could not compile code: {}",
+                    "Could not compile code: {} {}\n{}",
+                    builder.get_program().to_string_lossy(),
+                    builder.get_args().map(|arg| arg.to_string_lossy().to_string()).collect::<Vec<_>>().join(" "),
                     String::from_utf8_lossy(&r.stderr)
                 ),
             ));
@@ -4430,6 +4500,13 @@ impl ExportedCode {
             function_name: self.function_name.clone(),
         })
     }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum FormatCPP {
+    CPP,
+    ASM,
+    CUDA,
 }
 
 /// The inline assembly mode used to generate fast

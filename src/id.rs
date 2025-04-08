@@ -1915,7 +1915,13 @@ impl Pattern {
                     transformer_input,
                 )?;
 
-                Transformer::execute_chain(handle.as_view(), ts, workspace, out)?;
+                Transformer::execute_chain(
+                    handle.as_view(),
+                    ts,
+                    workspace,
+                    &Default::default(),
+                    out,
+                )?;
             }
         }
 

@@ -760,6 +760,13 @@ impl From<Symbol> for Atom {
     }
 }
 
+impl<'a> From<AtomView<'a>> for Atom {
+    /// Convert an `AtomView` to an atom. This will allocate memory.
+    fn from(view: AtomView) -> Atom {
+        view.to_owned()
+    }
+}
+
 impl<'a> From<NumView<'a>> for AtomView<'a> {
     fn from(n: NumView<'a>) -> AtomView<'a> {
         AtomView::Num(n)
@@ -928,10 +935,14 @@ impl<'a> AtomView<'a> {
 
     /// Print statistics about the operation `op`, such as its duration and term growth.
     pub fn with_stats<F: Fn(AtomView) -> Atom>(&self, op: F, o: &StatsOptions) -> Atom {
+        let start_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or(std::time::Duration::from_secs(0));
+
         let t = std::time::Instant::now();
         let out = op(*self);
         let dt = t.elapsed();
-        o.print(*self, out.as_view(), dt);
+        o.print(*self, out.as_view(), start_time, dt);
         out
     }
 

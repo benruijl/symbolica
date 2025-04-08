@@ -991,6 +991,7 @@ class Expression:
         self,
         transformations: Transformer,
         n_cores: Optional[int] = 1,
+        stats_to_file: Optional[str] = None,
     ) -> Expression:
         """
         Map the transformations to every term in the expression.
@@ -1002,6 +1003,15 @@ class Expression:
         >>> e = (1+x)**2
         >>> r = e.map(Transformer().expand().replace(x, 6))
         >>> print(r)
+
+        Parameters
+        ----------
+        transformations: Transformer
+            The transformations to apply.
+        n_cores: int, optional
+            The number of cores to use for parallel execution.
+        stats_to_file: str, optional
+            If set, the output of the `stats` transformer will be written to a file in JSON format.
         """
 
     def set_coefficient_ring(self, vars: Sequence[Expression]) -> Expression:
@@ -1817,7 +1827,7 @@ class Transformer:
     def __new__(_cls) -> Transformer:
         """Create a new transformer for a term provided by `Expression.map`."""
 
-    def __call__(self, expr: Expression | int | float | Decimal) -> Expression:
+    def __call__(self, expr: Expression | int | float | Decimal, stats_to_file: Optional[str] = None) -> Expression:
         """Execute an unbound transformer on the given expression. If the transformer
         is bound, use `execute()` instead.
 
@@ -1825,6 +1835,13 @@ class Transformer:
         --------
         >>> x = S('x')
         >>> e = Transformer().expand()((1+x)**2)
+
+        Parameters
+        ----------
+        expr: Expression
+            The expression to transform.
+        stats_to_file: str, optional
+            If set, the output of the `stats` transformer will be written to a file in JSON format.
         """
 
     def __eq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
@@ -2726,11 +2743,27 @@ class TermStreamer:
     def to_expression(self) -> Expression:
         """Convert the term stream into an expression. This may exceed the available memory."""
 
-    def map(self, f: Transformer) -> TermStreamer:
-        """Apply a transformer to all terms in the stream."""
+    def map(self, f: Transformer, stats_to_file: Optional[str] = None) -> TermStreamer:
+        """Apply a transformer to all terms in the stream.
 
-    def map_single_thread(self, f: Transformer) -> TermStreamer:
-        """Apply a transformer to all terms in the stream using a single thread."""
+        Parameters
+        ----------
+        f: Transformer
+            The transformer to apply.
+        stats_to_file: str, optional
+            If set, the output of the `stats` transformer will be written to a file in JSON format.
+        """
+
+    def map_single_thread(self, f: Transformer, stats_to_file: Optional[str] = None) -> TermStreamer:
+        """Apply a transformer to all terms in the stream using a single thread.
+
+        Parameters
+        ----------
+        f: Transformer
+            The transformer to apply.
+        stats_to_file: str, optional
+            If set, the output of the `stats` transformer will be written to a file in JSON format.
+        """
 
 
 class MatchIterator:

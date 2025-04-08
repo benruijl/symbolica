@@ -9,7 +9,7 @@ license-file = "License.md"
 name = "symbolica"
 readme = "Readme.md"
 repository = "https://github.com/benruijl/symbolica"
-rust-version = "1.73"
+rust-version = "1.85"
 version = "0.16.0"
 
 [profile.release]

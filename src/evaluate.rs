@@ -59,7 +59,7 @@ impl<A, T> EvaluationFn<A, T> {
     derive(bincode::Encode, bincode::Decode),
     bincode(decode_context = "crate::state::StateMap")
 )]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FunctionMap<T = Rational> {
     map: HashMap<Atom, ConstOrExpr<T>>,
     tagged_fn_map: HashMap<(Symbol, Vec<Atom>), ConstOrExpr<T>>,

@@ -4,7 +4,7 @@ use std::{
     hash::{Hash, Hasher},
     io::{BufReader, BufWriter},
     ops::{Deref, Neg},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use ahash::HashMap;
@@ -70,7 +70,7 @@ use crate::{
     state::{RecycledAtom, State, Workspace},
     streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
-    transformer::{StatsOptions, Transformer, TransformerError},
+    transformer::{StatsOptions, Transformer, TransformerError, TransformerState},
     LicenseManager,
 };
 
@@ -480,9 +480,11 @@ impl PythonTransformer {
     /// --------
     /// >>> x = Expression.symbol('x')
     /// >>> e = Transformer().expand()((1+x)**2)
+    #[pyo3(signature = (expr, stats_to_file = None))]
     pub fn __call__(
         &self,
         expr: ConvertibleToExpression,
+        stats_to_file: Option<String>,
         py: Python,
     ) -> PyResult<PythonExpression> {
         let e = expr.to_expression();
@@ -496,9 +498,24 @@ impl PythonTransformer {
 
             let mut out = Atom::new();
 
+            let state = if let Some(stats_to_file) = stats_to_file {
+                let file = File::create(stats_to_file).map_err(|e| {
+                    exceptions::PyIOError::new_err(format!(
+                        "Could not create file for transformer statistics: {}",
+                        e
+                    ))
+                })?;
+                TransformerState {
+                    stats_export: Some(Arc::new(Mutex::new(BufWriter::new(file)))),
+                    ..Default::default()
+                }
+            } else {
+                TransformerState::default()
+            };
+
             py.allow_threads(|| {
                 Workspace::get_local()
-                    .with(|ws| Transformer::execute_chain(e.as_view(), &t.1, ws, &mut out))
+                    .with(|ws| Transformer::execute_chain(e.as_view(), &t.1, ws, &state, &mut out))
                     .map_err(|e| match e {
                         TransformerError::Interrupt => {
                             exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
@@ -896,7 +913,7 @@ impl PythonTransformer {
     /// >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
     pub fn map(&self, f: PyObject) -> PyResult<PythonTransformer> {
-        let transformer = Transformer::Map(Box::new(move |expr, out| {
+        let transformer = Transformer::Map(Box::new(move |expr, _state, out| {
             let expr = PythonExpression {
                 expr: expr.to_owned(),
             };
@@ -1025,7 +1042,7 @@ impl PythonTransformer {
     /// >>> f(10).transform().repeat(Transformer().replace(
     /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
     pub fn check_interrupt(&self) -> PyResult<PythonTransformer> {
-        let transformer = Transformer::Map(Box::new(move |expr, out| {
+        let transformer = Transformer::Map(Box::new(move |expr, _state, out| {
             out.set_from_view(&expr);
             Python::with_gil(|py| py.check_signals()).map_err(|_| TransformerError::Interrupt)
         }));
@@ -1240,6 +1257,7 @@ impl PythonTransformer {
     pub fn execute(&self, py: Python) -> PyResult<PythonExpression> {
         let mut out = Atom::default();
 
+        // TODO: pass a transformer state?
         py.allow_threads(|| {
             Workspace::get_local()
                 .with(|workspace| {
@@ -1287,7 +1305,7 @@ impl PythonTransformer {
 
         return append_transformer!(
             self,
-            Transformer::Map(Box::new(move |i, o| {
+            Transformer::Map(Box::new(move |i, _state, o| {
                 *o = i.set_coefficient_ring(&a);
                 Ok(())
             }))
@@ -1511,7 +1529,7 @@ impl PythonTransformer {
         let a = x.to_expression().expr;
         return append_transformer!(
             self,
-            Transformer::Map(Box::new(move |i, o| {
+            Transformer::Map(Box::new(move |i, _state, o| {
                 *o = i.coefficient(a.as_view());
                 Ok(())
             }))
@@ -1522,7 +1540,7 @@ impl PythonTransformer {
     pub fn apart(&self, x: PythonExpression) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
-            Transformer::Map(Box::new(move |i, o| {
+            Transformer::Map(Box::new(move |i, _state, o| {
                 let poly = i.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
 
                 let x = poly
@@ -1559,7 +1577,7 @@ impl PythonTransformer {
     pub fn together(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
-            Transformer::Map(Box::new(|i, o| {
+            Transformer::Map(Box::new(|i, _state, o| {
                 let poly = i.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
                 *o = poly.to_expression();
                 Ok(())
@@ -1572,7 +1590,7 @@ impl PythonTransformer {
     pub fn cancel(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
-            Transformer::Map(Box::new(|i, o| {
+            Transformer::Map(Box::new(|i, _state, o| {
                 *o = i.cancel();
                 Ok(())
             }))
@@ -1583,7 +1601,7 @@ impl PythonTransformer {
     pub fn factor(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
-            Transformer::Map(Box::new(|i, o| {
+            Transformer::Map(Box::new(|i, _state, o| {
                 *o = i.factor();
                 Ok(())
             }))
@@ -2783,7 +2801,14 @@ impl PythonExpression {
                         move |input: AtomView<'_>, out: &mut Atom| {
                             Workspace::get_local()
                                 .with(|ws| {
-                                    Transformer::execute_chain(input, &t.1, ws, out).map_err(|e| e)
+                                    Transformer::execute_chain(
+                                        input,
+                                        &t.1,
+                                        ws,
+                                        &TransformerState::default(),
+                                        out,
+                                    )
+                                    .map_err(|e| e)
                                 })
                                 .unwrap();
                             true
@@ -2838,8 +2863,14 @@ impl PythonExpression {
                             move |input: AtomView<'_>, out: &mut Atom| {
                                 Workspace::get_local()
                                     .with(|ws| {
-                                        Transformer::execute_chain(input, &t, ws, out)
-                                            .map_err(|e| e)
+                                        Transformer::execute_chain(
+                                            input,
+                                            &t,
+                                            ws,
+                                            &TransformerState::default(),
+                                            out,
+                                        )
+                                        .map_err(|e| e)
                                     })
                                     .unwrap();
                                 true
@@ -4046,12 +4077,13 @@ impl PythonExpression {
     /// >>> e = (1+x)**2
     /// >>> r = e.map(Transformer().expand().replace(x, 6))
     /// >>> print(r)
-    #[pyo3(signature = (op, n_cores = None))]
+    #[pyo3(signature = (op, n_cores = None, stats_to_file = None))]
     pub fn map(
         &self,
         op: PythonTransformer,
         py: Python,
         n_cores: Option<usize>,
+        stats_to_file: Option<String>,
     ) -> PyResult<PythonExpression> {
         let t = match &op.expr {
             Pattern::Transformer(t) => {
@@ -4070,6 +4102,21 @@ impl PythonExpression {
             }
         };
 
+        let state = if let Some(stats_to_file) = stats_to_file {
+            let file = File::create(stats_to_file).map_err(|e| {
+                exceptions::PyIOError::new_err(format!(
+                    "Could not create file for transformer statistics: {}",
+                    e
+                ))
+            })?;
+            TransformerState {
+                stats_export: Some(Arc::new(Mutex::new(BufWriter::new(file)))),
+                ..Default::default()
+            }
+        } else {
+            TransformerState::default()
+        };
+
         // release the GIL as Python functions may be called from
         // within the term mapper
         let r = py.allow_threads(move || {
@@ -4077,10 +4124,12 @@ impl PythonExpression {
                 |x| {
                     let mut out = Atom::default();
                     Workspace::get_local().with(|ws| {
-                        Transformer::execute_chain(x, &t, ws, &mut out).unwrap_or_else(|e| {
-                            // TODO: capture and abort the parallel run
-                            panic!("Transformer failed during parallel execution: {:?}", e)
-                        });
+                        Transformer::execute_chain(x, &t, ws, &state, &mut out).unwrap_or_else(
+                            |e| {
+                                // TODO: capture and abort the parallel run
+                                panic!("Transformer failed during parallel execution: {:?}", e)
+                            },
+                        );
                     });
                     out
                 },
@@ -6170,7 +6219,13 @@ impl PythonTermStreamer {
     }
 
     /// Map the transformations to every term in the stream.
-    pub fn map(&mut self, op: PythonTransformer, py: Python) -> PyResult<Self> {
+    #[pyo3(signature = (op, stats_to_file=None))]
+    pub fn map(
+        &mut self,
+        op: PythonTransformer,
+        stats_to_file: Option<String>,
+        py: Python,
+    ) -> PyResult<Self> {
         let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
@@ -6186,6 +6241,21 @@ impl PythonTermStreamer {
                     "Operation must of a transformer".to_string(),
                 ));
             }
+        };
+
+        let state = if let Some(stats_to_file) = stats_to_file {
+            let file = File::create(stats_to_file).map_err(|e| {
+                exceptions::PyIOError::new_err(format!(
+                    "Could not create file for transformer statistics: {}",
+                    e
+                ))
+            })?;
+            TransformerState {
+                stats_export: Some(Arc::new(Mutex::new(BufWriter::new(file)))),
+                ..Default::default()
+            }
+        } else {
+            TransformerState::default()
         };
 
         // release the GIL as Python functions may be called from
@@ -6195,10 +6265,11 @@ impl PythonTermStreamer {
             let m = self.stream.map(|x| {
                 let mut out = Atom::default();
                 Workspace::get_local().with(|ws| {
-                    Transformer::execute_chain(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
-                        // TODO: capture and abort the parallel run
-                        panic!("Transformer failed during parallel execution: {:?}", e)
-                    });
+                    Transformer::execute_chain(x.as_view(), &t, ws, &state, &mut out)
+                        .unwrap_or_else(|e| {
+                            // TODO: capture and abort the parallel run
+                            panic!("Transformer failed during parallel execution: {:?}", e)
+                        });
                 });
                 out
             });
@@ -6208,7 +6279,12 @@ impl PythonTermStreamer {
     }
 
     /// Map the transformations to every term in the stream using a single thread.
-    pub fn map_single_thread(&mut self, op: PythonTransformer) -> PyResult<Self> {
+    #[pyo3(signature = (op, stats_to_file=None))]
+    pub fn map_single_thread(
+        &mut self,
+        op: PythonTransformer,
+        stats_to_file: Option<String>,
+    ) -> PyResult<Self> {
         let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
@@ -6226,11 +6302,26 @@ impl PythonTermStreamer {
             }
         };
 
+        let state = if let Some(stats_to_file) = stats_to_file {
+            let file = File::create(stats_to_file).map_err(|e| {
+                exceptions::PyIOError::new_err(format!(
+                    "Could not create file for transformer statistics: {}",
+                    e
+                ))
+            })?;
+            TransformerState {
+                stats_export: Some(Arc::new(Mutex::new(BufWriter::new(file)))),
+                ..Default::default()
+            }
+        } else {
+            TransformerState::default()
+        };
+
         // map every term in the expression
         let s = self.stream.map_single_thread(|x| {
             let mut out = Atom::default();
             Workspace::get_local().with(|ws| {
-                Transformer::execute_chain(x.as_view(), &t, ws, &mut out)
+                Transformer::execute_chain(x.as_view(), &t, ws, &state, &mut out)
                     .unwrap_or_else(|e| panic!("Transformer failed during execution: {:?}", e));
             });
             out

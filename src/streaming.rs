@@ -88,7 +88,7 @@ struct TermInputStream<'a, R: ReadableNamedStream> {
     mem_pos: usize,
 }
 
-impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
+impl<R: ReadableNamedStream> Iterator for TermInputStream<'_, R> {
     type Item = Atom;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -155,7 +155,7 @@ impl<W: WriteableNamedStream> Drop for TermStreamer<W> {
     /// Remove all temporary files created by the term streamer.
     fn drop(&mut self) {
         for x in &mut (0..self.file_buf.len()) {
-            std::fs::remove_file(&self.get_filename(x)).unwrap();
+            std::fs::remove_file(self.get_filename(x)).unwrap();
         }
     }
 }
@@ -609,18 +609,18 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         self.total_size = 0;
 
         for x in &mut (0..self.file_buf.len()) {
-            std::fs::remove_file(&self.get_filename(x)).unwrap();
+            std::fs::remove_file(self.get_filename(x)).unwrap();
         }
 
         self.file_buf.clear();
     }
 }
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Map the function `f` over all terms.
     pub(crate) fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
         if let AtomView::Add(aa) = self {
-            return Workspace::get_local().with(|ws| {
+            Workspace::get_local().with(|ws| {
                 let mut r = ws.new_atom();
                 let rr = r.to_add();
                 for arg in aa {
@@ -629,7 +629,7 @@ impl<'a> AtomView<'a> {
                 let mut out = Atom::new();
                 r.as_view().normalize(ws, &mut out);
                 out
-            });
+            })
         } else {
             f(*self)
         }

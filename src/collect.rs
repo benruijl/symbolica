@@ -4,7 +4,7 @@ use crate::{
     atom::{Add, Atom, AtomCore, AtomOrView, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{integer::Z, rational::Q},
-    poly::{factor::Factorize, polynomial::MultivariatePolynomial, Exponent},
+    poly::{Exponent, factor::Factorize, polynomial::MultivariatePolynomial},
     state::Workspace,
 };
 use std::sync::Arc;
@@ -665,12 +665,10 @@ impl<'a> AtomView<'a> {
                     for (k, v) in f {
                         if let Some(p) = factors.get_mut(k) {
                             *p = (*p).min(*v);
+                        } else if first {
+                            factors.insert(k.clone(), *v);
                         } else {
-                            if first {
-                                factors.insert(k.clone(), *v);
-                            } else {
-                                factors.insert(k.clone(), 0.min(*v));
-                            }
+                            factors.insert(k.clone(), 0.min(*v));
                         }
                     }
 
@@ -743,7 +741,7 @@ impl<'a> AtomView<'a> {
 
                 if let Ok(n) = i64::try_from(e) {
                     for (f, p) in new_factors {
-                        *factors.entry(f.into()).or_insert(0) += n as isize * p;
+                        *factors.entry(f).or_insert(0) += n as isize * p;
                     }
                 } else {
                     // TODO: extract number from sum in exponent, e.g. x^(a+2)?
@@ -776,7 +774,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore},
+        atom::{Atom, AtomCore, representation::InlineVar},
         function, parse, symbol,
     };
 

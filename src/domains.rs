@@ -236,13 +236,13 @@ impl<'a, R: Ring> RingPrinter<'a, R> {
     }
 }
 
-impl<'a, R: Ring> Display for RingPrinter<'a, R> {
+impl<R: Ring> Display for RingPrinter<'_, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.ring
             .format(
                 self.element,
-                &self.opts.clone().update_with_fmt(f),
-                self.state.clone().update_with_fmt(f),
+                &self.opts.update_with_fmt(f),
+                self.state.update_with_fmt(f),
                 f,
             )
             .map(|_| ())

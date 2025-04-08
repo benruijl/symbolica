@@ -18,7 +18,7 @@ enum TensorGraphNode<'a> {
     Slot(Option<AtomView<'a>>),
 }
 
-impl<'a> std::fmt::Display for TensorGraphNode<'a> {
+impl std::fmt::Display for TensorGraphNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TensorGraphNode::Mul => write!(f, "Mul"),
@@ -179,7 +179,7 @@ impl<'a> AtomView<'a> {
             )
         });
 
-        return Ok(res.into());
+        Ok(res.into())
     }
 
     fn reconstruct<G: Ord + std::hash::Hash>(
@@ -378,7 +378,7 @@ impl<'a> AtomView<'a> {
             }
             TensorGraphNode::Slot(s) => {
                 if let Some(s) = s {
-                    *out = s.to_owned().into();
+                    *out = s.to_owned();
                 } else {
                     unreachable!("Encountered empty slot during tree walk")
                 }
@@ -434,7 +434,7 @@ impl<'a> AtomView<'a> {
                 let is_antisymmetric = f.is_antisymmetric();
 
                 // create function header node
-                let header = g.add_node(TensorGraphNode::Fun(f.get_symbol().into()));
+                let header = g.add_node(TensorGraphNode::Fun(f.get_symbol()));
 
                 // add a node for every slot
                 let start = g.nodes().len();

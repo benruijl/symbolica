@@ -8,11 +8,11 @@ use crate::{
     coefficient::{Coefficient, CoefficientView},
     combinatorics::CombinationWithReplacementIterator,
     domains::{atom::AtomField, integer::Integer, rational::Rational},
-    poly::{series::Series, Variable},
+    poly::{Variable, series::Series},
     state::Workspace,
 };
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Take a derivative of the expression with respect to `x`.
     pub(crate) fn derivative(&self, x: Symbol) -> Atom {
         Workspace::get_local().with(|ws| {
@@ -150,7 +150,9 @@ impl<'a> AtomView<'a> {
                                 n.to_num(num);
                                 p.add_arg(n.as_view());
                             } else {
-                                panic!("Derivative function must contain numbers for all but the last position");
+                                panic!(
+                                    "Derivative function must contain numbers for all but the last position"
+                                );
                             }
                         }
                     } else {
@@ -448,7 +450,7 @@ impl<'a> AtomView<'a> {
                                     if *pow > 0 {
                                         term = &term * &args_series[arg].npow(*pow as usize);
                                     }
-                                    f_der = f_der.add_arg(&Atom::new_num(*pow as i64));
+                                    f_der = f_der.add_arg(Atom::new_num(*pow as i64));
                                 }
 
                                 f_der = f_der.add_arg(&constant);

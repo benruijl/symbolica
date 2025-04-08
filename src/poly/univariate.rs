@@ -513,9 +513,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
         }
 
         // check if the leading coefficients divide
-        if self.ring.try_div(&self.lcoeff(), &div.lcoeff()).is_none() {
-            return None;
-        }
+        self.ring.try_div(&self.lcoeff(), &div.lcoeff())?;
 
         if self.degree() < div.degree() {
             return None;
@@ -526,7 +524,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
             let c = div.get_constant();
             if !self.ring.is_zero(&c)
                 && !self.ring.is_one(&c)
-                && !self.ring.try_div(&self.get_constant(), &c).is_none()
+                && self.ring.try_div(&self.get_constant(), &c).is_some()
             {
                 return None;
             }
@@ -590,12 +588,10 @@ impl<F: Ring> UnivariatePolynomial<F> {
             if let Some(qq) = self.ring.try_div(&r.coefficients[n], &div.coefficients[m]) {
                 r = r - div.mul_exp(n - m).mul_coeff(&qq);
                 q.coefficients[n - m] = qq;
+            } else if early_return {
+                return (self.zero(), r);
             } else {
-                if early_return {
-                    return (self.zero(), r);
-                } else {
-                    break;
-                }
+                break;
             }
 
             if r.is_zero() {
@@ -851,7 +847,7 @@ impl UnivariatePolynomial<RationalField> {
 
             match f
                 .map_coeff(
-                    |c| tolerance.from_rational(&c).into(),
+                    |c| tolerance.from_rational(c).into(),
                     FloatField::from_rep(tolerance.clone().into()),
                 )
                 .roots(max_iterations, tolerance)
@@ -965,7 +961,7 @@ impl UnivariatePolynomial<IntegerRing> {
                     continue;
                 }
 
-                let (a1, a2) = p1.refine_root_interval_until_disjoint(a1.clone(), &p2, a2.clone());
+                let (a1, a2) = p1.refine_root_interval_until_disjoint(a1.clone(), p2, a2.clone());
                 intervals[i].0 = a1;
                 intervals[j].0 = a2;
             }
@@ -1257,7 +1253,7 @@ impl<R: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrderin
 
         let df = self.derivative();
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut n: Vec<_> = (0..self.degree())
             .map(|_| {
                 let r = upper.sample_unit(&mut rng) * (upper.clone() - &lower) + &lower;
@@ -1380,7 +1376,7 @@ impl<F: Ring> Add for UnivariatePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: Ring> Add<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynomial<F> {
+impl<'a, F: Ring> Add<&'a UnivariatePolynomial<F>> for &UnivariatePolynomial<F> {
     type Output = UnivariatePolynomial<F>;
 
     fn add(self, other: &'a UnivariatePolynomial<F>) -> Self::Output {
@@ -1396,7 +1392,7 @@ impl<F: Ring> Sub for UnivariatePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: Ring> Sub<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynomial<F> {
+impl<'a, F: Ring> Sub<&'a UnivariatePolynomial<F>> for &UnivariatePolynomial<F> {
     type Output = UnivariatePolynomial<F>;
 
     fn sub(self, other: &'a UnivariatePolynomial<F>) -> Self::Output {
@@ -1415,7 +1411,7 @@ impl<F: Ring> Neg for UnivariatePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynomial<F> {
+impl<'a, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &UnivariatePolynomial<F> {
     type Output = UnivariatePolynomial<F>;
 
     #[inline]
@@ -1479,7 +1475,7 @@ impl<'a, F: Ring> Mul<&'a UnivariatePolynomial<F>> for UnivariatePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: EuclideanDomain> Div<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynomial<F> {
+impl<'a, F: EuclideanDomain> Div<&'a UnivariatePolynomial<F>> for &UnivariatePolynomial<F> {
     type Output = UnivariatePolynomial<F>;
 
     fn div(self, other: &'a UnivariatePolynomial<F>) -> Self::Output {

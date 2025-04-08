@@ -19,11 +19,12 @@ use std::{
 use ahash::HashMap;
 use bytes::Buf;
 use rug::{integer::Order, ops::NegAssign};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use crate::{
     atom::{Atom, AtomView},
     domains::{
+        EuclideanDomain, Field, InternalOrdering, Ring,
         atom::AtomField,
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
@@ -31,11 +32,10 @@ use crate::{
         },
         float::{Float, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
-        rational::{Rational, Q},
+        rational::{Q, Rational},
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
-        EuclideanDomain, Field, InternalOrdering, Ring,
     },
-    poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
+    poly::{INLINED_EXPONENTS, Variable, polynomial::MultivariatePolynomial},
     state::{FiniteFieldIndex, State, Workspace},
 };
 
@@ -97,7 +97,7 @@ impl From<(i64, i64)> for Coefficient {
     }
 }
 
-impl<'a> From<(i64, i64)> for CoefficientView<'a> {
+impl From<(i64, i64)> for CoefficientView<'_> {
     #[inline]
     fn from(r: (i64, i64)) -> Self {
         CoefficientView::Natural(r.0, r.1)
@@ -158,10 +158,10 @@ impl Ord for Coefficient {
             (Coefficient::Rational(r1), Coefficient::Rational(r2)) => r1.cmp(r2),
             (Coefficient::FiniteField(n1, _), Coefficient::FiniteField(n2, _)) => n1.0.cmp(&n2.0),
             (Coefficient::Float(f1), Coefficient::Float(f2)) => {
-                f1.partial_cmp(&f2).unwrap_or(Ordering::Equal)
+                f1.partial_cmp(f2).unwrap_or(Ordering::Equal)
             }
             (Coefficient::RationalPolynomial(n1), Coefficient::RationalPolynomial(n2)) => {
-                n1.internal_cmp(&n2)
+                n1.internal_cmp(n2)
             }
             (Coefficient::Rational(_), _) => Ordering::Less,
             (_, Coefficient::Rational(_)) => Ordering::Greater,
@@ -233,7 +233,9 @@ impl Coefficient {
                 Coefficient::FiniteField(f.one(), *i1)
             }
             (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+                panic!(
+                    "Cannot multiply finite field to non-finite number. Convert other number first?"
+                );
             }
             (Coefficient::Rational(r), Coefficient::RationalPolynomial(rp))
             | (Coefficient::RationalPolynomial(rp), Coefficient::Rational(r)) => {
@@ -258,7 +260,7 @@ impl Coefficient {
                     p1.unify_variables(&mut p2);
                     p1.gcd(&p2)
                 } else {
-                    p1.gcd(&p2)
+                    p1.gcd(p2)
                 };
 
                 if r.is_constant() {
@@ -366,7 +368,9 @@ impl Mul for Coefficient {
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+                panic!(
+                    "Cannot multiply finite field to non-finite number. Convert other number first?"
+                );
             }
             (Coefficient::Rational(r), Coefficient::RationalPolynomial(mut rp))
             | (Coefficient::RationalPolynomial(mut rp), Coefficient::Rational(r)) => {
@@ -412,7 +416,7 @@ pub struct SerializedRational<'a> {
     pub(crate) den_digits: &'a [u8],
 }
 
-impl<'a> SerializedRational<'a> {
+impl SerializedRational<'_> {
     pub fn is_negative(&self) -> bool {
         self.is_negative
     }
@@ -434,7 +438,7 @@ pub struct SerializedRationalPolynomial<'a>(pub &'a [u8]);
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SerializedFloat<'a>(pub &'a [u8]);
 
-impl<'a> SerializedFloat<'a> {
+impl SerializedFloat<'_> {
     pub fn to_float(&self) -> Float {
         let mut d = self.0;
         let prec = d.get_u32_le();
@@ -925,10 +929,14 @@ impl Mul for CoefficientView<'_> {
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
             (CoefficientView::FiniteField(_, _), _) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+                panic!(
+                    "Cannot multiply finite field to non-finite number. Convert other number first?"
+                );
             }
             (_, CoefficientView::FiniteField(_, _)) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+                panic!(
+                    "Cannot multiply finite field to non-finite number. Convert other number first?"
+                );
             }
             (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
@@ -1044,7 +1052,7 @@ impl<'a> TryFrom<AtomView<'a>> for i64 {
     fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
         if let AtomView::Num(n) = value {
             if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
-                return Ok(n);
+                Ok(n)
             } else {
                 Err("Not an i64")
             }
@@ -1117,7 +1125,7 @@ impl<'a> TryFrom<AtomView<'a>> for Float {
     }
 }
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub(crate) fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
         Workspace::get_local().with(|ws| {
@@ -1623,7 +1631,10 @@ mod test {
             "{}",
             AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file_no_namespace())
         );
-        assert_eq!(r, "5.00000000000000000000000000000000000000000000000000000000000e-1*x+6.81640613709185816359170669566511987261485697756222332885129e-1");
+        assert_eq!(
+            r,
+            "5.00000000000000000000000000000000000000000000000000000000000e-1*x+6.81640613709185816359170669566511987261485697756222332885129e-1"
+        );
     }
 
     #[test]

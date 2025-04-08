@@ -29,7 +29,7 @@ impl<T> From<T> for BorrowedOrOwned<'_, T> {
     }
 }
 
-impl<'a, T> BorrowedOrOwned<'a, T> {
+impl<T> BorrowedOrOwned<'_, T> {
     /// Get a reference to the value.
     pub fn borrow(&self) -> &T {
         match self {
@@ -39,7 +39,7 @@ impl<'a, T> BorrowedOrOwned<'a, T> {
     }
 }
 
-impl<'a, T: Clone> BorrowedOrOwned<'a, T> {
+impl<T: Clone> BorrowedOrOwned<'_, T> {
     /// Yield an owned value.
     pub fn yield_owned(self) -> T {
         match self {

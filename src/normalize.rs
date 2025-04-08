@@ -10,7 +10,7 @@ use crate::{
     state::{RecycledAtom, State, Workspace},
 };
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Compare two atoms.
     pub fn cmp(&self, other: &AtomView<'_>) -> Ordering {
         if self == other {
@@ -675,7 +675,7 @@ impl Atom {
     }
 }
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     #[inline(always)]
     pub fn needs_normalization(&self) -> bool {
         match self {
@@ -1593,15 +1593,15 @@ mod test {
         let a = parse!("-v1*v2").unwrap();
 
         if let Atom::Mul(m) = &a {
-            assert_eq!(m.to_mul_view().has_coefficient(), true);
-            assert_eq!(m.to_mul_view().is_normalized(), true);
+            assert!(m.to_mul_view().has_coefficient());
+            assert!(m.to_mul_view().is_normalized());
         }
 
         let b = a * &parse!("-v3").unwrap();
 
         if let Atom::Mul(m) = &b {
-            assert_eq!(m.to_mul_view().has_coefficient(), false);
-            assert_eq!(m.to_mul_view().is_normalized(), true);
+            assert!(!m.to_mul_view().has_coefficient());
+            assert!(m.to_mul_view().is_normalized());
         } else {
             panic!("Expected a Mul");
         }
@@ -1609,8 +1609,8 @@ mod test {
         let c = &b * 2;
 
         if let Atom::Mul(m) = &c {
-            assert_eq!(m.to_mul_view().has_coefficient(), true);
-            assert_eq!(m.to_mul_view().is_normalized(), true);
+            assert!(m.to_mul_view().has_coefficient());
+            assert!(m.to_mul_view().is_normalized());
         } else {
             panic!("Expected a Mul");
         }

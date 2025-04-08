@@ -1442,7 +1442,7 @@ impl<T: AsRef<Atom>> AtomCore for T {
     }
 }
 
-impl<'a> AtomCore for AtomOrView<'a> {
+impl AtomCore for AtomOrView<'_> {
     fn as_atom_view(&self) -> AtomView {
         self.as_view()
     }

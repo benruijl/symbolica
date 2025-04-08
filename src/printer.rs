@@ -306,7 +306,7 @@ impl<'a> AtomPrinter<'a> {
     }
 }
 
-impl<'a> fmt::Display for AtomPrinter<'a> {
+impl fmt::Display for AtomPrinter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.atom
             .format(
@@ -318,7 +318,7 @@ impl<'a> fmt::Display for AtomPrinter<'a> {
     }
 }
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AtomView::Num(n) => n.fmt_debug(fmt),
@@ -487,13 +487,13 @@ impl<'a> AtomView<'a> {
     }
 }
 
-impl<'a> fmt::Debug for AtomView<'a> {
+impl fmt::Debug for AtomView<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         self.fmt_debug(fmt)
     }
 }
 
-impl<'a> FormattedPrintVar for VarView<'a> {
+impl FormattedPrintVar for VarView<'_> {
     fn fmt_output<W: std::fmt::Write>(
         &self,
         f: &mut W,
@@ -526,7 +526,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
     }
 }
 
-impl<'a> FormattedPrintNum for NumView<'a> {
+impl FormattedPrintNum for NumView<'_> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         <Self as std::fmt::Debug>::fmt(self, f)
     }
@@ -676,7 +676,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
     }
 }
 
-impl<'a> FormattedPrintMul for MulView<'a> {
+impl FormattedPrintMul for MulView<'_> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         <Self as std::fmt::Debug>::fmt(self, f)
     }
@@ -766,7 +766,7 @@ impl<'a> FormattedPrintMul for MulView<'a> {
     }
 }
 
-impl<'a> FormattedPrintFn for FunView<'a> {
+impl FormattedPrintFn for FunView<'_> {
     fn fmt_output<W: std::fmt::Write>(
         &self,
         f: &mut W,
@@ -793,12 +793,10 @@ impl<'a> FormattedPrintFn for FunView<'a> {
 
         if opts.latex {
             f.write_str("\\!\\left(")?;
+        } else if opts.square_brackets_for_function {
+            f.write_char('[')?;
         } else {
-            if opts.square_brackets_for_function {
-                f.write_char('[')?;
-            } else {
-                f.write_char('(')?;
-            }
+            f.write_char('(')?;
         }
 
         print_state.top_level_add_child = false;
@@ -831,7 +829,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
     }
 }
 
-impl<'a> FormattedPrintPow for PowView<'a> {
+impl FormattedPrintPow for PowView<'_> {
     fn fmt_output<W: std::fmt::Write>(
         &self,
         f: &mut W,
@@ -942,7 +940,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
     }
 }
 
-impl<'a> FormattedPrintAdd for AddView<'a> {
+impl FormattedPrintAdd for AddView<'_> {
     fn fmt_output<W: std::fmt::Write>(
         &self,
         f: &mut W,
@@ -1176,11 +1174,11 @@ mod test {
                 for (i, a) in f.iter().enumerate() {
                     a.format(&mut fmt, opt, PrintState::new()).unwrap();
                     if i < n_args - 1 {
-                        fmt.push_str(",");
+                        fmt.push(',');
                     }
                 }
 
-                fmt.push_str("}");
+                fmt.push('}');
             }
 
             Some(fmt)

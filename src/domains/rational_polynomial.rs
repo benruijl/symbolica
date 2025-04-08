@@ -762,8 +762,8 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: PositiveExponent>
-    Add<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: PositiveExponent>
+    Add<&'a RationalPolynomial<R, E>> for &RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -825,8 +825,8 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
-    Sub<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    Sub<&'a RationalPolynomial<R, E>> for &RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -847,8 +847,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Neg for Rationa
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
-    Mul<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    Mul<&'a RationalPolynomial<R, E>> for &RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -891,8 +891,8 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
-    Div<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    Div<&'a RationalPolynomial<R, E>> for &RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -1060,7 +1060,7 @@ where
         });
 
         let mut vars = (0..fs.len())
-            .map(|i| Variable::Temporary(i))
+            .map(Variable::Temporary)
             .collect::<Vec<_>>();
         for v in self.numerator.get_vars_ref() {
             vars.push(v.clone());
@@ -1563,7 +1563,7 @@ mod test {
         // root sum in the answer, rename the temporary variable
         // TODO: add rename function
         let mut v = l[0].0.get_variables().as_ref().clone();
-        *v.last_mut().unwrap() = new_var.clone().into();
+        *v.last_mut().unwrap() = new_var.into();
         let new_map = Arc::new(v);
 
         l[0].0.numerator.variables = new_map.clone();

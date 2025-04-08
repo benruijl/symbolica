@@ -319,9 +319,9 @@ impl State {
                 } else {
                     let data = &ID_TO_STR[r.get_id() as usize].1;
                     if data.file.is_empty() {
-                        return Err(
+                        Err(
                             format!("Symbol {} redefined with new attributes.", data.name).into(),
-                        );
+                        )
                     } else {
                         Err(format!("Symbol {} redefined with new attributes. The first definition occurred here: {}:{}.", data.name, data.file, data.line).into())
                     }
@@ -478,11 +478,11 @@ impl State {
         )?;
 
         for (s, n) in State::symbol_iter() {
-            dest.write_u32::<LittleEndian>(n.as_bytes().len() as u32)?;
+            dest.write_u32::<LittleEndian>(n.len() as u32)?;
             dest.write_all(n.as_bytes())?;
 
             let namespace = s.get_namespace();
-            dest.write_u32::<LittleEndian>(namespace.as_bytes().len() as u32)?;
+            dest.write_u32::<LittleEndian>(namespace.len() as u32)?;
             dest.write_all(namespace.as_bytes())?;
 
             dest.write_u8(s.get_wildcard_level())?;
@@ -897,11 +897,9 @@ mod tests {
                     if f.get_nargs() == 1 {
                         let arg = f.iter().next().unwrap();
                         if let AtomView::Fun(f2) = arg {
-                            if f2.get_symbol() == Atom::EXP {
-                                if f2.get_nargs() == 1 {
-                                    out.set_from_view(&f2.iter().next().unwrap());
-                                    return true;
-                                }
+                            if f2.get_symbol() == Atom::EXP && f2.get_nargs() == 1 {
+                                out.set_from_view(&f2.iter().next().unwrap());
+                                return true;
                             }
                         }
                     }

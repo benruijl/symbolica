@@ -16,18 +16,23 @@ fn main() {
 
     let mut fn_map = FunctionMap::new();
 
-    fn_map.add_constant(Atom::new_var(symbol!("pi")), Rational::from((22, 7)).into());
+    fn_map.add_constant(symbol!("pi").into(), Rational::from((22, 7)));
     fn_map
         .add_tagged_function(
             symbol!("p"),
-            vec![Atom::new_num(1).into()],
+            vec![Atom::new_num(1)],
             "p1".to_string(),
             vec![symbol!("z")],
             p1,
         )
         .unwrap();
     fn_map
-        .add_function(symbol!("f"), "f".to_string(), vec![symbol!("y"), symbol!("z")], f)
+        .add_function(
+            symbol!("f"),
+            "f".to_string(),
+            vec![symbol!("y"), symbol!("z")],
+            f,
+        )
         .unwrap();
     fn_map
         .add_function(symbol!("g"), "g".to_string(), vec![symbol!("y")], g)

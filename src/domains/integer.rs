@@ -1320,7 +1320,7 @@ impl Ring for IntegerRing {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0..range.1);
+        let r = rng.random_range(range.0..range.1);
         Integer::Natural(r)
     }
 
@@ -1457,7 +1457,7 @@ impl Add<Integer> for Integer {
     }
 }
 
-impl<'a> Add<Integer> for &'a Integer {
+impl Add<Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1466,7 +1466,7 @@ impl<'a> Add<Integer> for &'a Integer {
     }
 }
 
-impl<'a, 'b> Add<&'b Integer> for &'a Integer {
+impl<'b> Add<&'b Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1503,7 +1503,7 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
     }
 }
 
-impl<'a> Sub<&'a Integer> for Integer {
+impl Sub<&Integer> for Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1520,7 +1520,7 @@ impl<'a> Sub<&'a Integer> for Integer {
     }
 }
 
-impl<'a> Sub<Integer> for &'a Integer {
+impl Sub<Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1560,7 +1560,7 @@ impl Sub<Integer> for Integer {
     }
 }
 
-impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
+impl<'b> Sub<&'b Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1620,7 +1620,7 @@ impl<'a> Mul<&'a Integer> for Integer {
     }
 }
 
-impl<'a> Mul<Integer> for &'a Integer {
+impl Mul<Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1652,7 +1652,7 @@ impl Mul<Integer> for Integer {
     }
 }
 
-impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
+impl<'b> Mul<&'b Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1689,7 +1689,7 @@ impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
     }
 }
 
-impl<'a> Div<&'a Integer> for Integer {
+impl Div<&Integer> for Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1706,7 +1706,7 @@ impl<'a> Div<&'a Integer> for Integer {
     }
 }
 
-impl<'a> Div<Integer> for &'a Integer {
+impl Div<Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -1746,7 +1746,7 @@ impl Div<Integer> for Integer {
     }
 }
 
-impl<'a, 'b> Div<&'b Integer> for &'a Integer {
+impl<'b> Div<&'b Integer> for &Integer {
     type Output = Integer;
 
     #[inline(always)]
@@ -2137,7 +2137,7 @@ impl Neg for Integer {
     }
 }
 
-impl<'a> Neg for &'a Integer {
+impl Neg for &Integer {
     type Output = Integer;
 
     #[inline]
@@ -2191,7 +2191,7 @@ impl<'a> Rem<&'a Integer> for Integer {
     }
 }
 
-impl<'a> Rem<Integer> for &'a Integer {
+impl Rem<Integer> for &Integer {
     type Output = Integer;
 
     fn rem(self, rhs: Integer) -> Self::Output {
@@ -2199,7 +2199,7 @@ impl<'a> Rem<Integer> for &'a Integer {
     }
 }
 
-impl<'a> Rem for &'a Integer {
+impl Rem for &Integer {
     type Output = Integer;
 
     fn rem(self, rhs: Self) -> Self::Output {
@@ -2410,7 +2410,7 @@ impl Ring for MultiPrecisionIntegerRing {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0..range.1);
+        let r = rng.random_range(range.0..range.1);
         MultiPrecisionInteger::from(r)
     }
 
@@ -2558,9 +2558,9 @@ mod test {
         let a = Integer::from(5);
         let b: Integer = 7.into();
 
-        assert_eq!(a < 5, false);
-        assert_eq!(5 > a, false);
-        assert_eq!(a < Integer::from(-891273892173892178922i128), false);
+        assert!(a >= 5);
+        assert!(5 <= a);
+        assert!(a >= -891273892173892178922i128);
 
         let c = 2u32;
 

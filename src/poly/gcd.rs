@@ -186,7 +186,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
     /// upper bound could be too tight due to an unfortunate
     /// sample point, but this is rare.
     fn get_gcd_var_bound(ap: &Self, bp: &Self, vars: &[usize], var: usize) -> E {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // store a table for variables raised to a certain power
         let mut cache = (0..ap.nvars())
@@ -408,7 +408,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
             return Err(GCDError::BadOriginalImage);
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut failure_count = 0;
 
@@ -620,7 +620,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
         main_var: usize,
         shape: &[(MultivariatePolynomial<F, E>, E)],
     ) -> Result<MultivariatePolynomial<F, E>, GCDError> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut failure_count = 0;
 
@@ -1043,7 +1043,7 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
             .lcoeff_last_varorder(vars)
             .univariate_gcd(&b.lcoeff_last_varorder(vars));
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut failure_count = 0;
 
@@ -1084,16 +1084,13 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
 
             // performance dense reconstruction
             let mut gv = if vars.len() > 2 {
-                match MultivariatePolynomial::gcd_shape_modular(
+                MultivariatePolynomial::gcd_shape_modular(
                     &av,
                     &bv,
                     &vars[..vars.len() - 1],
                     bounds,
                     tight_bounds,
-                ) {
-                    Some(x) => x,
-                    None => return None,
-                }
+                )?
             } else {
                 let gg = av.univariate_gcd(&bv);
                 if gg.degree(vars[0]) > bounds[vars[0]] {
@@ -1733,7 +1730,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
                 })
                 .collect();
 
-            if zero_bound.len() > 0 {
+            if !zero_bound.is_empty() {
                 let a1 = a.to_multivariate_polynomial_list(&zero_bound, true);
                 let b1 = b.to_multivariate_polynomial_list(&zero_bound, true);
 

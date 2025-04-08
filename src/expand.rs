@@ -11,7 +11,7 @@ use crate::{
     state::{RecycledAtom, Workspace},
 };
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Expand an expression. The function [expand_via_poly] may be faster.
     pub(crate) fn expand(&self) -> Atom {
         Workspace::get_local().with(|ws| {
@@ -65,10 +65,10 @@ impl<'a> AtomView<'a> {
 
                 if let AtomView::Num(n) = exp {
                     if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
-                        if n.unsigned_abs() <= u32::MAX as u64 {
-                            if matches!(base, AtomView::Add(_) | AtomView::Mul(_)) {
-                                return var.map(|s| !base.contains(s)).unwrap_or(false);
-                            }
+                        if n.unsigned_abs() <= u32::MAX as u64
+                            && matches!(base, AtomView::Add(_) | AtomView::Mul(_))
+                        {
+                            return var.map(|s| !base.contains(s)).unwrap_or(false);
                         }
                     }
                 }
@@ -155,7 +155,7 @@ impl<'a> AtomView<'a> {
                 let add = out.to_add();
 
                 for arg in add_view {
-                    arg.expand_via_poly_impl::<E>(ws, var, &var_map, &mut t);
+                    arg.expand_via_poly_impl::<E>(ws, var, var_map, &mut t);
                     add.extend(t.as_view());
                 }
 
@@ -444,14 +444,14 @@ impl<'a> AtomView<'a> {
                 args.retain(|a| {
                     if let AtomView::Add(_) = a {
                         if sum.is_none() {
-                            sum = Some(a.clone());
+                            sum = Some(*a);
                             false
                         } else {
                             true
                         }
                     } else if let AtomView::Num(_) = a {
                         if num.is_none() {
-                            num = Some(a.clone());
+                            num = Some(*a);
                             false
                         } else {
                             true

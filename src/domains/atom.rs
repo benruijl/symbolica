@@ -205,7 +205,7 @@ impl Ring for AtomField {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0..range.1);
+        let r = rng.random_range(range.0..range.1);
         Atom::new_num(r)
     }
 

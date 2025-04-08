@@ -50,15 +50,11 @@ pub struct StatsOptions {
 }
 
 #[derive(Clone)]
+#[derive(Default)]
 pub struct TransformerState {
     pub stats_export: Option<Arc<Mutex<dyn std::io::Write + Send>>>,
 }
 
-impl Default for TransformerState {
-    fn default() -> Self {
-        Self { stats_export: None }
-    }
-}
 
 impl StatsOptions {
     pub fn format_size(&self, size: usize) -> String {
@@ -505,7 +501,6 @@ impl Transformer {
         let mut a = Atom::new();
         Workspace::get_local().with(|ws| {
             Transformer::execute_chain(input, std::slice::from_ref(self), ws, state, &mut a)
-                .map_err(|e| e)
         })?;
         Ok(a)
     }
@@ -539,7 +534,7 @@ impl Transformer {
                 Transformer::IfElse(cond, t1, t2) => {
                     if cond
                         .evaluate(&Some(cur_input))
-                        .map_err(|e| TransformerError::ValueError(e))?
+                        .map_err(TransformerError::ValueError)?
                         .is_true()
                     {
                         if Transformer::execute_chain(cur_input, t1, workspace, state, out)?
@@ -718,7 +713,7 @@ impl Transformer {
                     );
                 }
                 Transformer::ReplaceAllMultiple(replacements) => {
-                    cur_input.replace_multiple_into(&replacements, out);
+                    cur_input.replace_multiple_into(replacements, out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = cur_input {

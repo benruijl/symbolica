@@ -212,18 +212,16 @@ impl<N: Display, E: Display> Graph<N, E> {
                 } else {
                     out.push_str(&format!("  {} --- {};\n", x.vertices.0, x.vertices.1,));
                 }
+            } else if x.directed {
+                out.push_str(&format!(
+                    "  {} -->|\"{}\"| {};\n",
+                    x.vertices.0, x.data, x.vertices.1,
+                ));
             } else {
-                if x.directed {
-                    out.push_str(&format!(
-                        "  {} -->|\"{}\"| {};\n",
-                        x.vertices.0, x.data, x.vertices.1,
-                    ));
-                } else {
-                    out.push_str(&format!(
-                        "  {} ---|\"{}\"| {};\n",
-                        x.vertices.0, x.data, x.vertices.1,
-                    ));
-                }
+                out.push_str(&format!(
+                    "  {} ---|\"{}\"| {};\n",
+                    x.vertices.0, x.data, x.vertices.1,
+                ));
             }
         }
 
@@ -303,6 +301,12 @@ impl SpanningTree {
                     && !self.nodes[x.parent].back_edges.iter().any(|end| n == end)
             })
             .count()
+    }
+}
+
+impl<N, E> Default for Graph<N, E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -681,7 +685,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             g.add_node(n.clone());
         }
 
-        if external_edges.len() == 0 {
+        if external_edges.is_empty() {
             edge_signatures.push(vec![]);
             g.add_node(N::default());
         }
@@ -750,7 +754,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                     }
                 })
                 .sum::<usize>();
-            extra_edges = (extra_edges + 1) / 2;
+            extra_edges = extra_edges.div_ceil(2);
 
             let e = self.edges.len() + extra_edges + 1;
             if e > max_loops + self.nodes.len() {
@@ -898,7 +902,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         Ok(())
     }
 
-    fn distribute_edges<'a>(
+    fn distribute_edges(
         &mut self,
         source: usize,
         cur_target: usize,
@@ -906,14 +910,12 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         external_edges: &[(N, (Option<bool>, E))],
         edge_count: &mut [((Option<bool>, E), usize)],
         cur_edge_count_group_index: usize,
-        settings: &'a GenerationSettingsAndInput<N, E>,
+        settings: &GenerationSettingsAndInput<N, E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
             // check if the source is not a bridge
-            if settings.settings.allow_self_loops && settings.settings.max_bridges == Some(0) {
-                if source > external_edges.len()
-                    && self.node(source).edges.len()
+            if settings.settings.allow_self_loops && settings.settings.max_bridges == Some(0) && source > external_edges.len() && self.node(source).edges.len()
                         - self
                             .node(source)
                             .edges
@@ -923,10 +925,8 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                                 e.vertices.0 == source && e.vertices.1 == source
                             })
                             .count()
-                        == 1
-                {
-                    return Ok(());
-                }
+                        == 1 {
+                return Ok(());
             }
 
             return self.generate_impl(external_edges, source + 1, settings, edge_signatures, out);
@@ -1376,7 +1376,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                                 .all(|x| fixed.contains(&x.selected_vertex.unwrap()))
                             {
                                 node.children_to_visit
-                                    .retain(|x| reps.contains(&x) || fixed.contains(&x));
+                                    .retain(|x| reps.contains(x) || fixed.contains(x));
                             }
                         }
                     }
@@ -1385,10 +1385,8 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
 
                     // check if the last vertex we tried turned out to be in the same orbit as the first one
                     // due to newly found automorphisms
-                    if node.left_node {
-                        if orbit[node.selected_vertex.unwrap().to_usize()] == orig {
-                            node.children_visited_equal_to_first += 1;
-                        }
+                    if node.left_node && orbit[node.selected_vertex.unwrap().to_usize()] == orig {
+                        node.children_visited_equal_to_first += 1;
                     }
 
                     node.selected_vertex = None;

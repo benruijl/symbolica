@@ -278,10 +278,10 @@ where
         }
 
         // try random polynomials
-        let mut r = rand::thread_rng();
+        let mut r = rand::rng();
         loop {
             for c in coeffs.iter_mut() {
-                *c = r.gen_range(0..sample_max);
+                *c = r.random_range(0..sample_max);
             }
             coeffs[exp] = 1;
 
@@ -642,7 +642,7 @@ impl<R: Field> AlgebraicExtension<R> {
 
         let mut x_i = self.one();
         for _ in 0..=self.poly.degree(0) {
-            x_i = self.mul(&x_i, &x);
+            x_i = self.mul(&x_i, x);
             polys.push(x_i.clone());
 
             // solve system c_0 + c_1 x + c_i x^2 + ... + x^i = 0

@@ -746,7 +746,7 @@ impl Variable {
     }
 }
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Convert an expanded expression to a polynomial.
     fn to_polynomial_expanded<R: Ring + ConvertToRing, E: Exponent>(
         &self,

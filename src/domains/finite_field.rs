@@ -392,7 +392,7 @@ impl Ring for Zp {
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
         if e >= self.get_prime() as u64 - 1 {
-            e = e % (self.get_prime() as u64 - 1);
+            e %= self.get_prime() as u64 - 1;
         }
 
         if e == 0 {
@@ -444,7 +444,7 @@ impl Ring for Zp {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
+        let r = rng.random_range(range.0.max(0)..range.1.min(self.p as i64));
         FiniteFieldElement(r as u32)
     }
 
@@ -722,8 +722,8 @@ impl Ring for Zp64 {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
-        if e >= self.get_prime() as u64 - 1 {
-            e = e % (self.get_prime() as u64 - 1);
+        if e >= self.get_prime() - 1 {
+            e %= self.get_prime() - 1;
         }
 
         if e == 0 {
@@ -775,7 +775,7 @@ impl Ring for Zp64 {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0.max(0)..range.1.min(self.p.min(i64::MAX as u64) as i64));
+        let r = rng.random_range(range.0.max(0)..range.1.min(self.p.min(i64::MAX as u64) as i64));
         FiniteFieldElement(r as u64)
     }
 
@@ -1070,7 +1070,7 @@ impl Ring for FiniteField<Two> {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
-        rng.gen_range(0..2)
+        rng.random_range(0..2)
     }
 
     fn format<W: std::fmt::Write>(
@@ -1304,7 +1304,7 @@ impl Ring for FiniteField<Mersenne64> {
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
         if e >= self.get_prime().0 - 1 {
-            e = e % (self.get_prime().0 - 1);
+            e %= self.get_prime().0 - 1;
         }
 
         if e == 0 {
@@ -1357,7 +1357,7 @@ impl Ring for FiniteField<Mersenne64> {
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng
-            .gen_range(range.0.max(0)..range.1.min(Mersenne64::PRIME.min(i64::MAX as u64) as i64));
+            .random_range(range.0.max(0)..range.1.min(Mersenne64::PRIME.min(i64::MAX as u64) as i64));
         r as u64
     }
 
@@ -1493,10 +1493,8 @@ impl FiniteField<Integer> {
             if -two_c >= self.p {
                 *c += &self.p;
             }
-        } else {
-            if two_c >= self.p {
-                *c -= &self.p;
-            }
+        } else if two_c >= self.p {
+            *c -= &self.p;
         }
     }
 
@@ -1615,11 +1613,7 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if let Some(r) = self.try_inv(b) {
-            Some(self.mul(a, &r))
-        } else {
-            None
-        }
+        self.try_inv(b).map(|r| self.mul(a, &r))
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -1636,7 +1630,7 @@ impl Ring for FiniteField<Integer> {
         if opts.symmetric_representation_for_finite_field {
             Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            Z.format(&self.from_element(element).into(), opts, state, f)
+            Z.format(&self.from_element(element), opts, state, f)
         }
     }
 }

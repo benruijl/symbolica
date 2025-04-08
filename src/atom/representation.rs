@@ -16,8 +16,8 @@ use crate::{
 };
 
 use super::{
-    coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
     Atom, AtomView, SliceType, Symbol,
+    coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
 };
 
 const NUM_ID: u8 = 1;
@@ -48,13 +48,13 @@ pub type RawAtom = Vec<u8>;
 
 impl Borrow<BorrowedRawAtom> for Atom {
     fn borrow(&self) -> &BorrowedRawAtom {
-        &self.as_view().get_data()
+        self.as_view().get_data()
     }
 }
 
-impl<'a> Borrow<BorrowedRawAtom> for AtomView<'a> {
+impl Borrow<BorrowedRawAtom> for AtomView<'_> {
     fn borrow(&self) -> &BorrowedRawAtom {
-        &self.get_data()
+        self.get_data()
     }
 }
 
@@ -62,7 +62,7 @@ impl<'a> Borrow<BorrowedRawAtom> for AtomView<'a> {
 pub trait KeyLookup: Borrow<BorrowedRawAtom> + Eq + Hash {}
 
 impl KeyLookup for Atom {}
-impl<'a> KeyLookup for AtomView<'a> {}
+impl KeyLookup for AtomView<'_> {}
 
 /// An inline variable.
 #[derive(Copy, Clone)]
@@ -328,14 +328,16 @@ impl Atom {
 
     #[allow(dead_code)]
     pub(crate) unsafe fn from_raw(raw: RawAtom) -> Self {
-        match raw[0] & TYPE_MASK {
-            NUM_ID => Atom::Num(Num::from_raw(raw)),
-            VAR_ID => Atom::Var(Var::from_raw(raw)),
-            FUN_ID => Atom::Fun(Fun::from_raw(raw)),
-            MUL_ID => Atom::Mul(Mul::from_raw(raw)),
-            ADD_ID => Atom::Add(Add::from_raw(raw)),
-            POW_ID => Atom::Pow(Pow::from_raw(raw)),
-            _ => unreachable!("Unknown type {}", raw[0]),
+        unsafe {
+            match raw[0] & TYPE_MASK {
+                NUM_ID => Atom::Num(Num::from_raw(raw)),
+                VAR_ID => Atom::Var(Var::from_raw(raw)),
+                FUN_ID => Atom::Fun(Fun::from_raw(raw)),
+                MUL_ID => Atom::Mul(Mul::from_raw(raw)),
+                ADD_ID => Atom::Add(Add::from_raw(raw)),
+                POW_ID => Atom::Pow(Pow::from_raw(raw)),
+                _ => unreachable!("Unknown type {}", raw[0]),
+            }
         }
     }
 
@@ -1127,7 +1129,7 @@ pub struct VarView<'a> {
     data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<VarView<'b>> for VarView<'a> {
+impl<'b> PartialEq<VarView<'b>> for VarView<'_> {
     fn eq(&self, other: &VarView<'b>) -> bool {
         self.data == other.data
     }
@@ -1139,7 +1141,7 @@ pub struct FunView<'a> {
     data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<FunView<'b>> for FunView<'a> {
+impl<'b> PartialEq<FunView<'b>> for FunView<'_> {
     fn eq(&self, other: &FunView<'b>) -> bool {
         self.data == other.data
     }
@@ -1302,7 +1304,7 @@ pub struct NumView<'a> {
     data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<NumView<'b>> for NumView<'a> {
+impl<'b> PartialEq<NumView<'b>> for NumView<'_> {
     #[inline]
     fn eq(&self, other: &NumView<'b>) -> bool {
         self.data == other.data
@@ -1357,7 +1359,7 @@ pub struct PowView<'a> {
     data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<PowView<'b>> for PowView<'a> {
+impl<'b> PartialEq<PowView<'b>> for PowView<'_> {
     #[inline]
     fn eq(&self, other: &PowView<'b>) -> bool {
         self.data == other.data
@@ -1434,7 +1436,7 @@ pub struct MulView<'a> {
     data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<MulView<'b>> for MulView<'a> {
+impl<'b> PartialEq<MulView<'b>> for MulView<'_> {
     #[inline]
     fn eq(&self, other: &MulView<'b>) -> bool {
         self.data == other.data
@@ -1539,7 +1541,7 @@ pub struct AddView<'a> {
     data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<AddView<'b>> for AddView<'a> {
+impl<'b> PartialEq<AddView<'b>> for AddView<'_> {
     #[inline]
     fn eq(&self, other: &AddView<'b>) -> bool {
         self.data == other.data

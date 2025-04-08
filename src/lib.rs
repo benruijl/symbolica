@@ -225,7 +225,7 @@ impl LicenseManager {
                         abort();
                     }
 
-                    match TcpListener::bind(&format!("127.0.0.1:{}", port)) {
+                    match TcpListener::bind(format!("127.0.0.1:{}", port)) {
                         Ok(_) => {
                             std::thread::sleep(Duration::from_secs(1));
                         }

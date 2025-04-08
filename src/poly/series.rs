@@ -362,7 +362,7 @@ impl<F: Ring> Series<F> {
 
     #[inline]
     pub fn is_zero(&self) -> bool {
-        self.coefficients.len() == 0
+        self.coefficients.is_empty()
     }
 
     #[inline]
@@ -749,7 +749,7 @@ impl<F: Ring> Add for Series<F> {
     }
 }
 
-impl<'a, 'b, F: Ring> Add<&'a Series<F>> for &'b Series<F> {
+impl<'a, F: Ring> Add<&'a Series<F>> for &Series<F> {
     type Output = Series<F>;
 
     fn add(self, other: &'a Series<F>) -> Self::Output {
@@ -765,7 +765,7 @@ impl<F: Ring> Sub for Series<F> {
     }
 }
 
-impl<'a, 'b, F: Ring> Sub<&'a Series<F>> for &'b Series<F> {
+impl<'a, F: Ring> Sub<&'a Series<F>> for &Series<F> {
     type Output = Series<F>;
 
     fn sub(self, other: &'a Series<F>) -> Self::Output {
@@ -784,7 +784,7 @@ impl<F: Ring> Neg for Series<F> {
     }
 }
 
-impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
+impl<'a, F: Ring> Mul<&'a Series<F>> for &Series<F> {
     type Output = Series<F>;
 
     #[inline]
@@ -846,7 +846,7 @@ impl<'a, F: Ring> Mul<&'a Series<F>> for Series<F> {
     }
 }
 
-impl<'a, 'b> Div<&'a Series<AtomField>> for &'b Series<AtomField> {
+impl<'a> Div<&'a Series<AtomField>> for &Series<AtomField> {
     type Output = Series<AtomField>;
 
     fn div(self, other: &'a Series<AtomField>) -> Self::Output {
@@ -1035,7 +1035,7 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        if c.contains(&self.variable.to_atom()) {
+        if c.contains(self.variable.to_atom()) {
             return Err(
                 "Cannot compute the sine of a series with a constant term that depends on x",
             );
@@ -1091,7 +1091,7 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        if c.contains(&self.variable.to_atom()) {
+        if c.contains(self.variable.to_atom()) {
             return Err(
                 "Cannot compute the cosine of a series with a constant term that depends on x",
             );

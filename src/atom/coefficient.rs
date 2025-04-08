@@ -62,7 +62,7 @@ const fn get_size_of_natural(num_type: u8) -> u8 {
     }
 }
 
-impl<'a> SerializedRationalPolynomial<'a> {
+impl SerializedRationalPolynomial<'_> {
     pub fn deserialize(self) -> RationalPolynomial<IntegerRing, u16> {
         let mut source = self.0;
 
@@ -256,7 +256,7 @@ impl PackedRationalNumberWriter for Coefficient {
                     let l = r.clone().to_multi_prec();
                     let n = l.numer().significant_digits::<u8>() as u64;
                     let d = l.denom().significant_digits::<u8>() as u64;
-                    1 + (n, d).get_packed_size() + n as u64 + d as u64
+                    1 + (n, d).get_packed_size() + n + d
                 }
             },
             Coefficient::Float(f) => {

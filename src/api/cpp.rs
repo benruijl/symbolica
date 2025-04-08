@@ -1,21 +1,21 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 use std::fmt::Write;
 use std::os::raw::c_ulonglong;
 use std::sync::Arc;
 
 use smartstring::{LazyCompact, SmartString};
 
+use crate::domains::SelfRing;
 use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
 use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::Q;
-use crate::domains::SelfRing;
 use crate::parser::Token;
 use crate::poly::Variable;
+use crate::{LicenseManager, symbol};
 use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
 };
-use crate::{symbol, LicenseManager};
 
 struct LocalState {
     buffer: String,
@@ -31,7 +31,7 @@ struct Symbolica {
 }
 
 /// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn set_license_key(key: *const c_char) -> bool {
     let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap();
     LicenseManager::set_license_key(key)
@@ -40,14 +40,14 @@ unsafe extern "C" fn set_license_key(key: *const c_char) -> bool {
 }
 
 /// Check if the current Symbolica instance has a valid license key set.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn is_licensed() -> bool {
     LicenseManager::is_licensed()
 }
 
 /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
 /// `email`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn request_hobbyist_license(name: *const c_char, email: *const c_char) -> bool {
     let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap();
     let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
@@ -60,7 +60,7 @@ unsafe extern "C" fn request_hobbyist_license(name: *const c_char, email: *const
 
 /// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
 /// `email`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn request_trial_license(
     name: *const c_char,
     email: *const c_char,
@@ -78,7 +78,7 @@ unsafe extern "C" fn request_trial_license(
 
 /// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
 /// The key is written into `key`, which must be a buffer of at least 100 bytes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn get_license_key(email: *const c_char) -> bool {
     let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
 
@@ -92,7 +92,7 @@ unsafe extern "C" fn get_license_key(email: *const c_char) -> bool {
 }
 
 /// Create a new Symbolica handle.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn init() -> *mut Symbolica {
     LicenseManager::check();
 
@@ -110,7 +110,7 @@ unsafe extern "C" fn init() -> *mut Symbolica {
     Box::into_raw(Box::new(s))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn set_options(
     symbolica: *mut Symbolica,
     input_has_rational_numbers: bool,
@@ -122,7 +122,7 @@ unsafe extern "C" fn set_options(
     symbolica.local_state.exp_fits_in_u8 = exp_fits_in_u8;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let c = unsafe { CStr::from_ptr(vars) };
     let cstr = c.to_str().unwrap();
@@ -143,7 +143,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
 
 /// Simplify a rational polynomial. The return value is only valid until the next call to
 /// `simplify`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn simplify(
     symbolica: *mut Symbolica,
     input: *const c_char,
@@ -253,7 +253,7 @@ unsafe extern "C" fn simplify(
 
 /// Simplify a rational polynomial, factorizing the denominator. The return value is only valid until the next call to
 /// `simplify`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn simplify_factorized(
     symbolica: *mut Symbolica,
     input: *const c_char,
@@ -358,14 +358,14 @@ unsafe extern "C" fn simplify_factorized(
 }
 
 /// Free the Symbolica handle.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn drop(symbolica: *mut Symbolica) {
-    let _ = Box::from_raw(symbolica);
+    let _ = unsafe { Box::from_raw(symbolica) };
 }
 
 #[cfg(test)]
 mod test {
-    use std::ffi::{c_char, CStr};
+    use std::ffi::{CStr, c_char};
 
     use crate::domains::finite_field::Mersenne64;
 

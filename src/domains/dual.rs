@@ -148,7 +148,7 @@ pub const fn get_mult_table_size<const N: usize, const C: usize>(r: &[[usize; N]
     while i < r.len() {
         let mut j = 1; // skip first entry
         while j < r.len() {
-            if get_multiplication_index::<N, C>(&r, i, j).is_some() {
+            if get_multiplication_index::<N, C>(r, i, j).is_some() {
                 ri += 1;
             }
             j += 1;
@@ -170,7 +170,7 @@ pub const fn get_mult_table<const N: usize, const C: usize, const T: usize>(
     while i < r.len() {
         let mut j = 1; // skip first entry
         while j < r.len() {
-            if let Some(index) = get_multiplication_index::<N, C>(&r, i, j) {
+            if let Some(index) = get_multiplication_index::<N, C>(r, i, j) {
                 res[ri] = (i, j, index);
                 ri += 1;
             }
@@ -627,11 +627,11 @@ macro_rules! create_hyperdual_from_components {
                 let mut res = r.one();
 
                 for i in 1..Self::MAX_POW + 1 {
-                    accum = accum * &r;
+                    accum *= &r;
                     if i % 2 == 0 {
-                        res = res + accum.clone()
+                        res += accum.clone()
                     } else {
-                        res = res - accum.clone()
+                        res -= accum.clone()
                     }
                 }
 
@@ -794,8 +794,8 @@ macro_rules! create_hyperdual_from_components {
                 for p in 1..Self::MAX_POW + 1 {
                     scale *= p;
                     num = num.clone() * (num.from_usize(2).inv() - &num.from_usize(p as usize - 1));
-                    accum = accum * &r;
-                    res = res + accum.clone() * &num * &num.from_usize(scale).inv();
+                    accum *= &r;
+                    res += accum.clone() * &num * &num.from_usize(scale).inv();
                 }
 
                 res * &e
@@ -817,7 +817,7 @@ macro_rules! create_hyperdual_from_components {
                 for p in 1..Self::MAX_POW + 1 {
                     scale *= -1;
                     res += accum.clone() * &e.from_i64(p as i64 * scale).inv();
-                    accum = accum * &r;
+                    accum *= &r;
                 }
 
                 res
@@ -834,8 +834,8 @@ macro_rules! create_hyperdual_from_components {
                 let mut scale = 1;
                 for p in 0..Self::MAX_POW {
                     scale *= p + 1;
-                    accum = accum * &r; // TODO: many multiplications with 0
-                    res = res + accum.clone() * &e.from_usize(scale).inv();
+                    accum *= &r; // TODO: many multiplications with 0
+                    res += accum.clone() * &e.from_usize(scale).inv();
                 }
 
                 res * &e
@@ -863,9 +863,9 @@ macro_rules! create_hyperdual_from_components {
 
                     let s = sp.clone() * &b * &e.from_usize(scale).inv();
 
-                    sp = sp * &p;
+                    sp *= &p;
 
-                    e = e + s;
+                    e += s;
                 }
 
                 e
@@ -893,9 +893,9 @@ macro_rules! create_hyperdual_from_components {
 
                     let s = sp.clone() * &b * &e.from_usize(scale).inv();
 
-                    sp = sp * &p;
+                    sp *= &p;
 
-                    e = e + s;
+                    e += s;
                 }
 
                 e
@@ -940,9 +940,9 @@ macro_rules! create_hyperdual_from_components {
 
                     let s = sp.clone() * b * &e.from_usize(scale).inv();
 
-                    sp = sp * &p;
+                    sp *= &p;
 
-                    e = e + s;
+                    e += s;
                 }
 
                 e
@@ -966,9 +966,9 @@ macro_rules! create_hyperdual_from_components {
 
                     let s = sp.clone() * b * &e.from_usize(scale).inv();
 
-                    sp = sp * &p;
+                    sp *= &p;
 
-                    e = e + s;
+                    e += s;
                 }
 
                 e

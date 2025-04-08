@@ -14,7 +14,7 @@ use crate::{
     tensors::matrix::Matrix,
 };
 
-impl<'a> AtomView<'a> {
+impl AtomView<'_> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
     pub(crate) fn nsolve<N: SingleFloat + Real + PartialOrd>(
         &self,
@@ -47,7 +47,7 @@ impl<'a> AtomView<'a> {
                 return Err("Derivative is zero".to_owned());
             }
 
-            cur = cur - f_val.clone() / df_val;
+            cur -= f_val.clone() / df_val;
             if f_val.norm() < prec {
                 return Ok(cur);
             }
@@ -221,7 +221,7 @@ impl<'a> AtomView<'a> {
         for (si, a) in system.iter().enumerate() {
             let rat: RationalPolynomial<Z, E> = a.to_rational_polynomial(&Q, &Z, None);
 
-            let poly = rat.to_polynomial(&vars, true).unwrap();
+            let poly = rat.to_polynomial(vars, true).unwrap();
 
             for e in &mut row {
                 *e = RationalPolynomial::<_, E>::new(&Z, poly.variables.clone());
@@ -418,7 +418,7 @@ mod test {
         )
         .unwrap();
 
-        assert!((r[0].clone() - F64::from(5.6729734993961234e-1)).norm() < 1e-10.into());
-        assert!((r[1].clone() - F64::from(-3.0944227920271083e-1)).norm() < 1e-10.into());
+        assert!((r[0] - F64::from(5.672_973_499_396_123e-1)).norm() < 1e-10.into());
+        assert!((r[1] - F64::from(-3.0944227920271083e-1)).norm() < 1e-10.into());
     }
 }

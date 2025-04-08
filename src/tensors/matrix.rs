@@ -936,11 +936,11 @@ impl<F: Ring> Matrix<F> {
         let mut m = Matrix::new(self.nrows, self.ncols + matrix.ncols, self.field.clone());
 
         for (r, (r1, r2)) in self.row_iter().zip(matrix.row_iter()).enumerate() {
-            m.data[r as usize * m.ncols as usize
-                ..r as usize * m.ncols as usize + self.ncols as usize]
+            m.data[r * m.ncols as usize
+                ..r * m.ncols as usize + self.ncols as usize]
                 .clone_from_slice(r1);
-            m.data[r as usize * m.ncols as usize + self.ncols as usize
-                ..r as usize * m.ncols as usize + m.ncols as usize]
+            m.data[r * m.ncols as usize + self.ncols as usize
+                ..r * m.ncols as usize + m.ncols as usize]
                 .clone_from_slice(r2);
         }
 

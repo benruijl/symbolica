@@ -363,15 +363,13 @@ impl Token {
             }
 
             Ok(())
+        } else if let Token::Number(n) = other {
+            Err(format!("operator expected between '{}' and '{}'", self, n))
         } else {
-            if let Token::Number(n) = other {
-                Err(format!("operator expected between '{}' and '{}'", self, n))
-            } else {
-                Err(format!(
-                    "operator expected, but found '{}'. Are parentheses unbalanced?",
-                    self
-                ))
-            }
+            Err(format!(
+                "operator expected, but found '{}'. Are parentheses unbalanced?",
+                self
+            ))
         }
     }
 

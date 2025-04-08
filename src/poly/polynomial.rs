@@ -376,7 +376,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             return false;
         }
         debug_assert!(!self.ring.is_zero(self.coefficients.first().unwrap()));
-        return self.exponents.iter().all(|e| e.is_zero());
+        self.exponents.iter().all(|e| e.is_zero())
     }
 
     /// Get the constant term of the polynomial.
@@ -997,8 +997,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> Add for MultivariatePolynomial<F, E
     }
 }
 
-impl<'a, 'b, F: Ring, E: Exponent, O: MonomialOrder> Add<&'a MultivariatePolynomial<F, E, O>>
-    for &'b MultivariatePolynomial<F, E, O>
+impl<F: Ring, E: Exponent, O: MonomialOrder> Add<&MultivariatePolynomial<F, E, O>>
+    for &MultivariatePolynomial<F, E, O>
 {
     type Output = MultivariatePolynomial<F, E, O>;
 
@@ -1092,8 +1092,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> Sub for MultivariatePolynomial<F, E
     }
 }
 
-impl<'a, 'b, F: Ring, E: Exponent, O: MonomialOrder> Sub<&'a MultivariatePolynomial<F, E, O>>
-    for &'b MultivariatePolynomial<F, E, O>
+impl<'a, F: Ring, E: Exponent, O: MonomialOrder> Sub<&'a MultivariatePolynomial<F, E, O>>
+    for &MultivariatePolynomial<F, E, O>
 {
     type Output = MultivariatePolynomial<F, E, O>;
 
@@ -1113,8 +1113,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> Neg for MultivariatePolynomial<F, E
     }
 }
 
-impl<'a, 'b, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E, LexOrder>>
-    for &'b MultivariatePolynomial<F, E, LexOrder>
+impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E, LexOrder>>
+    for &MultivariatePolynomial<F, E, LexOrder>
 {
     type Output = MultivariatePolynomial<F, E, LexOrder>;
 
@@ -1172,8 +1172,8 @@ impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E, LexOrder>>
     }
 }
 
-impl<'a, 'b, F: EuclideanDomain, E: PositiveExponent>
-    Div<&'a MultivariatePolynomial<F, E, LexOrder>> for &'b MultivariatePolynomial<F, E, LexOrder>
+impl<'a, F: EuclideanDomain, E: PositiveExponent>
+    Div<&'a MultivariatePolynomial<F, E, LexOrder>> for &MultivariatePolynomial<F, E, LexOrder>
 {
     type Output = MultivariatePolynomial<F, E, LexOrder>;
 
@@ -2297,7 +2297,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let mut shift = 1;
             let mut res = s.last().unwrap().to_i32() as u32;
             for (ee, &x) in s.iter().rev().skip(1).zip(max_degs_rev) {
-                shift = shift * x as u32;
+                shift *= x as u32;
                 res += ee.to_i32() as u32 * shift;
             }
             res
@@ -2434,7 +2434,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             monomials: &'a UnsafeCell<(usize, Vec<E>)>,
         }
 
-        impl<'a, E: Exponent> PartialEq for Key<'a, E> {
+        impl<E: Exponent> PartialEq for Key<'_, E> {
             #[inline(always)]
             fn eq(&self, other: &Self) -> bool {
                 unsafe {
@@ -2445,22 +2445,22 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
         }
 
-        impl<'a, E: Exponent> Eq for Key<'a, E> {}
+        impl<E: Exponent> Eq for Key<'_, E> {}
 
-        impl<'a, E: Exponent> PartialOrd for Key<'a, E> {
+        impl<E: Exponent> PartialOrd for Key<'_, E> {
             #[inline(always)]
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
                 Some(self.cmp(other))
             }
         }
 
-        impl<'a, E: Exponent> Ord for Key<'a, E> {
+        impl<E: Exponent> Ord for Key<'_, E> {
             #[inline(always)]
             fn cmp(&self, other: &Self) -> Ordering {
                 unsafe {
                     let b1 = &*self.monomials.get();
                     b1.1.get_unchecked(self.index..self.index + b1.0)
-                        .cmp(&b1.1.get_unchecked(other.index..other.index + b1.0))
+                        .cmp(b1.1.get_unchecked(other.index..other.index + b1.0))
                 }
             }
         }
@@ -2729,7 +2729,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let mut shift = 1;
             let mut res = Integer::from(s.last().unwrap().to_i32());
             for (ee, &x) in s.iter().rev().skip(1).zip(max_degs_rev) {
-                shift = shift * x as u32;
+                shift *= x as u32;
                 res += ee.to_i32() as u32 * shift;
             }
             res
@@ -2795,7 +2795,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     &mut coefficient,
                     &g_coeff[j],
                     &self.ring.mul(
-                        &self.coefficient_back(i),
+                        self.coefficient_back(i),
                         &self
                             .ring
                             .nth(g_exp[j].clone() - f_exp[i].clone() * pow as u64),
@@ -3033,9 +3033,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         // check if the leading coefficients divide
-        if self.ring.try_div(&self.lcoeff(), &div.lcoeff()).is_none() {
-            return None;
-        }
+        self.ring.try_div(&self.lcoeff(), &div.lcoeff())?;
 
         if !self.is_polynomial() || !div.is_polynomial() {
             // remove all negative exponents
@@ -3176,7 +3174,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
 
             for c in &mut q.coefficients {
-                if let Some(quot) = self.ring.try_div(c, &dive.coefficient) {
+                if let Some(quot) = self.ring.try_div(c, dive.coefficient) {
                     *c = quot;
                 } else {
                     return (self.zero(), self.clone());
@@ -3358,13 +3356,11 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             if div.last_exponents().iter().zip(&m).all(|(ge, me)| me >= ge) {
                 if let Some(quot) = self.ring.try_div(&c, &div.lcoeff()) {
                     q.coefficients.push(quot);
+                } else if abort_on_remainder {
+                    r = self.one();
+                    return (q, r);
                 } else {
-                    if abort_on_remainder {
-                        r = self.one();
-                        return (q, r);
-                    } else {
-                        return (self.zero(), self.clone());
-                    }
+                    return (self.zero(), self.clone());
                 }
 
                 q.exponents.extend(
@@ -3616,13 +3612,11 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             if let Some(q_e) = q_e {
                 if let Some(quot) = self.ring.try_div(&c, &div.lcoeff()) {
                     q.coefficients.push(quot);
+                } else if abort_on_remainder {
+                    r = self.one();
+                    return (q, r);
                 } else {
-                    if abort_on_remainder {
-                        r = self.one();
-                        return (q, r);
-                    } else {
-                        return (self.zero(), self.clone());
-                    }
+                    return (self.zero(), self.clone());
                 }
 
                 let len = q.exponents.len();

@@ -4,7 +4,7 @@
 use std::{cmp::Reverse, sync::Arc};
 
 use ahash::{HashMap, HashSet, HashSetExt};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use tracing::debug;
 
 use crate::{
@@ -1128,7 +1128,7 @@ where
             return vec![s];
         }
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut random_poly = self.zero_with_capacity(d);
         let mut exp = vec![E::zero(); self.nvars()];
 
@@ -1330,7 +1330,7 @@ where
         let mut uni_f = self.replace(interpolation_var, &sample_point);
 
         let mut i = 0;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         loop {
             if self.ring.size() == i {
                 let field = self
@@ -1786,7 +1786,7 @@ where
         let mut sample_points: Vec<_> = order[1..].iter().map(|i| (*i, self.ring.zero())).collect();
         let mut uni_f;
         let mut biv_f;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let degree = self.degree(order[0]);
 
         let uni_lcoeff = self.univariate_lcoeff(order[0]);
@@ -1824,7 +1824,7 @@ where
             for s in &mut sample_points {
                 s.1 = self
                     .ring
-                    .nth(rng.gen_range(0..=coefficient_upper_bound).into());
+                    .nth(rng.random_range(0..=coefficient_upper_bound).into());
             }
 
             biv_f = self.clone();
@@ -3323,7 +3323,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             order[1..].iter().map(|i| (*i, Integer::zero())).collect();
         let mut cur_uni_f;
         let mut cur_biv_f;
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let degree = self.degree(order[0]);
         let mut bivariate_factors: Vec<_>;
 
@@ -3332,7 +3332,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut content_fail_count = 0;
         'new_sample: loop {
             for s in &mut cur_sample_points {
-                s.1 = Integer::Natural(rng.gen_range(0..=coefficient_upper_bound));
+                s.1 = Integer::Natural(rng.random_range(0..=coefficient_upper_bound));
                 debug!("Sample x{} {}", s.0, s.1);
             }
 

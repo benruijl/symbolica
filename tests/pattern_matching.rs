@@ -46,7 +46,7 @@ fn replace_once() {
 
     let pattern = pat_expr.as_view().to_pattern();
 
-    let r: Vec<_> = expr.replace(&pattern).iter(&rhs).into_iter().collect();
+    let r: Vec<_> = expr.replace(&pattern).iter(&rhs).collect();
 
     let res = [
         "g(z)*f(y)*f(f(x))",

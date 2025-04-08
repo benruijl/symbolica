@@ -23,8 +23,8 @@ use dyn_clone::DynClone;
 
 use crate::{
     atom::{
-        representation::{InlineVar, ListSlice},
         Atom, AtomCore, AtomType, AtomView, Num, SliceType, Symbol,
+        representation::{InlineVar, ListSlice},
     },
     state::{RecycledAtom, Workspace},
     transformer::{Transformer, TransformerError},
@@ -96,21 +96,21 @@ pub enum ReplaceWith<'a> {
     Map(Box<dyn MatchMap>),
 }
 
-impl<'a> Into<ReplaceWith<'a>> for Atom {
-    fn into(self) -> ReplaceWith<'a> {
-        ReplaceWith::Pattern(BorrowedOrOwned::Owned(self.into()))
+impl From<Atom> for ReplaceWith<'_> {
+    fn from(val: Atom) -> Self {
+        ReplaceWith::Pattern(BorrowedOrOwned::Owned(val.into()))
     }
 }
 
-impl<'a> Into<ReplaceWith<'a>> for &'a Pattern {
-    fn into(self) -> ReplaceWith<'a> {
-        ReplaceWith::Pattern(BorrowedOrOwned::Borrowed(self))
+impl<'a> From<&'a Pattern> for ReplaceWith<'a> {
+    fn from(val: &'a Pattern) -> Self {
+        ReplaceWith::Pattern(BorrowedOrOwned::Borrowed(val))
     }
 }
 
-impl<'a> Into<ReplaceWith<'a>> for Pattern {
-    fn into(self) -> ReplaceWith<'a> {
-        ReplaceWith::Pattern(BorrowedOrOwned::Owned(self))
+impl From<Pattern> for ReplaceWith<'_> {
+    fn from(val: Pattern) -> Self {
+        ReplaceWith::Pattern(BorrowedOrOwned::Owned(val))
     }
 }
 
@@ -210,7 +210,7 @@ impl BorrowReplacement for &Replacement {
     }
 }
 
-impl<'a> BorrowReplacement for BorrowedReplacement<'a> {
+impl BorrowReplacement for BorrowedReplacement<'_> {
     fn borrow(&self) -> BorrowedReplacement {
         *self
     }
@@ -986,7 +986,7 @@ impl<'a> AtomView<'a> {
             if r.pattern.could_match(*self) {
                 let mut match_stack = WrappedMatchStack::new(conditions, settings);
 
-                let mut it = AtomMatchIterator::new(&r.pattern, *self);
+                let mut it = AtomMatchIterator::new(r.pattern, *self);
                 if let Some((_, used_flags)) = it.next(&mut match_stack) {
                     let mut rhs_subs = workspace.new_atom();
 
@@ -1022,7 +1022,7 @@ impl<'a> AtomView<'a> {
                             )
                             && !matches!(
                                 r.rhs,
-                                ReplaceWith::Pattern(BorrowedOrOwned::Borrowed(&Pattern::Literal(
+                                ReplaceWith::Pattern(BorrowedOrOwned::Borrowed(Pattern::Literal(
                                     _
                                 )))
                             )
@@ -1576,7 +1576,7 @@ impl Pattern {
         match self {
             Pattern::Literal(atom) => out.set_from_view(&atom.as_view()),
             Pattern::Wildcard(symbol) => {
-                if let Some(a) = matches.get(&symbol) {
+                if let Some(a) = matches.get(symbol) {
                     out.set_from_view(&a.as_view());
                 } else {
                     out.to_var(*symbol);
@@ -1673,7 +1673,7 @@ impl Pattern {
                     )))?;
                 }
             }
-            Pattern::Fn(mut name, args) => {
+            &Pattern::Fn(mut name, ref args) => {
                 if name.get_wildcard_level() > 0 {
                     if let Some(w) = match_stack.get(name) {
                         if let Match::FunctionName(fname) = w {
@@ -2095,7 +2095,7 @@ impl Symbol {
     /// symbol!("x__").restrict(WildcardRestriction::Length(2, Some(3)));
     /// ```
     pub fn restrict(&self, restriction: WildcardRestriction) -> Condition<PatternRestriction> {
-        Condition::from((*self, restriction.into()))
+        Condition::from((*self, restriction))
     }
 
     /// Restrict a wildcard symbol with a filter function `f`.
@@ -2154,7 +2154,7 @@ pub trait Evaluate {
     type State<'a>;
 
     /// Evaluate a condition.
-    fn evaluate<'a>(&self, state: &Self::State<'a>) -> Result<ConditionResult, String>;
+    fn evaluate(&self, state: &Self::State<'_>) -> Result<ConditionResult, String>;
 }
 
 impl<T: Evaluate> Evaluate for Condition<T> {
@@ -2369,13 +2369,13 @@ impl Evaluate for Relation {
                         })?;
 
                     match out1.as_ref() {
-                        Atom::Var(_) => (*b == AtomType::Var).into(),
-                        Atom::Fun(_) => (*b == AtomType::Fun).into(),
-                        Atom::Num(_) => (*b == AtomType::Num).into(),
-                        Atom::Add(_) => (*b == AtomType::Add).into(),
-                        Atom::Mul(_) => (*b == AtomType::Mul).into(),
-                        Atom::Pow(_) => (*b == AtomType::Pow).into(),
-                        Atom::Zero => (*b == AtomType::Num).into(),
+                        Atom::Var(_) => *b == AtomType::Var,
+                        Atom::Fun(_) => *b == AtomType::Fun,
+                        Atom::Num(_) => *b == AtomType::Num,
+                        Atom::Add(_) => *b == AtomType::Add,
+                        Atom::Mul(_) => *b == AtomType::Mul,
+                        Atom::Pow(_) => *b == AtomType::Pow,
+                        Atom::Zero => *b == AtomType::Num,
                     }
                 }
             }
@@ -2459,7 +2459,7 @@ impl Condition<PatternRestriction> {
                 let (v, r) = match restriction {
                     PatternRestriction::Wildcard((v, r)) => (v, r),
                     PatternRestriction::MatchStack(mf) => {
-                        return mf(&stack);
+                        return mf(stack);
                     }
                 };
 
@@ -2653,7 +2653,7 @@ pub enum Match<'a> {
     FunctionName(Symbol),
 }
 
-impl<'a> std::fmt::Display for Match<'a> {
+impl std::fmt::Display for Match<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Single(a) => a.fmt(f),
@@ -2690,7 +2690,7 @@ impl<'a> std::fmt::Display for Match<'a> {
     }
 }
 
-impl<'a> std::fmt::Debug for Match<'a> {
+impl std::fmt::Debug for Match<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Single(a) => f.debug_tuple("").field(a).finish(),
@@ -2700,7 +2700,7 @@ impl<'a> std::fmt::Debug for Match<'a> {
     }
 }
 
-impl<'a> Match<'a> {
+impl Match<'_> {
     /// Create a new atom from a matched subexpression.
     /// Arguments lists are wrapped in the function `arg`.
     pub fn to_atom(&self) -> Atom {
@@ -2823,6 +2823,12 @@ impl<'a> From<Vec<(Symbol, Match<'a>)>> for MatchStack<'a> {
     }
 }
 
+impl Default for MatchStack<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> MatchStack<'a> {
     pub fn new() -> Self {
         MatchStack { stack: Vec::new() }
@@ -2858,7 +2864,7 @@ pub struct WrappedMatchStack<'a, 'b> {
     settings: &'b MatchSettings,
 }
 
-impl<'a> std::fmt::Display for MatchStack<'a> {
+impl std::fmt::Display for MatchStack<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("[")?;
         for (i, (k, v)) in self.stack.iter().enumerate() {
@@ -2881,13 +2887,13 @@ impl<'a, 'b> IntoIterator for &'b MatchStack<'a> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for WrappedMatchStack<'a, 'b> {
+impl std::fmt::Display for WrappedMatchStack<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.stack.fmt(f)
     }
 }
 
-impl<'a, 'b> std::fmt::Debug for WrappedMatchStack<'a, 'b> {
+impl std::fmt::Debug for WrappedMatchStack<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MatchStack")
             .field("stack", &self.stack)
@@ -3462,7 +3468,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                         let mut k = start_index;
                         loop {
                             if k == self.target.len() {
-                                if self.cyclic && w.indices.len() > 0 {
+                                if self.cyclic && !w.indices.is_empty() {
                                     // allow the wildcard to wrap around
                                     k = 0;
                                 } else {
@@ -3951,7 +3957,7 @@ impl<'a: 'b, 'b> Iterator for PatternAtomTreeIterator<'a, 'b> {
 
     /// Get the match map. Use [PatternAtomTreeIterator::next_detailed] to get more information.
     fn next(&mut self) -> Option<HashMap<Symbol, Atom>> {
-        if let Some(_) = self.next_detailed() {
+        if self.next_detailed().is_some() {
             Some(
                 self.match_stack
                     .get_matches()
@@ -4131,7 +4137,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                         .unwrap(); // TODO: escalate?
                     }
                     ReplaceWith::Map(f) => {
-                        let mut new_atom = f(&pattern_match.match_stack);
+                        let mut new_atom = f(pattern_match.match_stack);
                         std::mem::swap(&mut new_atom, &mut new_rhs);
                     }
                 }
@@ -4287,14 +4293,14 @@ mod test {
         let p = parse!("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap();
 
         let r = a.replace(p).with_map(move |m| {
-            parse!(&format!(
+            let s = format!(
                 "{}(mu{})*{}(mu{})",
                 m.get(v1).unwrap().to_atom().printer(PrintOptions::file()),
                 m.get(v2).unwrap().to_atom().printer(PrintOptions::file()),
                 m.get(v4).unwrap().to_atom().printer(PrintOptions::file()),
                 m.get(v5).unwrap().to_atom().printer(PrintOptions::file())
-            ))
-            .unwrap()
+            );
+            parse!(&s).unwrap()
         });
         let res = parse!("v1(mu2)*v2(mu3)").unwrap();
         assert_eq!(r, res);
@@ -4308,11 +4314,7 @@ mod test {
 
         let rest = symbol!("v1_").filter(|x| {
             let n: Result<i64, _> = x.to_atom().try_into();
-            if let Ok(y) = n {
-                y > 0i64
-            } else {
-                false
-            }
+            if let Ok(y) = n { y > 0i64 } else { false }
         });
 
         a = a.replace(p1).when(rest).repeat().with(rhs1);

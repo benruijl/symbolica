@@ -6,17 +6,18 @@ use std::{
     hash::{Hash, Hasher},
     os::raw::c_ulong,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
 use ahash::{AHasher, HashMap};
-use rand::{thread_rng, Rng};
+use rand::{Rng, rng};
 
 use self_cell::self_cell;
 
 use crate::{
+    LicenseManager,
     atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
@@ -29,7 +30,6 @@ use crate::{
     },
     id::ConditionResult,
     state::State,
-    LicenseManager,
 };
 
 type EvalFnType<A, T> = Box<
@@ -64,6 +64,12 @@ pub struct FunctionMap<T = Rational> {
     map: HashMap<Atom, ConstOrExpr<T>>,
     tagged_fn_map: HashMap<(Symbol, Vec<Atom>), ConstOrExpr<T>>,
     tag: HashMap<Symbol, usize>,
+}
+
+impl<T> Default for FunctionMap<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> FunctionMap<T> {
@@ -371,13 +377,13 @@ impl<T: Clone> HashedExpression<T> {
             HashedExpression::Const(_, c) => Expression::Const(c.clone()),
             HashedExpression::Parameter(_, p) => Expression::Parameter(*p),
             HashedExpression::Eval(_, i, v) => {
-                Expression::Eval(*i, v.into_iter().map(|x| x.to_expression()).collect())
+                Expression::Eval(*i, v.iter().map(|x| x.to_expression()).collect())
             }
             HashedExpression::Add(_, a) => {
-                Expression::Add(a.into_iter().map(|x| x.to_expression()).collect())
+                Expression::Add(a.iter().map(|x| x.to_expression()).collect())
             }
             HashedExpression::Mul(_, a) => {
-                Expression::Mul(a.into_iter().map(|x| x.to_expression()).collect())
+                Expression::Mul(a.iter().map(|x| x.to_expression()).collect())
             }
             HashedExpression::Pow(_, p) => Expression::Pow(Box::new((p.0.to_expression(), p.1))),
             HashedExpression::Powf(_, p) => {
@@ -494,9 +500,9 @@ impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
         false
     }
 
-    fn replace_subexpression<'a>(
+    fn replace_subexpression(
         &mut self,
-        subexp: &HashMap<&'a HashedExpression<T>, usize>,
+        subexp: &HashMap<&HashedExpression<T>, usize>,
         skip_root: bool,
     ) {
         if !skip_root {
@@ -835,9 +841,7 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         let total_remove = to_remove.len();
 
-        for x in &mut affected_lines {
-            *x = false;
-        }
+        affected_lines.fill(false);
 
         let old_len = self.instructions.len();
 
@@ -875,10 +879,10 @@ impl<T: Default> ExpressionEvaluator<T> {
                             a.retain(|x| *x != l);
 
                             if count % 2 == 1 {
-                                a.push(l.clone());
+                                a.push(l);
                             }
 
-                            a.extend(std::iter::repeat(new_idx).take(pairs));
+                            a.extend(std::iter::repeat_n(new_idx, pairs));
                             a.sort();
                         }
                     } else {
@@ -900,17 +904,13 @@ impl<T: Default> ExpressionEvaluator<T> {
 
                             // add back removed indices in cases such as idx1*idx2*idx2
                             if idx1_count > pair_count {
-                                a.extend(
-                                    std::iter::repeat(l.clone()).take(idx1_count - pair_count),
-                                );
+                                a.extend(std::iter::repeat_n(l, idx1_count - pair_count));
                             }
                             if idx2_count > pair_count {
-                                a.extend(
-                                    std::iter::repeat(r.clone()).take(idx2_count - pair_count),
-                                );
+                                a.extend(std::iter::repeat_n(r, idx2_count - pair_count));
                             }
 
-                            a.extend(std::iter::repeat(new_idx).take(pair_count));
+                            a.extend(std::iter::repeat_n(new_idx, pair_count));
                             a.sort();
                         }
                     }
@@ -933,7 +933,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                     last_dep = last_dep.max(*v);
                 }
 
-                let ins = if last_dep + 1 <= self.reserved_indices {
+                let ins = if last_dep < self.reserved_indices {
                     0
                 } else {
                     last_dep + 1 - self.reserved_indices
@@ -1144,8 +1144,8 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
             }
         }
 
-        self.instructions.extend(other.instructions.drain(..));
-        self.result_indices.extend(other.result_indices.drain(..));
+        self.instructions.append(&mut other.instructions);
+        self.result_indices.append(&mut other.result_indices);
         self.reserved_indices = new_reserved_indices;
 
         // undo the stack optimization
@@ -1316,7 +1316,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             InlineASM::None => self.export_cpp_str(function_name, include_header),
         };
 
-        let _ = std::fs::write(&filename, cpp)?;
+        std::fs::write(&filename, cpp)?;
         Ok(ExportedCode {
             source_filename: filename,
             function_name: function_name.to_string(),
@@ -1326,7 +1326,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
         let mut res = String::new();
         if include_header {
-            res += &"#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
         };
 
         res += &format!(
@@ -1364,8 +1364,14 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n";
 
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!(
+            "\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
+            function_name
+        );
+        res += &format!(
+            "\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
+            function_name
+        );
 
         res
     }
@@ -1435,7 +1441,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     ) -> String {
         let mut res = String::new();
         if include_header {
-            res += &"#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
         };
 
         res += &format!(
@@ -1457,7 +1463,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         );
 
-        res += &format!("extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n", function_name);
+        res += &format!(
+            "extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n",
+            function_name
+        );
 
         self.export_asm_complex_impl(&self.instructions, function_name, asm_flavour, &mut res);
 
@@ -2371,10 +2380,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         match asm_flavour {
             InlineASM::X64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
+                *out += &format!(
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",
+                    function_name
+                );
             }
             InlineASM::AArch64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
+                *out += &format!(
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",
+                    function_name
+                );
             }
             InlineASM::None => unreachable!(),
         }
@@ -2514,7 +2529,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                     match asm_flavour {
                         InlineASM::X64 => {
-                            *out += &format!("\t\t\"xorpd %%xmm0, %%xmm0\\n\\t\"\n");
+                            *out += "\t\t\"xorpd %%xmm0, %%xmm0\\n\\t\"\n";
 
                             // TODO: try loading in multiple registers for better instruction-level parallelism?
                             for i in a {
@@ -2531,7 +2546,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             for i in &a[1..] {
                                 let (addr, _) = asm_load!(*i);
                                 *out += &format!("\t\t\"ldr q1, {}\\n\\t\"\n", addr);
-                                *out += &format!("\t\t\"fadd v0.2d, v1.2d, v0.2d\\n\\t\"\n",);
+                                *out += "\t\t\"fadd v0.2d, v1.2d, v0.2d\\n\\t\"\n";
                             }
 
                             let (addr, _) = asm_load!(*o);
@@ -2674,14 +2689,12 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     *out += &format!("\t\t\"ldr d1, {}\\n\\t\"", addr_b.1);
                                 }
 
-                                *out += &format!(
-                                    "
+                                *out += "
 \t\t\"fmul    d2, d0, d0\\n\\t\"
 \t\t\"fmadd   d2, d1, d1, d2\\n\\t\"
 \t\t\"fneg    d1, d1\\n\\t\"
 \t\t\"fdiv    d0, d0, d2\\n\\t\"
-\t\t\"fdiv    d1, d1, d2\\n\\t\"\n"
-                                );
+\t\t\"fdiv    d1, d1, d2\\n\\t\"\n";
 
                                 if *o * 16 < 450 {
                                     *out += &format!("\t\t\"stp d0, d1, {}\\n\\t\"\n", addr_o.0);
@@ -2788,10 +2801,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         match asm_flavour {
             InlineASM::X64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
+                *out += &format!(
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",
+                    function_name
+                );
             }
             InlineASM::AArch64 => {
-                *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
+                *out += &format!(
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",
+                    function_name
+                );
             }
             InlineASM::None => unreachable!(),
         }
@@ -2887,10 +2906,7 @@ impl<T: Clone> ExpressionEvaluator<T> {
     /// This function can be used to create an evaluator in a different language.
     pub fn export_instructions(&self) -> (Vec<Instruction>, usize, Vec<T>) {
         let mut instr = vec![];
-        let constants: Vec<_> = self.stack[self.param_count..self.reserved_indices]
-            .iter()
-            .cloned()
-            .collect();
+        let constants: Vec<_> = self.stack[self.param_count..self.reserved_indices].to_vec();
 
         macro_rules! get_slot {
             ($i:expr) => {
@@ -2933,7 +2949,7 @@ impl<T: Clone> ExpressionEvaluator<T> {
                     ));
                 }
                 Instr::BuiltinFun(o, s, a) => {
-                    instr.push(Instruction::Fun(get_slot!(*o), s.clone(), get_slot!(*a)));
+                    instr.push(Instruction::Fun(get_slot!(*o), *s, get_slot!(*a)));
                 }
             }
         }
@@ -3072,7 +3088,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         for t in &self.expressions.tree {
             let result_index = self.linearize_impl(
-                &t,
+                t,
                 &self.expressions.subexpressions,
                 &mut stack,
                 &mut instructions,
@@ -3488,7 +3504,7 @@ impl Expression<Rational> {
             Expression::Add(contains)
         };
 
-        contains.apply_horner_scheme(&scheme); // keep trying with same variable
+        contains.apply_horner_scheme(scheme); // keep trying with same variable
 
         let mut v = vec![];
         if let Expression::Mul(a) = contains {
@@ -3629,7 +3645,7 @@ impl Expression<Rational> {
         n_cores: usize,
         verbose: bool,
     ) -> Vec<Self> {
-        if vars.len() == 0 {
+        if vars.is_empty() {
             return vars.to_vec();
         }
 
@@ -3637,7 +3653,7 @@ impl Expression<Rational> {
             .iter()
             .map(|x| {
                 let mut h = x.clone();
-                h.apply_horner_scheme(&vars);
+                h.apply_horner_scheme(vars);
                 h
             })
             .collect();
@@ -3681,7 +3697,7 @@ impl Expression<Rational> {
                 let best_mul = best_mul.clone();
                 let best_add = best_add.clone();
                 s.spawn(move || {
-                    let mut r = thread_rng();
+                    let mut r = rng();
 
                     for j in 0..iterations / n_cores {
                         // try a random swap
@@ -3696,8 +3712,8 @@ impl Expression<Rational> {
                             let perm = &p[i * (p.len() / n_cores) + j];
                             cvars = perm.iter().map(|x| vars[*x].clone()).collect();
                         } else {
-                            t1 = r.gen_range(0..cvars.len());
-                            t2 = r.gen_range(0..cvars.len() - 1);
+                            t1 = r.random_range(0..cvars.len());
+                            t2 = r.random_range(0..cvars.len() - 1);
 
                             cvars.swap(t1, t2);
                         }
@@ -4104,7 +4120,7 @@ impl<T: Real> EvalTree<T> {
     /// Evaluate the evaluation tree. Consider converting to a linear form for repeated evaluation.
     pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
         for (o, e) in out.iter_mut().zip(&self.expressions.tree) {
-            *o = self.evaluate_impl(&e, &self.expressions.subexpressions, params, &[])
+            *o = self.evaluate_impl(e, &self.expressions.subexpressions, params, &[])
         }
     }
 
@@ -4504,13 +4520,19 @@ impl<T: NumericalFloatLike> EvalTree<T> {
         }
 
         for (i, e) in self.expressions.tree.iter().enumerate() {
-            res += &format!("\tout[{}] = {};\n", i, self.export_cpp_impl(&e, &[]));
+            res += &format!("\tout[{}] = {};\n", i, self.export_cpp_impl(e, &[]));
         }
 
         res += "\treturn;\n}\n";
 
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!(
+            "\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n",
+            function_name
+        );
+        res += &format!(
+            "\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n",
+            function_name
+        );
 
         res
     }
@@ -4530,7 +4552,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                     r.push_str(", ");
                     r += &self.export_cpp_impl(a, args);
                 }
-                r.push_str(")");
+                r.push(')');
                 r
             }
             Expression::Add(a) => {
@@ -4540,7 +4562,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                     r.push_str(" + ");
                     r += &self.export_cpp_impl(arg, args);
                 }
-                r.push_str(")");
+                r.push(')');
                 r
             }
             Expression::Mul(m) => {
@@ -4550,7 +4572,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                     r.push_str(" * ");
                     r += &self.export_cpp_impl(arg, args);
                 }
-                r.push_str(")");
+                r.push(')');
                 r
             }
             Expression::Pow(p) => {
@@ -4958,7 +4980,7 @@ impl<'a> AtomView<'a> {
     fn zero_test_impl(&self, iterations: usize, tolerance: f64) -> ConditionResult {
         // collect all variables and functions and fill in random variables
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         if self.contains_symbol(State::I) {
             let mut vars: HashMap<_, _> = self
@@ -5010,7 +5032,7 @@ impl<'a> AtomView<'a> {
                     return ConditionResult::False;
                 }
 
-                if vars.len() == 0 && r.re.get_absolute_error() < tolerance {
+                if vars.is_empty() && r.re.get_absolute_error() < tolerance {
                     return ConditionResult::True;
                 }
             }
@@ -5059,7 +5081,7 @@ impl<'a> AtomView<'a> {
                     return ConditionResult::False;
                 }
 
-                if vars.len() == 0 && r.get_absolute_error() < tolerance {
+                if vars.is_empty() && r.get_absolute_error() < tolerance {
                     return ConditionResult::True;
                 }
             }
@@ -5155,11 +5177,11 @@ mod test {
 
         let mut fn_map = FunctionMap::new();
 
-        fn_map.add_constant(Atom::new_var(symbol!("pi")), Rational::from((22, 7)).into());
+        fn_map.add_constant(symbol!("pi").into(), Rational::from((22, 7)));
         fn_map
             .add_tagged_function(
                 symbol!("p"),
-                vec![Atom::new_num(1).into()],
+                vec![Atom::new_num(1)],
                 "p1".to_string(),
                 vec![symbol!("z")],
                 p1,

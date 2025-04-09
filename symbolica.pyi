@@ -96,8 +96,8 @@ def S(name: str,
     >>> E("real_log(exp(x)) + real_log(5)")
 
     Define a custom print function:
-    >>> def print_mu(mu: Expression, latex: bool, **kwargs) -> str | None:
-    >>>     if latex:
+    >>> def print_mu(mu: Expression, mode: PrintMode, **kwargs) -> str | None:
+    >>>     if mode == PrintMode.Latex:
     >>>         if mu.get_type() == AtomType.Fn:
     >>>             return "\\mu_{" + ",".join(a.format() for a in mu) + "}"
     >>>         else:
@@ -254,6 +254,19 @@ class AtomTree:
     """The string data of this atom."""
     tail: List[AtomTree]
     """The list of child atoms of this atom."""
+
+
+class PrintMode(Enum):
+    """Specifies the print mode."""
+
+    Symbolica = 1
+    """Print using Symbolica notation."""
+    Latex = 2
+    """Print using LaTeX notation."""
+    Mathematica = 3
+    """Print using Mathematica notation."""
+    Sympy = 4
+    """Print using Sympy notation."""
 
 
 class Expression:
@@ -558,6 +571,7 @@ class Expression:
 
     def format(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
@@ -569,9 +583,9 @@ class Expression:
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         show_namespaces: bool = False,
         max_terms: Optional[int] = 100,
+        custom_print_mode: Optional[int] = None,
     ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
@@ -582,6 +596,14 @@ class Expression:
         >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+
+        >>> print(E('x^2 + f(x)').format(PrintMode.Sympy))
+
+        yields `x**2+f(x)`
+
+        >>> print(E('x^2 + f(x)').format(PrintMode.Mathematica))
+
+        yields `x^2 + f[x]`
         """
 
     def format_plain(self) -> str:
@@ -2463,6 +2485,7 @@ class Transformer:
 
     def print(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
@@ -2474,9 +2497,9 @@ class Transformer:
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         show_namespaces: bool = False,
         max_terms: Optional[int] = None,
+        custom_print_mode: Optional[int] = None,
     ) -> Transformer:
         """
         Create a transformer that prints the expression.
@@ -2600,6 +2623,7 @@ class Series:
 
     def format(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
@@ -2611,10 +2635,10 @@ class Series:
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
         max_terms: Optional[int] = None,
+        custom_print_mode: Optional[int] = None,
     ) -> str:
         """
         Convert the series into a human-readable string.
@@ -2820,6 +2844,7 @@ class Polynomial:
 
     def format(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
@@ -2831,10 +2856,10 @@ class Polynomial:
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
         max_terms: Optional[int] = None,
+        custom_print_mode: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3110,6 +3135,7 @@ class NumberFieldPolynomial:
 
     def format(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
@@ -3121,10 +3147,10 @@ class NumberFieldPolynomial:
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
         max_terms: Optional[int] = None,
+        custom_print_mode: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3356,6 +3382,7 @@ class FiniteFieldPolynomial:
 
     def format(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
@@ -3367,10 +3394,10 @@ class FiniteFieldPolynomial:
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
         max_terms: Optional[int] = None,
+        custom_print_mode: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3842,16 +3869,17 @@ class Matrix:
 
     def format(
         self,
+        mode: PrintMode = PrintMode.Symbolica,
         pretty_matrix=True,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
         double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
-        latex: bool = False,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
         max_terms: Optional[int] = None,
+        custom_print_mode: Optional[int] = None,
     ) -> str:
         """
         Convert the matrix into a human-readable string, with tunable settings.

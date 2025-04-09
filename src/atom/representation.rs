@@ -244,7 +244,7 @@ impl bincode::Decode<StateMap> for Atom {
         };
 
         let state_map = decoder.context();
-        Ok(atom.as_view().rename(&state_map))
+        Ok(atom.as_view().rename(state_map))
     }
 }
 

@@ -24,10 +24,10 @@ use crate::{
     atom::{Atom, AtomCore, AtomView, FunctionBuilder},
     coefficient::CoefficientView,
     domains::{
+        EuclideanDomain, InternalOrdering, Ring, SelfRing,
         atom::AtomField,
         integer::Integer,
-        rational::{Rational, Q},
-        EuclideanDomain, InternalOrdering, Ring, SelfRing,
+        rational::{Q, Rational},
     },
     printer::{PrintOptions, PrintState},
 };
@@ -528,7 +528,7 @@ impl<F: Ring> SelfRing for Series<F> {
 
         if self.coefficients.is_empty() {
             let o = self.absolute_order();
-            if opts.latex {
+            if opts.mode.is_latex() {
                 write!(f, "\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
             } else {
                 write!(f, "𝒪({}^", v)?;
@@ -577,13 +577,13 @@ impl<F: Ring> SelfRing for Series<F> {
                 write!(f, "{}^", v)?;
                 state.suppress_one = false;
 
-                if opts.latex {
+                if opts.mode.is_latex() {
                     f.write_char('{')?;
                 }
 
                 Q.format(&e, opts, state.step(false, false, true), f)?;
 
-                if opts.latex {
+                if opts.mode.is_latex() {
                     f.write_char('}')?;
                 }
             }
@@ -593,7 +593,7 @@ impl<F: Ring> SelfRing for Series<F> {
 
         let o = self.absolute_order();
 
-        if opts.latex {
+        if opts.mode.is_latex() {
             write!(f, "+\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
         } else {
             write!(f, "+𝒪({}^", v)?;

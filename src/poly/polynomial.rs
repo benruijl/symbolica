@@ -12,14 +12,14 @@ use std::sync::Arc;
 
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
-use crate::domains::rational::{RationalField, Q};
+use crate::domains::rational::{Q, RationalField};
 use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
 use crate::printer::{PrintOptions, PrintState};
 
 use super::gcd::PolynomialGCD;
 use super::univariate::UnivariatePolynomial;
-use super::{Exponent, LexOrder, MonomialOrder, PositiveExponent, Variable, INLINED_EXPONENTS};
-use smallvec::{smallvec, SmallVec};
+use super::{Exponent, INLINED_EXPONENTS, LexOrder, MonomialOrder, PositiveExponent, Variable};
+use smallvec::{SmallVec, smallvec};
 
 const MAX_DENSE_MUL_BUFFER_SIZE: usize = 1 << 24;
 thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec::new()) }; }
@@ -795,14 +795,14 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
                 }
                 if suppressed_one {
                     suppressed_one = false;
-                } else if !opts.latex {
+                } else if !opts.mode.is_latex() {
                     f.write_char(opts.multiplication_operator)?;
                 }
 
                 f.write_str(var_id)?;
 
                 if e.to_i32() != 1 {
-                    if opts.latex {
+                    if opts.mode.is_latex() {
                         write!(f, "^{{{}}}", e)?;
                     } else if opts.double_star_for_exponentiation {
                         write!(f, "**{}", e)?;
@@ -1172,8 +1172,8 @@ impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E, LexOrder>>
     }
 }
 
-impl<'a, F: EuclideanDomain, E: PositiveExponent>
-    Div<&'a MultivariatePolynomial<F, E, LexOrder>> for &MultivariatePolynomial<F, E, LexOrder>
+impl<'a, F: EuclideanDomain, E: PositiveExponent> Div<&'a MultivariatePolynomial<F, E, LexOrder>>
+    for &MultivariatePolynomial<F, E, LexOrder>
 {
     type Output = MultivariatePolynomial<F, E, LexOrder>;
 
@@ -2465,7 +2465,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
         }
 
-        impl<'a, E: Exponent> std::hash::Hash for Key<'_, E> {
+        impl<E: Exponent> std::hash::Hash for Key<'_, E> {
             #[inline(always)]
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
                 unsafe {
@@ -3098,11 +3098,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         let (a, b) = self.quot_rem_impl(div, true);
-        if b.nterms() == 0 {
-            Some(a)
-        } else {
-            None
-        }
+        if b.nterms() == 0 { Some(a) } else { None }
     }
 
     /// Divide two multivariate polynomials and return the quotient and remainder.
@@ -4006,7 +4002,9 @@ impl<R: EuclideanDomain, E: Exponent> MultivariatePolynomial<AlgebraicExtension<
             self.get_vars_ref().iter().position(|v| v == var)
         {
             if self.degree(p) > E::zero() {
-                panic!("The variable of the minimal polynomial of the coefficient field also appears in the polynomial");
+                panic!(
+                    "The variable of the minimal polynomial of the coefficient field also appears in the polynomial"
+                );
             }
             (self.variables.clone(), p)
         } else {

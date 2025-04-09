@@ -8,6 +8,7 @@ use rayon::ThreadPool;
 use crate::{
     coefficient::{Coefficient, CoefficientView, ConvertToRing},
     domains::{
+        EuclideanDomain, InternalOrdering,
         atom::AtomField,
         factorized_rational_polynomial::{
             FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
@@ -18,7 +19,6 @@ use crate::{
         rational_polynomial::{
             FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
         },
-        EuclideanDomain, InternalOrdering,
     },
     evaluate::{EvalTree, EvaluationFn, ExpressionEvaluator, FunctionMap, OptimizationSettings},
     id::{
@@ -26,8 +26,8 @@ use crate::{
         PatternAtomTreeIterator, PatternRestriction, ReplaceBuilder,
     },
     poly::{
-        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, series::Series,
-        Exponent, PositiveExponent, Variable,
+        Exponent, PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
+        polynomial::MultivariatePolynomial, series::Series,
     },
     printer::{AtomPrinter, PrintOptions, PrintState},
     state::Workspace,
@@ -37,8 +37,8 @@ use crate::{
 use std::sync::Arc;
 
 use super::{
-    representation::{InlineNum, InlineVar},
     Atom, AtomOrView, AtomView, KeyLookup, Symbol,
+    representation::{InlineNum, InlineVar},
 };
 
 /// All core features of expressions, such as expansion and
@@ -1366,17 +1366,18 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
-    /// let expr = parse!("x + y").unwrap();
+    /// use symbolica::{atom::{Atom, AtomCore}, symbol};
+    /// let (x, y, z) = symbol!("x", "y", "z");
+    /// let expr = Atom::new_var(x) + y;
     /// let result = expr.replace_map(|term, _ctx, out| {
-    ///     if term.to_string() == "symbolica::x" {
-    ///         *out = parse!("z").unwrap();
+    ///     if term.get_symbol() == Some(x) {
+    ///         *out = z.into();
     ///         true
     ///     } else {
     ///         false
     ///     }
     /// });
-    /// assert_eq!(result, parse!("z + y").unwrap());
+    /// assert_eq!(result, Atom::new_var(y) + z);
     /// ```
     fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(&self, m: F) -> Atom {
         self.as_atom_view().replace_map(m)

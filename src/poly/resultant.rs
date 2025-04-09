@@ -74,7 +74,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         for k in 1..lcs.len() {
             let mut deg = lcs[k - 1].1 as i64 - lcs[k].1 as i64;
             for l in k..lcs.len() - 1 {
-                deg *= 1 - (lcs[l].1 as i64 - lcs[l + 1].1 as i64) as i64;
+                deg *= 1 - (lcs[l].1 as i64 - lcs[l + 1].1 as i64);
             }
 
             if deg > 0 {

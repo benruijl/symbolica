@@ -28,9 +28,9 @@ use colored::{Color, Colorize};
 
 use crate::{
     domains::{
-        integer::Z,
-        rational::{Rational, Q},
         Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+        integer::Z,
+        rational::{Q, Rational},
     },
     poly::Variable,
     printer::{PrintOptions, PrintState},
@@ -181,7 +181,7 @@ impl<F: Ring> SelfRing for Vector<F> {
         state.in_product = false;
         state.in_exp = false;
 
-        if opts.latex {
+        if opts.mode.is_latex() {
             f.write_str("\\begin{pvector}")?;
 
             for (ri, r) in self.data.iter().enumerate() {
@@ -544,7 +544,7 @@ impl Vector<Z> {
             }
 
             if mus[k * system.len() + k]
-                > &mus[(k - 1) * &system.len() + (k - 1)]
+                > &mus[(k - 1) * system.len() + (k - 1)]
                     * &(&delta - &(&mus[k * system.len() + k - 1] * &mus[k * system.len() + k - 1]))
             {
                 k += 1;
@@ -936,8 +936,7 @@ impl<F: Ring> Matrix<F> {
         let mut m = Matrix::new(self.nrows, self.ncols + matrix.ncols, self.field.clone());
 
         for (r, (r1, r2)) in self.row_iter().zip(matrix.row_iter()).enumerate() {
-            m.data[r * m.ncols as usize
-                ..r * m.ncols as usize + self.ncols as usize]
+            m.data[r * m.ncols as usize..r * m.ncols as usize + self.ncols as usize]
                 .clone_from_slice(r1);
             m.data[r * m.ncols as usize + self.ncols as usize
                 ..r * m.ncols as usize + m.ncols as usize]
@@ -995,7 +994,7 @@ impl<F: Ring> SelfRing for Matrix<F> {
         state.in_product = false;
         state.in_exp = false;
 
-        if opts.latex {
+        if opts.mode.is_latex() {
             f.write_str("\\begin{pmatrix}")?;
 
             for (ri, r) in self.row_iter().enumerate() {

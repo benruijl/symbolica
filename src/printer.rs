@@ -5,9 +5,9 @@ use std::fmt::{self, Error, Write};
 use colored::Colorize;
 
 use crate::{
-    atom::{representation::FunView, AddView, AtomView, MulView, NumView, PowView, VarView},
+    atom::{AddView, AtomView, MulView, NumView, PowView, VarView, representation::FunView},
     coefficient::CoefficientView,
-    domains::{finite_field::FiniteFieldCore, SelfRing},
+    domains::{SelfRing, finite_field::FiniteFieldCore},
     state::State,
 };
 
@@ -15,9 +15,40 @@ use crate::{
 /// If the function returns `None`, the default printing is used.
 pub type PrintFunction = Box<dyn Fn(AtomView, &PrintOptions) -> Option<String> + Send + Sync>;
 
+/// The overall print mode.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(Default)]
+pub enum PrintMode {
+    #[default]
+    Symbolica,
+    Latex,
+    Mathematica,
+    Sympy,
+}
+
+impl PrintMode {
+    pub fn is_symbolica(&self) -> bool {
+        *self == PrintMode::Symbolica
+    }
+
+    pub fn is_latex(&self) -> bool {
+        *self == PrintMode::Latex
+    }
+
+    pub fn is_mathematica(&self) -> bool {
+        *self == PrintMode::Mathematica
+    }
+
+    pub fn is_sympy(&self) -> bool {
+        *self == PrintMode::Sympy
+    }
+}
+
 /// Various options for printing expressions.
 #[derive(Debug, Copy, Clone)]
 pub struct PrintOptions {
+    pub mode: PrintMode,
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
     pub color_builtin_symbols: bool,
@@ -29,13 +60,15 @@ pub struct PrintOptions {
     pub double_star_for_exponentiation: bool,
     pub square_brackets_for_function: bool,
     pub num_exp_as_superscript: bool,
-    pub latex: bool,
     pub precision: Option<usize>,
     pub pretty_matrix: bool,
     pub hide_namespace: Option<&'static str>,
     pub hide_all_namespaces: bool,
     pub color_namespace: bool,
     pub max_terms: Option<usize>,
+    /// Provides a handle to set the behavior of the custom print function.
+    /// Symbolica does not use this option for its own printing.
+    pub custom_print_mode: Option<(&'static str, usize)>,
 }
 
 impl PrintOptions {
@@ -52,13 +85,14 @@ impl PrintOptions {
             double_star_for_exponentiation: false,
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
-            latex: false,
+            mode: PrintMode::Symbolica,
             precision: None,
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: true,
             color_namespace: true,
             max_terms: None,
+            custom_print_mode: None,
         }
     }
 
@@ -76,13 +110,14 @@ impl PrintOptions {
             double_star_for_exponentiation: false,
             square_brackets_for_function: true,
             num_exp_as_superscript: false,
-            latex: false,
+            mode: PrintMode::Mathematica,
             precision: None,
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: true,
             color_namespace: false,
             max_terms: None,
+            custom_print_mode: None,
         }
     }
 
@@ -100,13 +135,14 @@ impl PrintOptions {
             double_star_for_exponentiation: false,
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
-            latex: true,
+            mode: PrintMode::Latex,
             precision: None,
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: true,
             color_namespace: false,
             max_terms: None,
+            custom_print_mode: None,
         }
     }
 
@@ -124,13 +160,14 @@ impl PrintOptions {
             double_star_for_exponentiation: false,
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
-            latex: false,
+            mode: PrintMode::Symbolica,
             precision: None,
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: false,
             color_namespace: false,
             max_terms: None,
+            custom_print_mode: None,
         }
     }
 
@@ -501,7 +538,10 @@ impl FormattedPrintVar for VarView<'_> {
         print_state: PrintState,
     ) -> Result<bool, Error> {
         if print_state.in_sum {
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if print_state.top_level_add_child
+                && opts.mode.is_symbolica()
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -509,14 +549,6 @@ impl FormattedPrintVar for VarView<'_> {
         }
 
         let id = self.get_symbol();
-
-        if let Some(custom_print) = &State::get_symbol_data(id).custom_print {
-            if let Some(s) = custom_print(self.as_view(), opts) {
-                f.write_str(&s)?;
-                return Ok(false);
-            }
-        }
-
         id.format(opts, f)?;
         Ok(false)
     }
@@ -580,7 +612,10 @@ impl FormattedPrintNum for NumView<'_> {
         };
 
         if is_negative {
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if print_state.top_level_add_child
+                && opts.mode.is_symbolica()
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{}", "-".yellow()))?;
             } else if print_state.superscript {
                 f.write_char('⁻')?;
@@ -590,7 +625,10 @@ impl FormattedPrintNum for NumView<'_> {
 
             print_state.in_sum = false;
         } else if print_state.in_sum {
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if print_state.top_level_add_child
+                && opts.mode.is_symbolica()
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -605,7 +643,7 @@ impl FormattedPrintNum for NumView<'_> {
                     return Ok(true);
                 }
 
-                if !opts.latex
+                if !opts.mode.is_latex()
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
                     format_num(num.unsigned_abs().to_string(), opts, &print_state, f)?;
@@ -614,7 +652,7 @@ impl FormattedPrintNum for NumView<'_> {
                         format_num(den.to_string(), opts, &print_state, f)?;
                     }
                 } else if den != 1 {
-                    if opts.latex {
+                    if opts.mode.is_latex() {
                         f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))?;
                     } else {
                         f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))?;
@@ -631,7 +669,7 @@ impl FormattedPrintNum for NumView<'_> {
             }
             CoefficientView::Large(r) => {
                 let rat = r.to_rat().abs();
-                if !opts.latex
+                if !opts.mode.is_latex()
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
                     format_num(rat.numerator().to_string(), opts, &print_state, f)?;
@@ -640,7 +678,7 @@ impl FormattedPrintNum for NumView<'_> {
                         format_num(rat.denominator().to_string(), opts, &print_state, f)?;
                     }
                 } else if !rat.is_integer() {
-                    if opts.latex {
+                    if opts.mode.is_latex() {
                         f.write_fmt(format_args!(
                             "\\frac{{{}}}{{{}}}",
                             rat.numerator(),
@@ -704,7 +742,10 @@ impl FormattedPrintMul for MulView<'_> {
         if let Some(AtomView::Num(n)) = self.iter().last() {
             // write -1*x as -x
             if n.get_coeff_view() == CoefficientView::Natural(-1, 1) {
-                if print_state.top_level_add_child && opts.color_top_level_sum {
+                if print_state.top_level_add_child
+                    && opts.mode.is_symbolica()
+                    && opts.color_top_level_sum
+                {
                     f.write_fmt(format_args!("{}", "-".yellow()))?;
                 } else {
                     f.write_char('-')?;
@@ -718,7 +759,10 @@ impl FormattedPrintMul for MulView<'_> {
 
             skip_num = true;
         } else if print_state.in_sum {
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if print_state.top_level_add_child
+                && opts.mode.is_symbolica()
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -734,7 +778,7 @@ impl FormattedPrintMul for MulView<'_> {
             self.get_nargs()
         }) {
             if !first {
-                if opts.latex {
+                if opts.mode.is_latex() {
                     f.write_char(' ')?;
                 } else {
                     f.write_char(opts.multiplication_operator)?;
@@ -743,13 +787,13 @@ impl FormattedPrintMul for MulView<'_> {
             first = false;
 
             if let AtomView::Add(_) = x {
-                if opts.latex {
+                if opts.mode.is_latex() {
                     f.write_str("\\left(")?;
                 } else {
                     f.write_char('(')?;
                 }
                 x.format(f, opts, print_state)?;
-                if opts.latex {
+                if opts.mode.is_latex() {
                     f.write_str("\\right)")?;
                 } else {
                     f.write_char(')')?;
@@ -774,7 +818,10 @@ impl FormattedPrintFn for FunView<'_> {
         mut print_state: PrintState,
     ) -> Result<bool, Error> {
         if print_state.in_sum {
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if print_state.top_level_add_child
+                && opts.mode.is_symbolica()
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -791,9 +838,9 @@ impl FormattedPrintFn for FunView<'_> {
 
         id.format(opts, f)?;
 
-        if opts.latex {
+        if opts.mode.is_latex() {
             f.write_str("\\!\\left(")?;
-        } else if opts.square_brackets_for_function {
+        } else if opts.square_brackets_for_function || opts.mode.is_mathematica() {
             f.write_char('[')?;
         } else {
             f.write_char('(')?;
@@ -813,9 +860,9 @@ impl FormattedPrintFn for FunView<'_> {
             x.format(f, opts, print_state)?;
         }
 
-        if opts.latex {
+        if opts.mode.is_latex() {
             f.write_str("\\right)")?;
-        } else if opts.square_brackets_for_function {
+        } else if opts.square_brackets_for_function || opts.mode.is_mathematica() {
             f.write_char(']')?;
         } else {
             f.write_char(')')?;
@@ -837,7 +884,10 @@ impl FormattedPrintPow for PowView<'_> {
         mut print_state: PrintState,
     ) -> Result<bool, Error> {
         if print_state.in_sum {
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if opts.mode.is_symbolica()
+                && print_state.top_level_add_child
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -853,7 +903,7 @@ impl FormattedPrintPow for PowView<'_> {
         print_state.suppress_one = false;
 
         let mut superscript_exponent = false;
-        if opts.latex {
+        if opts.mode.is_latex() {
             if let AtomView::Num(n) = e {
                 if n.get_coeff_view() == CoefficientView::Natural(-1, 1) {
                     // TODO: construct the numerator
@@ -863,7 +913,7 @@ impl FormattedPrintPow for PowView<'_> {
                     return Ok(false);
                 }
             }
-        } else if opts.num_exp_as_superscript {
+        } else if opts.mode.is_symbolica() && opts.num_exp_as_superscript {
             if let AtomView::Num(n) = e {
                 superscript_exponent = n.get_coeff_view().is_integer()
             }
@@ -887,13 +937,13 @@ impl FormattedPrintPow for PowView<'_> {
                 };
 
         if base_needs_parentheses {
-            if opts.latex {
+            if opts.mode.is_latex() {
                 f.write_str("\\left(")?;
             } else {
                 f.write_char('(')?;
             }
             b.format(f, opts, print_state)?;
-            if opts.latex {
+            if opts.mode.is_latex() {
                 f.write_str("\\right)")?;
             } else {
                 f.write_char(')')?;
@@ -903,14 +953,16 @@ impl FormattedPrintPow for PowView<'_> {
         }
 
         if !superscript_exponent {
-            if !opts.latex && opts.double_star_for_exponentiation {
+            if opts.mode.is_sympy()
+                || (!opts.mode.is_latex() && opts.double_star_for_exponentiation)
+            {
                 f.write_str("**")?;
             } else {
                 f.write_char('^')?;
             }
         }
 
-        if opts.latex {
+        if opts.mode.is_latex() {
             f.write_char('{')?;
             e.format(f, opts, print_state)?;
             f.write_char('}')?;
@@ -955,7 +1007,10 @@ impl FormattedPrintAdd for AddView<'_> {
         let add_paren = print_state.in_product || print_state.in_exp;
         if add_paren {
             if print_state.in_sum {
-                if print_state.top_level_add_child && opts.color_top_level_sum {
+                if opts.mode.is_symbolica()
+                    && print_state.top_level_add_child
+                    && opts.color_top_level_sum
+                {
                     f.write_fmt(format_args!("{}", "+".yellow()))?;
                 } else {
                     f.write_char('+')?;
@@ -971,7 +1026,7 @@ impl FormattedPrintAdd for AddView<'_> {
         let mut count = 0;
         for x in self.iter() {
             if let Some(max_terms) = opts.max_terms {
-                if count >= max_terms {
+                if opts.mode.is_symbolica() && count >= max_terms {
                     break;
                 }
             }
@@ -990,7 +1045,10 @@ impl FormattedPrintAdd for AddView<'_> {
             if print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;
             }
-            if print_state.top_level_add_child && opts.color_top_level_sum {
+            if print_state.top_level_add_child
+                && opts.mode.is_symbolica()
+                && opts.color_top_level_sum
+            {
                 f.write_fmt(format_args!("{0}...", "+".yellow()))?;
             } else {
                 f.write_str("+...")?;
@@ -1014,7 +1072,7 @@ mod test {
 
     use crate::{
         atom::{AtomCore, AtomView},
-        domains::{finite_field::Zp, integer::Z, SelfRing},
+        domains::{SelfRing, finite_field::Zp, integer::Z},
         parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
         symbol,
@@ -1151,7 +1209,10 @@ mod test {
         let _ = symbol!("canon_y");
         let _ = symbol!("canon_x");
 
-        let a = parse!("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
+        let a = parse!(
+            "canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)"
+        )
+        .unwrap();
         assert_eq!(
             a.to_canonical_string(),
             "(symbolica::canon_x+symbolica::canon_y)*symbolica::canon_y^2+2*symbolica::canon_x*symbolica::canon_y+symbolica::canon_f(symbolica::canon_x,symbolica::canon_y)+symbolica::canon_x^2"
@@ -1161,7 +1222,7 @@ mod test {
     #[test]
     fn custom_print() {
         let _ = symbol!("mu";;;|a, opt| {
-            if !opt.latex {
+            if !opt.mode.is_latex() {
                 return None; // use default printer
             }
 

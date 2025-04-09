@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    atom::{representation::FunView, Atom, AtomView, Fun, Symbol},
+    atom::{Atom, AtomView, Fun, Symbol, representation::FunView},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
@@ -32,11 +32,11 @@ pub trait Map:
 }
 dyn_clone::clone_trait_object!(Map);
 impl<
-        T: Clone
-            + Send
-            + Sync
-            + Fn(AtomView<'_>, &TransformerState, &mut Atom) -> Result<(), TransformerError>,
-    > Map for T
+    T: Clone
+        + Send
+        + Sync
+        + Fn(AtomView<'_>, &TransformerState, &mut Atom) -> Result<(), TransformerError>,
+> Map for T
 {
 }
 
@@ -49,12 +49,10 @@ pub struct StatsOptions {
     pub color_large_change_threshold: Option<f64>,
 }
 
-#[derive(Clone)]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TransformerState {
     pub stats_export: Option<Arc<Mutex<dyn std::io::Write + Send>>>,
 }
-
 
 impl StatsOptions {
     pub fn format_size(&self, size: usize) -> String {

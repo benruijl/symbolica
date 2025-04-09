@@ -7,25 +7,25 @@ use std::{
 };
 
 use ahash::{AHasher, HashMap, HashSet, HashSetExt};
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 
 use crate::{
     atom::{Atom, AtomView, KeyLookup},
-    domains::{float::Real, Ring},
+    domains::{Ring, float::Real},
     evaluate::EvaluationFn,
 };
 use crate::{
     atom::{AtomCore, Symbol},
     coefficient::CoefficientView,
     domains::{
-        float::NumericalFloatLike,
-        rational::{Rational, RationalField, Q},
         EuclideanDomain,
+        float::NumericalFloatLike,
+        rational::{Q, Rational, RationalField},
     },
     state::Workspace,
 };
 
-use super::{polynomial::MultivariatePolynomial, PositiveExponent};
+use super::{PositiveExponent, polynomial::MultivariatePolynomial};
 
 /// A borrowed version of a Horner node, suitable as a key in a
 /// hashmap. It uses precomputed hashes for the complete node
@@ -486,20 +486,12 @@ impl<E: PositiveExponent> MultivariatePolynomial<RationalField, E> {
 
         let children = (
             if let HornerScheme::Leaf(_, r) = &content {
-                if r.is_one() {
-                    None
-                } else {
-                    Some(content)
-                }
+                if r.is_one() { None } else { Some(content) }
             } else {
                 Some(content)
             },
             if let HornerScheme::Leaf(_, r) = &rest {
-                if r.is_zero() {
-                    None
-                } else {
-                    Some(rest)
-                }
+                if r.is_zero() { None } else { Some(rest) }
             } else {
                 Some(rest)
             },
@@ -1673,7 +1665,7 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                         if !seen_arrays.contains(x) {
                             seen_arrays.push(*x);
 
-                            Some(format!("T* {}", super::Variable::Symbol(*x).to_string()))
+                            Some(format!("T* {}", super::Variable::Symbol(*x)))
                         } else {
                             None
                         }
@@ -1681,10 +1673,10 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                         if [Atom::E, Atom::I, Atom::PI].contains(i) {
                             None
                         } else {
-                            Some(format!("T {}", x.to_string()))
+                            Some(format!("T {}", x))
                         }
                     } else {
-                        Some(format!("T {}", x.to_string()))
+                        Some(format!("T {}", x))
                     })
                     .collect::<Vec<_>>()
                     .join(","),
@@ -1926,10 +1918,10 @@ auto 𝑖 = 1i;\n",
             "void evaluate({}, T* {}_res) {{\n",
             self.input
                 .iter()
-                .map(|x| format!("T* {}", x.to_string()))
+                .map(|x| format!("T* {}", x))
                 .collect::<Vec<_>>()
                 .join(", "),
-            last.to_string()
+            last
         ))?;
 
         for (id, out_len, _, args) in &self.operations {

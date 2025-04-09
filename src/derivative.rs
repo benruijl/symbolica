@@ -359,7 +359,7 @@ impl AtomView<'_> {
                 series.truncate_relative_order(depth);
                 break Ok(series);
             } else if depth_is_absolute && series.absolute_order() > depth {
-                series.truncate_absolute_order(&depth + &((1.into(), depth.denominator())).into());
+                series.truncate_absolute_order(&depth + &(1.into(), depth.denominator()).into());
                 break Ok(series);
             } else {
                 // increase the expansion depth

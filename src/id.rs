@@ -2079,7 +2079,7 @@ impl From<WildcardAndRestriction> for Condition<PatternRestriction> {
     }
 }
 
-impl<'a> From<PatternRestriction> for Option<Condition<PatternRestriction>> {
+impl From<PatternRestriction> for Option<Condition<PatternRestriction>> {
     fn from(value: PatternRestriction) -> Self {
         Some(Condition::from(value))
     }

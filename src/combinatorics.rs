@@ -65,7 +65,6 @@ use crate::domains::integer::Integer;
 /// // [0, 2, 3]
 /// // [1, 2, 3]
 /// ```
-
 pub struct CombinationIterator {
     n: usize,
     indices: Vec<usize>,
@@ -111,11 +110,7 @@ impl CombinationIterator {
             }
         }
 
-        if done {
-            None
-        } else {
-            Some(&self.indices)
-        }
+        if done { None } else { Some(&self.indices) }
     }
 }
 
@@ -452,7 +447,7 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
 
 #[cfg(test)]
 mod test {
-    use super::{partitions, CombinationIterator};
+    use super::{CombinationIterator, partitions};
 
     #[test]
     fn combinations() {

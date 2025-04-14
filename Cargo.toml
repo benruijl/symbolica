@@ -44,7 +44,7 @@ serde = ["dep:serde", "rug/serde"]
 bincode = ["dep:bincode"]
 
 [dependencies.pyo3]
-features = ["extension-module", "abi3", "py-clone"]
+features = ["abi3", "py-clone"]
 optional = true
 version = "0.24"
 

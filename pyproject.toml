@@ -26,4 +26,4 @@ homepage = "https://symbolica.io"
 repository = "https://github.com/benruijl/symbolica"
 
 [tool.maturin]
-features = ["python_api", "python_abi3"]
+features = ["python_api", "python_abi3","pyo3/extension-module"]

@@ -37,6 +37,8 @@ use crate::state::Workspace;
 use self::factor::Factorize;
 use self::gcd::PolynomialGCD;
 use self::polynomial::MultivariatePolynomial;
+#[cfg(feature = "python_api")]
+use pyo3_stub_gen::derive::*;
 
 pub(crate) const INLINED_EXPONENTS: usize = 6;
 

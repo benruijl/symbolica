@@ -24,7 +24,7 @@ use pyo3::{
     wrap_pyfunction,
 };
 use pyo3::{pyclass, types::PyModuleMethods};
-use pyo3_stub_gen::{define_stub_info_gatherer, derive::*};
+use pyo3_stub_gen::{define_stub_info_gatherer, derive::*, impl_stub_type, PyStubType, TypeInfo};
 use rug::Complete;
 use self_cell::self_cell;
 use smallvec::SmallVec;
@@ -286,7 +286,6 @@ fn get_license_key(email: String) -> PyResult<()> {
         .map_err(exceptions::PyConnectionError::new_err)
 }
 
-#[gen_stub_pyfunction]
 #[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None,custom_print=None))]
 /// Shorthand notation for :func:`Expression.symbol`.
 fn symbol_shorthand(
@@ -312,7 +311,6 @@ fn symbol_shorthand(
     )
 }
 
-#[gen_stub_pyfunction]
 /// Shorthand notation for :func:`Expression.symbol`.
 #[pyfunction(name = "N", signature = (num,relative_error=None))]
 fn number_shorthand(
@@ -323,7 +321,6 @@ fn number_shorthand(
     PythonExpression::num(&PythonExpression::type_object(py), py, num, relative_error)
 }
 
-#[gen_stub_pyfunction]
 /// Shorthand notation for :func:`Expression.parse`.
 #[pyfunction(name = "E", signature = (expr,default_namespace="python"))]
 fn expression_shorthand(
@@ -334,7 +331,6 @@ fn expression_shorthand(
     PythonExpression::parse(&PythonExpression::type_object(py), expr, default_namespace)
 }
 
-#[gen_stub_pyclass_enum]
 #[derive(Clone, Copy)]
 #[pyclass(name = "AtomType", module = "symbolica", eq, eq_int)]
 #[derive(PartialEq, Eq, Hash)]
@@ -348,7 +344,12 @@ pub enum PythonAtomType {
     Pow,
 }
 
-#[gen_stub_pyclass]
+impl PyStubType for PythonAtomType {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("AtomType", "symbolica".into())
+    }
+}
+
 /// A Python representation of a Symbolica expression.
 /// The type of the atom is provided in `atom_type`.
 ///
@@ -375,6 +376,12 @@ pub struct PythonAtomTree {
     /// The list of child atoms of this atom.
     #[pyo3(get)]
     pub tail: Vec<PythonAtomTree>,
+}
+
+impl PyStubType for PythonAtomTree {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("AtomTree", "symbolica".into())
+    }
 }
 
 impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
@@ -422,12 +429,13 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
     }
 }
 
-#[gen_stub_pyclass_enum]
 #[derive(FromPyObject)]
 pub enum ConvertibleToPattern {
     Literal(ConvertibleToExpression),
     Pattern(PythonTransformer),
 }
+
+impl_stub_type!(ConvertibleToPattern = ConvertibleToExpression | PythonTransformer);
 
 impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonTransformer> {
@@ -438,12 +446,13 @@ impl ConvertibleToPattern {
     }
 }
 
-#[gen_stub_pyclass_enum]
 #[derive(FromPyObject)]
 pub enum ConvertibleToReplaceWith {
     Pattern(ConvertibleToPattern),
     Map(PyObject),
 }
+
+impl_stub_type!(ConvertibleToReplaceWith = ConvertibleToPattern | PyObject);
 
 impl ConvertibleToReplaceWith {
     pub fn to_replace_with(self) -> PyResult<ReplaceWith<'static>> {
@@ -483,12 +492,17 @@ impl<T> OneOrMultiple<T> {
     }
 }
 
-#[gen_stub_pyclass]
 #[pyclass(name = "Transformer", module = "symbolica", subclass)]
 #[derive(Clone)]
 /// Operations that transform an expression.
 pub struct PythonTransformer {
     pub expr: Pattern,
+}
+
+impl PyStubType for PythonTransformer {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("Transformer", "symbolica".into())
+    }
 }
 
 impl From<Pattern> for PythonTransformer {
@@ -510,7 +524,6 @@ macro_rules! append_transformer {
     };
 }
 
-// #[gen_stub_pymethods]
 #[pymethods]
 impl PythonTransformer {
     /// Create a new transformer for a term provided by `Expression.map`.
@@ -2024,7 +2037,6 @@ impl PythonTransformer {
     }
 }
 
-#[gen_stub_pyclass]
 /// A Symbolica expression.
 ///
 /// Supports standard arithmetic operations, such
@@ -2060,6 +2072,12 @@ pub struct PythonExpression {
     pub expr: Atom,
 }
 
+impl PyStubType for PythonExpression {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("Expression", "symbolica".into())
+    }
+}
+
 impl From<Atom> for PythonExpression {
     fn from(expr: Atom) -> Self {
         PythonExpression { expr }
@@ -2074,12 +2092,17 @@ impl Deref for PythonExpression {
     }
 }
 
-#[gen_stub_pyclass]
 /// A restriction on wildcards.
 #[pyclass(name = "PatternRestriction", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
     pub condition: Condition<PatternRestriction>,
+}
+
+impl PyStubType for PythonPatternRestriction {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("PatternRestriction", "symbolica".into())
+    }
 }
 
 impl From<Condition<PatternRestriction>> for PythonPatternRestriction {
@@ -2088,7 +2111,6 @@ impl From<Condition<PatternRestriction>> for PythonPatternRestriction {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PythonPatternRestriction {
     /// Create a new pattern restriction that is the logical 'and' operation between two restrictions (i.e., both should hold).
@@ -2148,12 +2170,17 @@ impl PythonPatternRestriction {
     }
 }
 
-#[gen_stub_pyclass]
 /// A restriction on wildcards.
 #[pyclass(name = "Condition", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonCondition {
     pub condition: Condition<Relation>,
+}
+
+impl PyStubType for PythonCondition {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("Condition", "symbolica".into())
+    }
 }
 
 impl From<Condition<Relation>> for PythonCondition {
@@ -2162,7 +2189,6 @@ impl From<Condition<Relation>> for PythonCondition {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PythonCondition {
     pub fn __repr__(&self) -> String {
@@ -2355,7 +2381,6 @@ impl TryFrom<Condition<Relation>> for Condition<PatternRestriction> {
     }
 }
 
-#[gen_stub_pyclass]
 pub struct ConvertibleToPatternRestriction(Condition<PatternRestriction>);
 
 impl<'a> FromPyObject<'a> for ConvertibleToPatternRestriction {
@@ -2375,6 +2400,8 @@ impl<'a> FromPyObject<'a> for ConvertibleToPatternRestriction {
         }
     }
 }
+
+impl_stub_type!(ConvertibleToPatternRestriction = PythonPatternRestriction | PythonCondition);
 
 impl<'a> FromPyObject<'a> for ConvertibleToExpression {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
@@ -2401,6 +2428,15 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
     }
 }
 
+impl PyStubType for ConvertibleToExpression {
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        PythonExpression::type_output()
+            | TypeInfo::builtin("int")
+            | TypeInfo::builtin("str")
+            | TypeInfo::builtin("float")
+    }
+}
+
 impl<'a> FromPyObject<'a> for Symbol {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
@@ -2417,9 +2453,21 @@ impl<'a> FromPyObject<'a> for Symbol {
     }
 }
 
+impl PyStubType for Symbol {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("Symbol", "symbolica".into())
+    }
+}
+
 impl<'a> FromPyObject<'a> for Variable {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         Ok(Variable::Symbol(Symbol::extract_bound(ob)?))
+    }
+}
+
+impl PyStubType for Variable {
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        TypeInfo::with_module("Variable", "symbolica".into())
     }
 }
 
@@ -2461,7 +2509,6 @@ impl<'py> IntoPyObject<'py> for Integer {
     }
 }
 
-#[gen_stub_pyclass]
 pub struct ConvertibleToExpression(PythonExpression);
 
 impl ConvertibleToExpression {
@@ -2557,6 +2604,18 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
                 "Not a valid complex number",
             ))
         }
+    }
+}
+
+impl PyStubType for Complex<f64> {
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        TypeInfo::with_module("Complex", "symbolica".into())
+    }
+}
+
+impl PyStubType for Complex<Float> {
+    fn type_output() -> pyo3_stub_gen::TypeInfo {
+        TypeInfo::with_module("Complex", "symbolica".into())
     }
 }
 
@@ -2690,7 +2749,6 @@ macro_rules! req_wc_cmp {
     }};
 }
 
-// #[gen_stub_pymethods]
 #[pymethods]
 impl PythonExpression {
     /// Create a new symbol from a `name`. Symbols carry information about their attributes.
@@ -5767,7 +5825,6 @@ impl PythonExpression {
     }
 }
 
-#[gen_stub_pyclass]
 /// A raplacement, which is a pattern and a right-hand side, with optional conditions and settings.
 #[pyclass(name = "Replacement", module = "symbolica")]
 #[derive(Clone)]
@@ -5775,7 +5832,12 @@ pub struct PythonReplacement {
     replacement: Replacement,
 }
 
-// #[gen_stub_pymethods]
+impl PyStubType for PythonReplacement {
+    fn type_output() -> TypeInfo {
+        TypeInfo::with_module("Replacement", "symbolica".into())
+    }
+}
+
 #[pymethods]
 impl PythonReplacement {
     #[pyo3(signature = (pattern, rhs, cond=None, non_greedy_wildcards=None, level_range=None, level_is_tree_depth=None, allow_new_wildcards_on_rhs=None, rhs_cache_size=None))]

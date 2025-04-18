@@ -213,6 +213,12 @@ def E(input: str, default_namespace: str = "python") -> Expression:
     """
 
 
+def T() -> Transformer:
+    """
+    Create a new transformer that maps an expression.
+    """
+
+
 class AtomType(Enum):
     """Specifies the type of the atom."""
 
@@ -443,7 +449,7 @@ class Expression:
         """
 
     @overload
-    def __call__(self, *args: Transformer | Expression | int | float | Decimal) -> Transformer:
+    def __call__(self, *args: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
@@ -726,13 +732,13 @@ class Expression:
         Return the number of terms in this expression.
         """
 
-    def transform(self) -> Transformer:
+    def delay(self, t: Transformer) -> DelayedTransformer:
         """
         Convert the input to a transformer, on which subsequent
         transformations can be applied.
         """
 
-    def contains(self, a: Transformer | Expression | int | float | Decimal) -> Condition:
+    def contains(self, a: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
         """Returns true iff `self` contains `a` literally.
 
         Examples
@@ -1348,7 +1354,7 @@ class Expression:
 
     def match(
         self,
-        lhs: Transformer | Expression | int | float | Decimal,
+        lhs: DelayedTransformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1375,7 +1381,7 @@ class Expression:
 
     def matches(
         self,
-        lhs: Transformer | Expression | int | float | Decimal,
+        lhs: DelayedTransformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1395,8 +1401,8 @@ class Expression:
 
     def replace_iter(
         self,
-        lhs: Transformer | Expression | int | float | Decimal,
-        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
+        lhs: DelayedTransformer | Expression | int | float | Decimal,
+        rhs: DelayedTransformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1441,8 +1447,8 @@ class Expression:
 
     def replace(
         self,
-        pattern: Transformer | Expression | int | float | Decimal,
-        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
+        pattern: DelayedTransformer | Expression | int | float | Decimal,
+        rhs: DelayedTransformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1755,8 +1761,8 @@ class Replacement:
 
     def __new__(
             cls,
-            pattern: Transformer | Expression | int | float | Decimal,
-            rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
+            pattern: DelayedTransformer | Expression | int | float | Decimal,
+            rhs: DelayedTransformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
             cond: Optional[PatternRestriction | Condition] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1843,6 +1849,139 @@ class CompareOp:
     """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
 
 
+class DelayedTransformer:
+    def __call__(self) -> Expression:
+        """Execute a bound transformer.  If the transformer is unbound,
+        you can call it with an expression as an argument.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x = S('x')
+        >>> e = (x+1)**5
+        >>> e = e.delay(T().expand())()
+        >>> print(e)
+        """
+
+    def __eq__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __neq__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __lt__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __le__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __gt__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __ge__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def is_type(self, atom_type: AtomType) -> Condition:
+        """
+        Test if the transformed expression is of a certain type.
+        """
+
+    def contains(self, element: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Create a transformer that checks if the expression contains the given `element`.
+        """
+
+    def matches(
+        self,
+        lhs: DelayedTransformer | Expression | int | float | Decimal,
+        cond: Optional[PatternRestriction | Condition] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
+    ) -> Condition:
+        """
+        Create a transformer that tests whether the pattern is found in the expression.
+        Restrictions on the pattern can be supplied through `cond`.
+        """
+
+    def __add__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __radd__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __sub__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Subtract `other` from this transformer, returning the result.
+        """
+
+    def __rsub__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Subtract this transformer from `other`, returning the result.
+        """
+
+    def __mul__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __rmul__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __truediv__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Divide this transformer by `other`, returning the result.
+        """
+
+    def __rtruediv__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Divide `other` by this transformer, returning the result.
+        """
+
+    def __pow__(self, exp: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Take `self` to power `exp`, returning the result.
+        """
+
+    def __rpow__(self, base: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+        """
+        Take `base` to power `self`, returning the result.
+        """
+
+    def __xor__(self, a: Any) -> DelayedTransformer:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
+    def __rxor__(self, a: Any) -> DelayedTransformer:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
+    def __neg__(self) -> DelayedTransformer:
+        """
+        Negate the current transformer, returning the result.
+        """
+
+
 class Transformer:
     """Operations that transform an expression."""
 
@@ -1864,59 +2003,6 @@ class Transformer:
             The expression to transform.
         stats_to_file: str, optional
             If set, the output of the `stats` transformer will be written to a file in JSON format.
-        """
-
-    def __eq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Compare two transformers.
-        """
-
-    def __neq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Compare two transformers.
-        """
-
-    def __lt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def __le__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def __gt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def __ge__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def is_type(self, atom_type: AtomType) -> Condition:
-        """
-        Test if the transformed expression is of a certain type.
-        """
-
-    def contains(self, element: Transformer | Expression | int | float | Decimal) -> Condition:
-        """
-        Create a transformer that checks if the expression contains the given `element`.
-        """
-
-    def matches(
-        self,
-        lhs: Transformer | Expression | int | float | Decimal,
-        cond: Optional[PatternRestriction | Condition] = None,
-        level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
-    ) -> Condition:
-        """
-        Create a transformer that tests whether the pattern is found in the expression.
-        Restrictions on the pattern can be supplied through `cond`.
         """
 
     def if_then(self, condition: Condition, if_block: Transformer, else_block: Optional[Transformer] = None) -> Transformer:
@@ -2243,19 +2329,6 @@ class Transformer:
         >>> ).execute()
         """
 
-    def execute(self) -> Expression:
-        """Execute a bound transformer.  If the transformer is unbound,
-        you can call it with an expression as an argument.
-
-        Examples
-        --------
-        >>> from symbolica import *
-        >>> x = S('x')
-        >>> e = (x+1)**5
-        >>> e = e.transform().expand().execute()
-        >>> print(e)
-        """
-
     def derivative(self, x: Transformer | Expression) -> Transformer:
         """Create a transformer that derives `self` w.r.t the variable `x`."""
 
@@ -2533,71 +2606,6 @@ class Transformer:
             In  │ 1 │  10.00 B │
             Out │ 1 │   3.00 B │ ⧗ 40.15µs
         ```
-        """
-
-    def __add__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Add this transformer to `other`, returning the result.
-        """
-
-    def __radd__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Add this transformer to `other`, returning the result.
-        """
-
-    def __sub__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Subtract `other` from this transformer, returning the result.
-        """
-
-    def __rsub__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Subtract this transformer from `other`, returning the result.
-        """
-
-    def __mul__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Add this transformer to `other`, returning the result.
-        """
-
-    def __rmul__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Add this transformer to `other`, returning the result.
-        """
-
-    def __truediv__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Divide this transformer by `other`, returning the result.
-        """
-
-    def __rtruediv__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Divide `other` by this transformer, returning the result.
-        """
-
-    def __pow__(self, exp: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Take `self` to power `exp`, returning the result.
-        """
-
-    def __rpow__(self, base: Transformer | Expression | int | float | Decimal) -> Transformer:
-        """
-        Take `base` to power `self`, returning the result.
-        """
-
-    def __xor__(self, a: Any) -> Transformer:
-        """
-        Returns a warning that `**` should be used instead of `^` for taking a power.
-        """
-
-    def __rxor__(self, a: Any) -> Transformer:
-        """
-        Returns a warning that `**` should be used instead of `^` for taking a power.
-        """
-
-    def __neg__(self) -> Transformer:
-        """
-        Negate the current transformer, returning the result.
         """
 
 

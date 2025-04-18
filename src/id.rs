@@ -1546,7 +1546,7 @@ impl Pattern {
             (Pattern::Wildcard(_), _) => true,
             (Pattern::Pow(_), AtomView::Pow(_)) => true,
             (Pattern::Literal(p), _) => p.as_view() == target,
-            (Pattern::Transformer(_), _) => unreachable!(),
+            (Pattern::Transformer(_), _) => panic!("Pattern is a transformer"),
             (_, _) => false,
         }
     }

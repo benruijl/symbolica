@@ -92,7 +92,7 @@ def S(name: str,
     dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
 
     Define a custom normalization function:
-    >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
+    >>> e = S('real_log', custom_normalization=T().replace(E("x_(exp(x1_))"), E("x1_")))
     >>> E("real_log(exp(x)) + real_log(5)")
 
     Define a custom print function:
@@ -210,6 +210,12 @@ def E(input: str, default_namespace: str = "python") -> Expression:
     ------
     ValueError
         If the input is not a valid Symbolica expression.
+    """
+
+
+def T() -> Transformer:
+    """
+    Create a new transformer that maps an expression.
     """
 
 
@@ -352,7 +358,7 @@ class Expression:
         dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
 
         Define a custom normalization function:
-        >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
+        >>> e = S('real_log', custom_normalization=T().replace(E("x_(exp(x1_))"), E("x1_")))
         >>> E("real_log(exp(x)) + real_log(5)")
 
         Define a custom print function:
@@ -443,7 +449,7 @@ class Expression:
         """
 
     @overload
-    def __call__(self, *args: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
+    def __call__(self, *args: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
@@ -726,13 +732,21 @@ class Expression:
         Return the number of terms in this expression.
         """
 
-    def transform(self) -> Transformer:
+    def hold(self, t: Transformer) -> HeldExpression:
         """
-        Convert the input to a transformer, on which subsequent
-        transformations can be applied.
+        Create a held expression that delays the execution of the transformer `t` until the
+        resulting held expression is called. Held expressions can be composed like regular expressions
+        and are useful for the right-hand side of pattern matching, to act a transformer
+        on a wildcard *after* it has been substituted.
+
+        Examples
+        -------
+        >>> f, x, x_ = S('f', 'x', 'x_')
+        >>> e = f((x+1)**2)
+        >>> e = e.replace(f(x_), f(x_.hold(T().expand())))
         """
 
-    def contains(self, a: Transformer | Expression | int | float | complex | Decimal) -> Condition:
+    def contains(self, a: Transformer | HeldExpression | Expression | int | float | Decimal) -> Condition:
         """Returns true iff `self` contains `a` literally.
 
         Examples
@@ -1026,7 +1040,7 @@ class Expression:
         --------
         >>> x, x_ = S('x', 'x_')
         >>> e = (1+x)**2
-        >>> r = e.map(Transformer().expand().replace(x, 6))
+        >>> r = e.map(T().expand().replace(x, 6))
         >>> print(r)
 
         Parameters
@@ -1351,7 +1365,7 @@ class Expression:
 
     def match(
         self,
-        lhs: Transformer | Expression | int | float | complex | Decimal,
+        lhs: Expression | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1378,7 +1392,7 @@ class Expression:
 
     def matches(
         self,
-        lhs: Transformer | Expression | int | float | complex | Decimal,
+        lhs: Expression | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1398,8 +1412,8 @@ class Expression:
 
     def replace_iter(
         self,
-        lhs: Transformer | Expression | int | float | complex | Decimal,
-        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
+        lhs: Expression | int | float | complex | Decimal,
+        rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1444,8 +1458,8 @@ class Expression:
 
     def replace(
         self,
-        pattern: Transformer | Expression | int | float | complex | Decimal,
-        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
+        pattern: Expression | int | float | complex | Decimal,
+        rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1456,6 +1470,8 @@ class Expression:
     ) -> Expression:
         """
         Replace all subexpressions matching the pattern `pattern` by the right-hand side `rhs`.
+        The right-hand side can be an expression with wildcards, a held expression (see :meth:`Expression.hold`) or
+        a function that maps a dictionary of wildcards to an expression.
 
         Examples
         --------
@@ -1758,8 +1774,8 @@ class Replacement:
 
     def __new__(
             cls,
-            pattern: Transformer | Expression | int | float | complex | Decimal,
-            rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
+            pattern: Expression | int | float | complex | Decimal,
+            rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
             cond: Optional[PatternRestriction | Condition] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1846,6 +1862,139 @@ class CompareOp:
     """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
 
 
+class HeldExpression:
+    def __call__(self) -> Expression:
+        """Execute a bound transformer. If the transformer is unbound,
+        you can call it with an expression as an argument.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x = S('x')
+        >>> e = (x+1)**5
+        >>> e = e.hold(T().expand())()
+        >>> print(e)
+        """
+
+    def __eq__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __neq__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __lt__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __le__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __gt__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __ge__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def is_type(self, atom_type: AtomType) -> Condition:
+        """
+        Test if the transformed expression is of a certain type.
+        """
+
+    def contains(self, element: HeldExpression | Expression | int | float | complex | Decimal) -> Condition:
+        """
+        Create a transformer that checks if the expression contains the given `element`.
+        """
+
+    def matches(
+        self,
+        lhs: Expression | int | float | complex | Decimal,
+        cond: Optional[PatternRestriction | Condition] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
+    ) -> Condition:
+        """
+        Create a transformer that tests whether the pattern is found in the expression.
+        Restrictions on the pattern can be supplied through `cond`.
+        """
+
+    def __add__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __radd__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __sub__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Subtract `other` from this transformer, returning the result.
+        """
+
+    def __rsub__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Subtract this transformer from `other`, returning the result.
+        """
+
+    def __mul__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __rmul__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __truediv__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Divide this transformer by `other`, returning the result.
+        """
+
+    def __rtruediv__(self, other: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Divide `other` by this transformer, returning the result.
+        """
+
+    def __pow__(self, exp: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Take `self` to power `exp`, returning the result.
+        """
+
+    def __rpow__(self, base: HeldExpression | Expression | int | float | complex | Decimal) -> HeldExpression:
+        """
+        Take `base` to power `self`, returning the result.
+        """
+
+    def __xor__(self, a: Any) -> HeldExpression:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
+    def __rxor__(self, a: Any) -> HeldExpression:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
+    def __neg__(self) -> HeldExpression:
+        """
+        Negate the current transformer, returning the result.
+        """
+
+
 class Transformer:
     """Operations that transform an expression."""
 
@@ -1859,7 +2008,7 @@ class Transformer:
         Examples
         --------
         >>> x = S('x')
-        >>> e = Transformer().expand()((1+x)**2)
+        >>> e = T().expand()((1+x)**2)
 
         Parameters
         ----------
@@ -1869,66 +2018,13 @@ class Transformer:
             If set, the output of the `stats` transformer will be written to a file in JSON format.
         """
 
-    def __eq__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Compare two transformers.
-        """
-
-    def __neq__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Compare two transformers.
-        """
-
-    def __lt__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def __le__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def __gt__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def __ge__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
-        """
-
-    def is_type(self, atom_type: AtomType) -> Condition:
-        """
-        Test if the transformed expression is of a certain type.
-        """
-
-    def contains(self, element: Transformer | Expression | int | float | complex | Decimal) -> Condition:
-        """
-        Create a transformer that checks if the expression contains the given `element`.
-        """
-
-    def matches(
-        self,
-        lhs: Transformer | Expression | int | float | complex | Decimal,
-        cond: Optional[PatternRestriction | Condition] = None,
-        level_range: Optional[Tuple[int, Optional[int]]] = None,
-        level_is_tree_depth: Optional[bool] = False,
-        allow_new_wildcards_on_rhs: Optional[bool] = False,
-    ) -> Condition:
-        """
-        Create a transformer that tests whether the pattern is found in the expression.
-        Restrictions on the pattern can be supplied through `cond`.
-        """
-
     def if_then(self, condition: Condition, if_block: Transformer, else_block: Optional[Transformer] = None) -> Transformer:
         """Evaluate the condition and apply the `if_block` if the condition is true, otherwise apply the `else_block`.
         The expression that is the input of the transformer is the input for the condition, the `if_block` and the `else_block`.
 
         Examples
         --------
-        >>> t = T.map_terms(T.if_then(T.contains(x), T.print()))
+        >>> t = T().map_terms(T().if_then(T().contains(x), T().print()))
         >>> t(x + y + 4)
 
         prints `x`.
@@ -1941,7 +2037,7 @@ class Transformer:
 
         Examples
         --------
-        >>> t = T.map_terms(T.if_changed(T.replace(x, y), T.print()))
+        >>> t = T().map_terms(T().if_changed(T().replace(x, y), T().print()))
         >>> print(t(x + y + 4))
 
         prints
@@ -1957,11 +2053,11 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import *
-        >>> t = T.map_terms(T.repeat(
-        >>>     T.replace(y, 4),
-        >>>     T.if_changed(T.replace(x, y),
-        >>>                 T.break_chain()),
-        >>>     T.print()  # print of y is never reached
+        >>> t = T().map_terms(T().repeat(
+        >>>     T().replace(y, 4),
+        >>>     T().if_changed(T().replace(x, y),
+        >>>                 T().break_chain()),
+        >>>     T().print()  # print of y is never reached
         >>> ))
         >>> print(t(x))
         """
@@ -1973,10 +2069,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x, x_ = S('x', 'x_')
         >>> f = S('f')
-        >>> e = f((x+1)**2).replace(f(x_), x_.transform().expand())
+        >>> e = f((x+1)**2).replace(f(x_), x_.hold(T().expand()))
         >>> print(e)
         """
 
@@ -1989,7 +2085,7 @@ class Transformer:
         >>> from symbolica import *
         >>> x, y = S('x', 'y')
         >>> e = 3*(x+y)*(4*x+5*y)
-        >>> print(Transformer().expand_num()(e))
+        >>> print(T().expand_num()(e))
 
         yields
 
@@ -2003,10 +2099,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x__ = S('x__')
         >>> f = S('f')
-        >>> e = f(2,3).replace(f(x__), x__.transform().prod())
+        >>> e = f(2,3).replace(f(x__), x__.hold(T().prod()))
         >>> print(e)
         """
 
@@ -2015,10 +2111,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x__ = S('x__')
         >>> f = S('f')
-        >>> e = f(2,3).replace(f(x__), x__.transform().sum())
+        >>> e = f(2,3).replace(f(x__), x__.hold(T().sum()))
         >>> print(e)
         """
 
@@ -2032,10 +2128,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x__ = S('x__')
         >>> f = S('f')
-        >>> e = f(2,3,4).replace(f(x__), x__.transform().nargs())
+        >>> e = f(2,3,4).replace(f(x__), x__.hold(T().nargs()))
         >>> print(e)
         """
 
@@ -2044,10 +2140,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x__ = S('x__')
         >>> f = S('f')
-        >>> e = f(3,2,1).replace(f(x__), x__.transform().sort())
+        >>> e = f(3,2,1).replace(f(x__), x__.hold(T().sort()))
         >>> print(e)
         """
 
@@ -2056,10 +2152,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x_ = S('x__')
         >>> f = S('f')
-        >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.transform().cycle_symmetrize())
+        >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.hold(T().cycle_symmetrize()))
         >>> print(e)
 
         Yields `f(1,2,3,1,2,4)`.
@@ -2071,10 +2167,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x__ = S('x__')
         >>> f = S('f')
-        >>> e = f(1,2,1,2).replace(f(x__), x__.transform().deduplicate())
+        >>> e = f(1,2,1,2).replace(f(x__), x__.hold(T().deduplicate()))
         >>> print(e)
 
         Yields `f(1,2)`.
@@ -2086,7 +2182,7 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import *, Function
-        >>> e = Function.COEFF((x^2+1)/y^2).transform().from_coeff()
+        >>> e = Function.COEFF((x^2+1)/y^2).hold(T().from_coeff())
         >>> print(e)
         """
 
@@ -2095,10 +2191,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x, x__ = S('x', 'x__')
         >>> f = S('f')
-        >>> e = (x + 1).replace(x__, f(x_.transform().split()))
+        >>> e = (x + 1).replace(x__, f(x_.hold(T().split())))
         >>> print(e)
         """
 
@@ -2109,9 +2205,9 @@ class Transformer:
         Examples
         --------
 
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x, y, z, w, f, x__ = S('x', 'y', 'z', 'w', 'f', 'x__')
-        >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).transform().linearize([z]))
+        >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).hold(T().linearize([z])))
         >>> print(e)
 
         yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
@@ -2136,10 +2232,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x_, f_id, g_id = S('x__', 'f', 'g')
         >>> f = S('f')
-        >>> e = f(1,2,1,3).replace(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
+        >>> e = f(1,2,1,3).replace(f(x_), x_.hold(T().partitions([(f_id, 2), (g_id, 1), (f_id, 1)])))
         >>> print(e)
 
         yields:
@@ -2153,10 +2249,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x_, f_id = S('x__', 'f')
         >>> f = S('f')
-        >>> e = f(1,2,1,2).replace(f(x_), x_.transform().permutations(f_id)
+        >>> e = f(1,2,1,2).replace(f(x_), x_.hold(T().permutations(f_id)))
         >>> print(e)
 
         yields:
@@ -2170,10 +2266,10 @@ class Transformer:
 
         Examples
         --------
-        >>> from symbolica import *, Transformer
+        >>> from symbolica import *
         >>> x_ = S('x_')
         >>> f = S('f')
-        >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
+        >>> e = f(2).replace(f(x_), x_.hold(T().map(lambda r: r**2)))
         >>> print(e)
         """
 
@@ -2184,7 +2280,7 @@ class Transformer:
         --------
         >>> from symbolica import *
         >>> x, y = S('x', 'y')
-        >>> t = Transformer().map_terms(Transformer().print(), n_cores=2)
+        >>> t = T().map_terms(T().print(), n_cores=2)
         >>> e = t(x + y)
         """
 
@@ -2197,7 +2293,8 @@ class Transformer:
         >>> from symbolica import *
         >>> x = S('x')
         >>> f = S('f')
-        >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
+        >>> t = T().split().for_each(T().map(f))
+        >>> e = t(1+x)
         """
 
     def check_interrupt(self) -> Transformer:
@@ -2209,8 +2306,8 @@ class Transformer:
         >>> from symbolica import *
         >>> x_ = S('x_')
         >>> f = S('f')
-        >>> f(10).transform().repeat(Transformer().replace(
-        >>> f(x_), f(x_+1)).check_interrupt()).execute()
+        >>> t = T().replace(f(x_), f(x_ + 1)).check_interrupt()
+        >>> t(f(10))
         """
 
     def repeat(self, *transformers: Transformer) -> Transformer:
@@ -2223,11 +2320,11 @@ class Transformer:
         >>> from symbolica import *
         >>> x_ = S('x_')
         >>> f = S('f')
-        >>> e = E("f(5)")
-        >>> e = e.transform().repeat(
-        >>>     Transformer().expand(),
-        >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
-        >>> ).execute()
+        >>> t = T().repeat(
+        >>>     T().expand(),
+        >>>     T().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+        >>> )
+        >>> e = t(f(5))
         """
 
     def chain(self, *transformers: Transformer) -> Transformer:
@@ -2240,26 +2337,14 @@ class Transformer:
         >>> x_ = S('x_')
         >>> f = S('f')
         >>> e = E("f(5)")
-        >>> e = e.transform().chain(
-        >>>     Transformer().expand(),
-        >>>     Transformer().replace(f(x_), f(5))
-        >>> ).execute()
+        >>> t = T().chain(
+        >>>     T().expand(),
+        >>>     T().replace(f(x_), f(5))
+        >>> )
+        >>> e = t(f(5))
         """
 
-    def execute(self) -> Expression:
-        """Execute a bound transformer.  If the transformer is unbound,
-        you can call it with an expression as an argument.
-
-        Examples
-        --------
-        >>> from symbolica import *
-        >>> x = S('x')
-        >>> e = (x+1)**5
-        >>> e = e.transform().expand().execute()
-        >>> print(e)
-        """
-
-    def derivative(self, x: Transformer | Expression) -> Transformer:
+    def derivative(self, x: HeldExpression | Expression) -> Transformer:
         """Create a transformer that derives `self` w.r.t the variable `x`."""
 
     def set_coefficient_ring(self, vars: Sequence[Expression]) -> Transformer:
@@ -2292,15 +2377,15 @@ class Transformer:
         >>> x, y = S('x', 'y')
         >>> e = 5*x + x * y + x**2 + 5
         >>>
-        >>> print(e.transform().collect(x).execute())
+        >>> print(e.hold(T().collect(x).execute()))
 
         yields `x^2+x*(y+5)+5`.
 
         >>> from symbolica import *
         >>> x, y, x_, var, coeff = S('x', 'y', 'x_', 'var', 'coeff')
         >>> e = 5*x + x * y + x**2 + 5
-        >>> print(e.collect(x, key_map=Transformer().replace(x_, var(x_)),
-                coeff_map=Transformer().replace(x_, coeff(x_))))
+        >>> print(e.collect(x, key_map=T().replace(x_, var(x_)),
+                coeff_map=T().replace(x_, coeff(x_))))
 
         yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
 
@@ -2333,7 +2418,7 @@ class Transformer:
         >>> x, f = S('x', 'f')
         >>> e = f(1,2) + x*f(1,2)
         >>>
-        >>> print(e.transform().collect_symbol(x).execute())
+        >>> print(T().collect_symbol(x)(e))
 
         yields `(1+x)*f(1,2)`.
 
@@ -2354,8 +2439,8 @@ class Transformer:
         --------
 
         >>> from symbolica import *
-        >>> e = E('x*(x+y*x+x^2+y*(x+x^2))')
-        >>> e.transform().collect_factors().execute()
+        >>> t = T().collect_factors()
+        >>> t(E('x*(x+y*x+x^2+y*(x+x^2))'))
 
         yields
 
@@ -2376,7 +2461,7 @@ class Transformer:
         >>> from symbolica import *
         >>> x, y = S('x', 'y')
         >>> e = (-3*x+6*y)*(2*x+2*y)
-        >>> print(Transformer().collect_num()(e))
+        >>> print(T().collect_num()(e))
 
         yields
 
@@ -2434,8 +2519,8 @@ class Transformer:
 
     def replace(
         self,
-        pat: Transformer | Expression | int | float | complex | Decimal,
-        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
+        pat: HeldExpression | Expression | int | float | complex | Decimal,
+        rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | complex | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -2451,8 +2536,8 @@ class Transformer:
 
         >>> x, w1_, w2_ = S('x','w1_','w2_')
         >>> f = S('f')
-        >>> e = f(3,x)
-        >>> r = e.transform().replace(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
+        >>> t = T().replace(f(w1_, w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
+        >>> r = t(f(3,x))
         >>> print(r)
 
         Parameters
@@ -2484,8 +2569,8 @@ class Transformer:
         --------
 
         >>> x, y, f = S('x', 'y', 'f')
-        >>> e = f(x,y)
-        >>> r = e.transform().replace_multiple([Replacement(x, y), Replacement(y, x)])
+        >>> t = T().replace_multiple([Replacement(x, y), Replacement(y, x)])
+        >>> r = t(f(x,y))
         >>> print(r)
         """
 
@@ -2512,7 +2597,7 @@ class Transformer:
 
         Examples
         --------
-        >>> E('f(10)').transform().print(terms_on_new_line = True).execute()
+        >>> T().print(terms_on_new_line = True)
         """
 
     def stats(
@@ -2530,8 +2615,8 @@ class Transformer:
         >>> from symbolica import *
         >>> x_ = S('x_')
         >>> f = S('f')
-        >>> e = E("f(5)")
-        >>> e = e.transform().stats('replace', Transformer().replace(f(x_), 1)).execute()
+        >>> t = T().stats('replace', T().replace(f(x_), 1)).execute()
+        >>> t(eE('f(5)'))
 
         yields
         ```
@@ -2541,69 +2626,57 @@ class Transformer:
         ```
         """
 
-    def __add__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
+    def __eq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
-        Add this transformer to `other`, returning the result.
-        """
-
-    def __radd__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
-        """
-        Add this transformer to `other`, returning the result.
+        Compare two transformers.
         """
 
-    def __sub__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
+    def __neq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
-        Subtract `other` from this transformer, returning the result.
-        """
-
-    def __rsub__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
-        """
-        Subtract this transformer from `other`, returning the result.
+        Compare two transformers.
         """
 
-    def __mul__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
+    def __lt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
-        Add this transformer to `other`, returning the result.
-        """
-
-    def __rmul__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
-        """
-        Add this transformer to `other`, returning the result.
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __truediv__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
+    def __le__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
-        Divide this transformer by `other`, returning the result.
-        """
-
-    def __rtruediv__(self, other: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
-        """
-        Divide `other` by this transformer, returning the result.
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __pow__(self, exp: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
+    def __gt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
-        Take `self` to power `exp`, returning the result.
-        """
-
-    def __rpow__(self, base: Transformer | Expression | int | float | complex | Decimal) -> Transformer:
-        """
-        Take `base` to power `self`, returning the result.
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __xor__(self, a: Any) -> Transformer:
+    def __ge__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
-        Returns a warning that `**` should be used instead of `^` for taking a power.
-        """
-
-    def __rxor__(self, a: Any) -> Transformer:
-        """
-        Returns a warning that `**` should be used instead of `^` for taking a power.
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __neg__(self) -> Transformer:
+    def is_type(self, atom_type: AtomType) -> Condition:
         """
-        Negate the current transformer, returning the result.
+        Test if the transformed expression is of a certain type.
+        """
+
+    def contains(self, element: Transformer | HeldExpression | Expression | int | float | Decimal) -> Condition:
+        """
+        Create a transformer that checks if the expression contains the given `element`.
+        """
+
+    def matches(
+        self,
+        lhs: HeldExpression | Expression | int | float | Decimal,
+        cond: Optional[PatternRestriction | Condition] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
+    ) -> Condition:
+        """
+        Create a transformer that tests whether the pattern is found in the expression.
+        Restrictions on the pattern can be supplied through `cond`.
         """
 
 

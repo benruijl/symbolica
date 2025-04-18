@@ -32,7 +32,7 @@ faster_alloc = ["tikv-jemallocator"]
 # sort functions based on an argument-by-argument comparison
 full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
-python_api = ["pyo3", "bincode", "dep:pyo3-stub-gen"]
+python_api = ["pyo3", "bincode"]
 # do not create a Python module but allow other crates to do so
 python_no_module = ["python_api"]
 # build a module that is independent of the specific Python version
@@ -42,6 +42,7 @@ tracing_only_warnings = ["tracing/release_max_level_warn"]
 serde = ["dep:serde", "rug/serde"]
 # allow importing/exporting of atoms with a state map using bincode
 bincode = ["dep:bincode", "dep:bincode-trait-derive"]
+python_stubgen = ["dep:pyo3-stub-gen"]
 
 [dependencies.pyo3]
 features = ["extension-module", "abi3", "py-clone"]

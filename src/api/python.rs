@@ -169,7 +169,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m: &'b Bound<'a, PyModule>,
 ) -> PyResult<&'b Bound<'a, PyModule>> {
     m.add_class::<PythonExpression>()?;
-    m.add_class::<PythonDelayedTransformer>()?;
+    m.add_class::<PythonHeldExpression>()?;
     m.add_class::<PythonTransformer>()?;
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonFiniteFieldPolynomial>()?;
@@ -427,14 +427,30 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
 #[derive(FromPyObject)]
 pub enum ConvertibleToPattern {
     Literal(ConvertibleToExpression),
-    Pattern(PythonDelayedTransformer),
+    Pattern(PythonHeldExpression),
 }
 
 impl ConvertibleToPattern {
-    pub fn to_pattern(self) -> PyResult<PythonDelayedTransformer> {
+    pub fn to_pattern(self) -> PyResult<PythonHeldExpression> {
         match self {
             Self::Literal(l) => Ok(l.to_expression().expr.to_pattern().into()),
             Self::Pattern(e) => Ok(e),
+        }
+    }
+}
+
+/// A pattern that is allowed to have unbound transformers
+#[derive(FromPyObject)]
+pub enum ConvertibleToOpenPattern {
+    Closed(ConvertibleToPattern),
+    Open(PythonTransformer),
+}
+
+impl ConvertibleToOpenPattern {
+    pub fn to_pattern(self) -> PyResult<PythonHeldExpression> {
+        match self {
+            Self::Closed(l) => l.to_pattern(),
+            Self::Open(e) => Ok(Pattern::Transformer(Box::new((None, e.chain))).into()),
         }
     }
 }
@@ -484,20 +500,20 @@ impl<T> OneOrMultiple<T> {
 }
 
 /// Operations that transform an expression.
-#[pyclass(name = "DelayedTransformer", module = "symbolica", subclass)]
+#[pyclass(name = "DelayedExpression", module = "symbolica", subclass)]
 #[derive(Clone)]
-pub struct PythonDelayedTransformer {
+pub struct PythonHeldExpression {
     pub expr: Pattern,
 }
 
-impl From<Pattern> for PythonDelayedTransformer {
+impl From<Pattern> for PythonHeldExpression {
     fn from(expr: Pattern) -> Self {
-        PythonDelayedTransformer { expr }
+        PythonHeldExpression { expr }
     }
 }
 
 #[pymethods]
-impl PythonDelayedTransformer {
+impl PythonHeldExpression {
     /// Execute a bound transformer. If the transformer is unbound,
     /// you can call it with an expression as an argument.
     ///
@@ -577,7 +593,7 @@ impl PythonDelayedTransformer {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    pub fn contains(&self, s: ConvertibleToPattern) -> PyResult<PythonCondition> {
+    pub fn contains(&self, s: ConvertibleToOpenPattern) -> PyResult<PythonCondition> {
         Ok(PythonCondition {
             condition: Condition::Yield(Relation::Contains(
                 self.expr.clone(),
@@ -616,7 +632,7 @@ impl PythonDelayedTransformer {
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         let res = Workspace::get_local().with(|workspace| {
             Ok::<Pattern, PyErr>(self.expr.add(&rhs.to_pattern()?.expr, workspace))
         })?;
@@ -625,23 +641,23 @@ impl PythonDelayedTransformer {
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __radd__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __radd__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         self.__add__(rhs)
     }
 
     ///  Subtract `other` from this transformer, returning the result.
-    pub fn __sub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __sub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         self.__add__(ConvertibleToPattern::Pattern(rhs.to_pattern()?.__neg__()?))
     }
 
     ///  Subtract this transformer from `other`, returning the result.
-    pub fn __rsub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __rsub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         rhs.to_pattern()?
             .__add__(ConvertibleToPattern::Pattern(self.__neg__()?))
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         let res = Workspace::get_local().with(|workspace| {
             Ok::<Pattern, PyErr>(self.expr.mul(&rhs.to_pattern()?.expr, workspace))
         });
@@ -650,12 +666,12 @@ impl PythonDelayedTransformer {
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __rmul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __rmul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         self.__mul__(rhs)
     }
 
     /// Divide this transformer by `other`, returning the result.
-    pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         let res = Workspace::get_local().with(|workspace| {
             Ok::<Pattern, PyErr>(self.expr.div(&rhs.to_pattern()?.expr, workspace))
         });
@@ -664,7 +680,7 @@ impl PythonDelayedTransformer {
     }
 
     /// Divide `other` by this transformer, returning the result.
-    pub fn __rtruediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonDelayedTransformer> {
+    pub fn __rtruediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonHeldExpression> {
         rhs.to_pattern()?
             .__truediv__(ConvertibleToPattern::Pattern(self.clone()))
     }
@@ -674,7 +690,7 @@ impl PythonDelayedTransformer {
         &self,
         rhs: ConvertibleToPattern,
         number: Option<i64>,
-    ) -> PyResult<PythonDelayedTransformer> {
+    ) -> PyResult<PythonHeldExpression> {
         if number.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
@@ -692,27 +708,27 @@ impl PythonDelayedTransformer {
         &self,
         rhs: ConvertibleToPattern,
         number: Option<i64>,
-    ) -> PyResult<PythonDelayedTransformer> {
+    ) -> PyResult<PythonHeldExpression> {
         rhs.to_pattern()?
             .__pow__(ConvertibleToPattern::Pattern(self.clone()), number)
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonDelayedTransformer> {
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonHeldExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonDelayedTransformer> {
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonHeldExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Negate the current transformer, returning the result.
-    pub fn __neg__(&self) -> PyResult<PythonDelayedTransformer> {
+    pub fn __neg__(&self) -> PyResult<PythonHeldExpression> {
         let res =
             Workspace::get_local().with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace)));
 
@@ -732,6 +748,10 @@ impl PythonTransformer {
         let mut r = self.clone();
         r.chain.push(transformer);
         Ok(r)
+    }
+
+    fn to_pattern(&self) -> Pattern {
+        Pattern::Transformer(Box::new((None, self.chain.clone())))
     }
 }
 
@@ -790,6 +810,91 @@ impl PythonTransformer {
         })?;
 
         Ok(out.into())
+    }
+
+    /// Compare two expressions. If one of the expressions is not a number, an
+    /// internal ordering will be used.
+    fn __richcmp__(
+        &self,
+        other: ConvertibleToOpenPattern,
+        op: CompareOp,
+    ) -> PyResult<PythonCondition> {
+        Ok(match op {
+            CompareOp::Eq => PythonCondition {
+                condition: Relation::Eq(self.to_pattern(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Ne => PythonCondition {
+                condition: Relation::Ne(self.to_pattern(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Ge => PythonCondition {
+                condition: Relation::Ge(self.to_pattern(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Gt => PythonCondition {
+                condition: Relation::Gt(self.to_pattern(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Le => PythonCondition {
+                condition: Relation::Le(self.to_pattern(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Lt => PythonCondition {
+                condition: Relation::Lt(self.to_pattern(), other.to_pattern()?.expr).into(),
+            },
+        })
+    }
+
+    /// Test if the expression is of a certain type.
+    pub fn is_type(&self, atom_type: PythonAtomType) -> PythonCondition {
+        PythonCondition {
+            condition: Condition::Yield(Relation::IsType(
+                self.to_pattern(),
+                match atom_type {
+                    PythonAtomType::Num => AtomType::Num,
+                    PythonAtomType::Var => AtomType::Var,
+                    PythonAtomType::Add => AtomType::Add,
+                    PythonAtomType::Mul => AtomType::Mul,
+                    PythonAtomType::Pow => AtomType::Pow,
+                    PythonAtomType::Fn => AtomType::Fun,
+                },
+            )),
+        }
+    }
+
+    /// Returns true iff `self` contains `a` literally.
+    pub fn contains(&self, s: ConvertibleToOpenPattern) -> PyResult<PythonCondition> {
+        Ok(PythonCondition {
+            condition: Condition::Yield(Relation::Contains(
+                self.to_pattern(),
+                s.to_pattern()?.expr,
+            )),
+        })
+    }
+
+    /// Create a transformer that tests whether the pattern is found in the expression.
+    /// Restrictions on the pattern can be supplied through `cond`.
+    #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    pub fn matches(
+        &self,
+        lhs: ConvertibleToOpenPattern,
+        cond: Option<ConvertibleToPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
+    ) -> PyResult<PythonCondition> {
+        let conditions = cond.map(|r| r.0).unwrap_or_default();
+        let settings = MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            ..MatchSettings::default()
+        };
+
+        Ok(PythonCondition {
+            condition: Condition::Yield(Relation::Matches(
+                self.to_pattern(),
+                lhs.to_pattern()?.expr,
+                conditions,
+                settings,
+            )),
+        })
     }
 
     /// Create a transformer that expands products and powers.
@@ -3313,12 +3418,21 @@ impl PythonExpression {
             }
 
             let p = Pattern::Fn(id, transformer_args);
-            PythonDelayedTransformer::from(p).into_py_any(py)
+            PythonHeldExpression::from(p).into_py_any(py)
         }
     }
 
-    /// Convert the input to a transformer, on which subsequent transformations can be applied.
-    pub fn delay(&self, t: PythonTransformer) -> PyResult<PythonDelayedTransformer> {
+    /// Create a held expression that delays the execution of the transformer `t` until the
+    /// resulting held expression is called. Held expressions can be composed like regular expressions
+    /// and are useful for the right-hand side of pattern matching, to act a transformer
+    /// on a wildcard *after* it has been substituted.
+    ///
+    /// Examples
+    /// -------
+    /// >>> f, x, x_ = S('f', 'x', 'x_')
+    /// >>> e = f((x+1)**2)
+    /// >>> e = e.replace(f(x_), f(x_.hold(T().expand())))
+    pub fn hold(&self, t: PythonTransformer) -> PyResult<PythonHeldExpression> {
         Ok(Pattern::Transformer(Box::new((Some(self.expr.to_pattern()), t.chain))).into())
     }
 
@@ -3360,7 +3474,7 @@ impl PythonExpression {
     /// >>> e.contains(x) # True
     /// >>> e.contains(x*y*z) # True
     /// >>> e.contains(x*y) # False
-    pub fn contains(&self, s: ConvertibleToPattern) -> PyResult<PythonCondition> {
+    pub fn contains(&self, s: ConvertibleToOpenPattern) -> PyResult<PythonCondition> {
         Ok(PythonCondition {
             condition: Condition::Yield(Relation::Contains(
                 self.expr.to_pattern(),

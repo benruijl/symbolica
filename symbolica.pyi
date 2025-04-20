@@ -449,7 +449,7 @@ class Expression:
         """
 
     @overload
-    def __call__(self, *args: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __call__(self, *args: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
@@ -732,13 +732,21 @@ class Expression:
         Return the number of terms in this expression.
         """
 
-    def delay(self, t: Transformer) -> DelayedTransformer:
+    def hold(self, t: Transformer) -> HeldExpression:
         """
-        Convert the input to a transformer, on which subsequent
-        transformations can be applied.
+        Create a held expression that delays the execution of the transformer `t` until the
+        resulting held expression is called. Held expressions can be composed like regular expressions
+        and are useful for the right-hand side of pattern matching, to act a transformer
+        on a wildcard *after* it has been substituted.
+
+        Examples
+        -------
+        >>> f, x, x_ = S('f', 'x', 'x_')
+        >>> e = f((x+1)**2)
+        >>> e = e.replace(f(x_), f(x_.hold(T().expand())))
         """
 
-    def contains(self, a: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def contains(self, a: Transformer | HeldExpression | Expression | int | float | Decimal) -> Condition:
         """Returns true iff `self` contains `a` literally.
 
         Examples
@@ -1354,7 +1362,7 @@ class Expression:
 
     def match(
         self,
-        lhs: DelayedTransformer | Expression | int | float | Decimal,
+        lhs: HeldExpression | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1381,7 +1389,7 @@ class Expression:
 
     def matches(
         self,
-        lhs: DelayedTransformer | Expression | int | float | Decimal,
+        lhs: HeldExpression | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1401,8 +1409,8 @@ class Expression:
 
     def replace_iter(
         self,
-        lhs: DelayedTransformer | Expression | int | float | Decimal,
-        rhs: DelayedTransformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
+        lhs: HeldExpression | Expression | int | float | Decimal,
+        rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1447,8 +1455,8 @@ class Expression:
 
     def replace(
         self,
-        pattern: DelayedTransformer | Expression | int | float | Decimal,
-        rhs: DelayedTransformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
+        pattern: HeldExpression | Expression | int | float | Decimal,
+        rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1761,8 +1769,8 @@ class Replacement:
 
     def __new__(
             cls,
-            pattern: DelayedTransformer | Expression | int | float | Decimal,
-            rhs: DelayedTransformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
+            pattern: HeldExpression | Expression | int | float | Decimal,
+            rhs: HeldExpression | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
             cond: Optional[PatternRestriction | Condition] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1849,9 +1857,9 @@ class CompareOp:
     """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
 
 
-class DelayedTransformer:
+class HeldExpression:
     def __call__(self) -> Expression:
-        """Execute a bound transformer.  If the transformer is unbound,
+        """Execute a bound transformer. If the transformer is unbound,
         you can call it with an expression as an argument.
 
         Examples
@@ -1859,36 +1867,36 @@ class DelayedTransformer:
         >>> from symbolica import *
         >>> x = S('x')
         >>> e = (x+1)**5
-        >>> e = e.delay(T().expand())()
+        >>> e = e.hold(T().expand())()
         >>> print(e)
         """
 
-    def __eq__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def __eq__(self, other: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers.
         """
 
-    def __neq__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def __neq__(self, other: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers.
         """
 
-    def __lt__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def __lt__(self, other: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __le__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def __le__(self, other: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __gt__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def __gt__(self, other: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __ge__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def __ge__(self, other: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
         """
@@ -1898,14 +1906,14 @@ class DelayedTransformer:
         Test if the transformed expression is of a certain type.
         """
 
-    def contains(self, element: DelayedTransformer | Expression | int | float | Decimal) -> Condition:
+    def contains(self, element: HeldExpression | Expression | int | float | Decimal) -> Condition:
         """
         Create a transformer that checks if the expression contains the given `element`.
         """
 
     def matches(
         self,
-        lhs: DelayedTransformer | Expression | int | float | Decimal,
+        lhs: HeldExpression | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1916,67 +1924,67 @@ class DelayedTransformer:
         Restrictions on the pattern can be supplied through `cond`.
         """
 
-    def __add__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __add__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __radd__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __radd__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __sub__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __sub__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Subtract `other` from this transformer, returning the result.
         """
 
-    def __rsub__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __rsub__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Subtract this transformer from `other`, returning the result.
         """
 
-    def __mul__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __mul__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __rmul__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __rmul__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __truediv__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __truediv__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Divide this transformer by `other`, returning the result.
         """
 
-    def __rtruediv__(self, other: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __rtruediv__(self, other: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Divide `other` by this transformer, returning the result.
         """
 
-    def __pow__(self, exp: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __pow__(self, exp: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Take `self` to power `exp`, returning the result.
         """
 
-    def __rpow__(self, base: DelayedTransformer | Expression | int | float | Decimal) -> DelayedTransformer:
+    def __rpow__(self, base: HeldExpression | Expression | int | float | Decimal) -> HeldExpression:
         """
         Take `base` to power `self`, returning the result.
         """
 
-    def __xor__(self, a: Any) -> DelayedTransformer:
+    def __xor__(self, a: Any) -> HeldExpression:
         """
         Returns a warning that `**` should be used instead of `^` for taking a power.
         """
 
-    def __rxor__(self, a: Any) -> DelayedTransformer:
+    def __rxor__(self, a: Any) -> HeldExpression:
         """
         Returns a warning that `**` should be used instead of `^` for taking a power.
         """
 
-    def __neg__(self) -> DelayedTransformer:
+    def __neg__(self) -> HeldExpression:
         """
         Negate the current transformer, returning the result.
         """
@@ -2011,7 +2019,7 @@ class Transformer:
 
         Examples
         --------
-        >>> t = T.map_terms(T.if_then(T.contains(x), T.print()))
+        >>> t = T().map_terms(T().if_then(T().contains(x), T().print()))
         >>> t(x + y + 4)
 
         prints `x`.
@@ -2024,7 +2032,7 @@ class Transformer:
 
         Examples
         --------
-        >>> t = T.map_terms(T.if_changed(T.replace(x, y), T.print()))
+        >>> t = T().map_terms(T().if_changed(T().replace(x, y), T().print()))
         >>> print(t(x + y + 4))
 
         prints
@@ -2040,11 +2048,11 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import *
-        >>> t = T.map_terms(T.repeat(
-        >>>     T.replace(y, 4),
-        >>>     T.if_changed(T.replace(x, y),
-        >>>                 T.break_chain()),
-        >>>     T.print()  # print of y is never reached
+        >>> t = T().map_terms(T().repeat(
+        >>>     T().replace(y, 4),
+        >>>     T().if_changed(T().replace(x, y),
+        >>>                 T().break_chain()),
+        >>>     T().print()  # print of y is never reached
         >>> ))
         >>> print(t(x))
         """
@@ -2606,6 +2614,59 @@ class Transformer:
             In  │ 1 │  10.00 B │
             Out │ 1 │   3.00 B │ ⧗ 40.15µs
         ```
+        """
+
+    def __eq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __neq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __lt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __le__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __gt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __ge__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def is_type(self, atom_type: AtomType) -> Condition:
+        """
+        Test if the transformed expression is of a certain type.
+        """
+
+    def contains(self, element: Transformer | HeldExpression | Expression | int | float | Decimal) -> Condition:
+        """
+        Create a transformer that checks if the expression contains the given `element`.
+        """
+
+    def matches(
+        self,
+        lhs: HeldExpression | Expression | int | float | Decimal,
+        cond: Optional[PatternRestriction | Condition] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
+    ) -> Condition:
+        """
+        Create a transformer that tests whether the pattern is found in the expression.
+        Restrictions on the pattern can be supplied through `cond`.
         """
 
 

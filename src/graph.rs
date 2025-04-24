@@ -60,6 +60,10 @@ impl<EdgeData> Edge<EdgeData> {
     pub fn is_self_loop(&self) -> bool {
         self.vertices.0 == self.vertices.1
     }
+
+    pub fn is_neighbor(&self, n: usize) -> bool {
+        self.vertices.0 == n || self.vertices.1 == n
+    }
 }
 
 /// Empty data type.
@@ -233,6 +237,8 @@ impl<N: Display, E: Display> Graph<N, E> {
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub position: Option<usize>,
+    // The index of the edge from the node going to the parent (`None` for root)
+    pub edge_id: Option<usize>,
     pub parent: usize,
     pub chain_id: Option<usize>,
     pub external: bool,
@@ -290,17 +296,44 @@ impl SpanningTree {
 
     /// Count non-external bridge nodes. Make sure to call [Self::chain_decomposition] first.
     pub fn count_bridges(&self) -> usize {
-        self.nodes
-            .iter()
-            .enumerate()
-            .filter(|(n, x)| {
-                x.chain_id.is_none()
-                    && !self.nodes[x.parent].external
-                    && !x.external
-                    && x.parent != *n // exclude the root
-                    && !self.nodes[x.parent].back_edges.iter().any(|end| n == end)
-            })
-            .count()
+        self.bridges().count()
+    }
+
+    fn bridge_nodes(&self) -> impl Iterator<Item = (usize, &NodeInfo)> {
+        self.nodes.iter().enumerate().filter(|(n, x)| {
+            x.chain_id.is_none()
+                && !self.nodes[x.parent].external
+                && !x.external
+                && x.parent != *n // exclude the root
+                && !self.nodes[x.parent].back_edges.iter().any(|end| n == end)
+        })
+    }
+
+    /// Get non-external bridge nodes. Make sure to call [Self::chain_decomposition] first.
+    pub fn bridges(&self) -> impl Iterator<Item = usize> {
+        self.bridge_nodes().map(|x| x.1.edge_id.unwrap())
+    }
+
+    /// Detect if the graph has zero-flow bridges. This only works when the root
+    /// node is an external node (if there are any).
+    pub fn has_zero_flow_bridges(&self) -> bool {
+        if self.nodes.iter().all(|x| !x.external) {
+            return self.bridge_nodes().next().is_some();
+        }
+
+        assert!(self.nodes[0].external);
+        let mut visited = vec![false; self.nodes.len()];
+        for (x, n) in self.nodes.iter().enumerate() {
+            if n.external {
+                let mut p = x;
+                while !visited[p] && self.nodes[p].parent != p {
+                    visited[p] = true;
+                    p = self.nodes[p].parent;
+                }
+            }
+        }
+
+        visited.iter().any(|x| !*x) && self.bridge_nodes().any(|b| !visited[b.0])
     }
 }
 
@@ -435,12 +468,13 @@ impl<N, E> Graph<N, E> {
 
     /// Generate a spanning tree of the graph, starting at `start_vertex`.
     pub fn get_spanning_tree(&self, start_vertex: usize) -> SpanningTree {
-        let mut nodes_to_visit = vec![(start_vertex, start_vertex)];
+        let mut nodes_to_visit = vec![(start_vertex, start_vertex, None)];
         let mut tree_nodes: Vec<_> = self
             .nodes
             .iter()
             .map(|n| NodeInfo {
                 position: None,
+                edge_id: None,
                 parent: 0,
                 chain_id: None,
                 external: n.valence == 1,
@@ -450,7 +484,7 @@ impl<N, E> Graph<N, E> {
         let mut order = vec![0; self.nodes.len()];
 
         let mut index = 0;
-        while let Some((n, parent)) = nodes_to_visit.pop() {
+        while let Some((n, parent, edge_id)) = nodes_to_visit.pop() {
             if let Some(p) = tree_nodes[n].position {
                 let par = &mut tree_nodes[parent];
                 if par.position.unwrap() < p {
@@ -460,6 +494,7 @@ impl<N, E> Graph<N, E> {
             }
 
             tree_nodes[n].position = Some(index);
+            tree_nodes[n].edge_id = edge_id;
             tree_nodes[n].parent = parent;
             order[index] = n;
             index += 1;
@@ -477,7 +512,7 @@ impl<N, E> Graph<N, E> {
                 }
 
                 if tree_nodes[target].position.is_none() {
-                    nodes_to_visit.push((target, n));
+                    nodes_to_visit.push((target, n, Some(*e)));
                 }
             }
         }
@@ -581,6 +616,7 @@ pub struct GenerationSettings<N, E> {
     max_loops: Option<usize>,
     max_bridges: Option<usize>,
     allow_self_loops: bool,
+    allow_zero_flow_edges: bool,
 }
 
 impl<N, E> Default for GenerationSettings<N, E> {
@@ -598,7 +634,8 @@ impl<N, E> GenerationSettings<N, E> {
     /// max_vertices: None
     /// max_loops: None
     /// max_bridges: None
-    /// allow_self_loops: false
+    /// allow_self_loops: false,
+    /// allow_zero_flow_edges: false,
     /// ```
     pub const fn new() -> Self {
         Self {
@@ -608,6 +645,7 @@ impl<N, E> GenerationSettings<N, E> {
             max_loops: None,
             max_bridges: None,
             allow_self_loops: false,
+            allow_zero_flow_edges: false,
         }
     }
 
@@ -632,6 +670,12 @@ impl<N, E> GenerationSettings<N, E> {
     /// Allow self-loops in the generated graphs.
     pub fn allow_self_loops(mut self, allow_self_loops: bool) -> Self {
         self.allow_self_loops = allow_self_loops;
+        self
+    }
+
+    /// Allow bridges that do not need to be crossed to connect external vertices.
+    pub fn allow_zero_flow_edges(mut self, allow_zero_flow_edges: bool) -> Self {
+        self.allow_zero_flow_edges = allow_zero_flow_edges;
         self
     }
 
@@ -781,11 +825,18 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                 }
             }
 
-            if let Some(max_bridges) = settings.settings.max_bridges {
+            if settings.settings.max_bridges.is_some() || !settings.settings.allow_zero_flow_edges {
                 spanning_tree.chain_decomposition();
+            }
+
+            if let Some(max_bridges) = settings.settings.max_bridges {
                 if spanning_tree.count_bridges() > max_bridges {
                     return Ok(());
                 }
+            }
+
+            if !settings.settings.allow_zero_flow_edges && spanning_tree.has_zero_flow_bridges() {
+                return Ok(());
             }
 
             let c = self.canonize();
@@ -914,10 +965,15 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
-            // check if the source is not a bridge
+            // check if the source is not a zero-flow bridge
+            //TODO: also when allowing bridges, we can filter
+            // for disconnectedness if the source connects to an external node only
+
             if settings.settings.allow_self_loops
-                && settings.settings.max_bridges == Some(0)
-                && source > external_edges.len()
+                && (!settings.settings.allow_zero_flow_edges
+                    || settings.settings.max_bridges == Some(0))
+                && (source > external_edges.len()
+                    || external_edges.len() > 1 && source == external_edges.len())
                 && self.node(source).edges.len()
                     - self
                         .node(source)
@@ -931,6 +987,19 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                     == 1
             {
                 return Ok(());
+            }
+
+            // check if we created a zero-flow bridge
+            // this happens when there is only one open vertex
+            // that connects with a single edge to the source
+            if source + 2 == self.nodes.len()
+                && (settings.settings.max_bridges == Some(0)
+                    || !settings.settings.allow_zero_flow_edges)
+            {
+                let es = &self.node(source + 1).edges;
+                if es.len() == 1 && self.edge(es[0]).is_neighbor(source) {
+                    return Ok(());
+                }
             }
 
             return self.generate_impl(external_edges, source + 1, settings, edge_signatures, out);

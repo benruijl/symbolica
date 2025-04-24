@@ -547,13 +547,17 @@ impl<'a> AtomView<'a> {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    pub(crate) fn contains<T: AtomCore>(&self, a: T) -> bool {
+    pub(crate) fn contains(&self, a: AtomView) -> bool {
         let mut stack = Vec::with_capacity(20);
         stack.push(*self);
 
         while let Some(c) = stack.pop() {
-            if a.as_atom_view() == c {
+            if a == c {
                 return true;
+            }
+
+            if a.get_byte_size() > c.get_byte_size() {
+                continue;
             }
 
             match c {
@@ -1045,8 +1049,17 @@ impl<'a> AtomView<'a> {
         out: &mut Atom,
     ) -> bool {
         let mut beyond_max_level = true;
+        let mut fits = false;
         for (rep_id, r) in replacements.iter().enumerate() {
             let r = r.borrow();
+
+            if let Pattern::Literal(l) = &r.pattern {
+                if l.as_view().get_byte_size() <= self.get_byte_size() {
+                    fits = true;
+                }
+            } else {
+                fits = true;
+            }
 
             let def_c = Condition::default();
             let def_s = MatchSettings::default();
@@ -1159,7 +1172,7 @@ impl<'a> AtomView<'a> {
             }
         }
 
-        if beyond_max_level {
+        if beyond_max_level || !fits {
             out.set_from_view(self);
             return false;
         }
@@ -1594,6 +1607,23 @@ impl Pattern {
 
     /// Create a pattern from an atom view.
     pub(crate) fn from_view(atom: AtomView<'_>, is_top_layer: bool) -> Pattern {
+        #[inline]
+        fn sort_wildcard_last(args: &mut [Pattern]) {
+            args.sort_by(|a, b| {
+                let wildcard_level_a = if let Pattern::Wildcard(aa) = a {
+                    aa.get_wildcard_level()
+                } else {
+                    0
+                };
+                let wildcard_level_b = if let Pattern::Wildcard(bb) = b {
+                    bb.get_wildcard_level()
+                } else {
+                    0
+                };
+                wildcard_level_a.cmp(&wildcard_level_b)
+            });
+        }
+
         // split up Add and Mul for literal patterns as well so that x+y can match to x+y+z
         if Self::has_wildcard(atom)
             || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))
@@ -1606,6 +1636,11 @@ impl Pattern {
                     let mut args = Vec::with_capacity(f.get_nargs());
                     for arg in f {
                         args.push(Self::from_view(arg, false));
+                    }
+
+                    if name.is_symmetric() {
+                        // sort the arguments so that wildcards are last for efficiency
+                        sort_wildcard_last(&mut args);
                     }
 
                     Pattern::Fn(name, args)
@@ -1625,6 +1660,8 @@ impl Pattern {
                         args.push(Self::from_view(child, false));
                     }
 
+                    sort_wildcard_last(&mut args);
+
                     Pattern::Mul(args)
                 }
                 AtomView::Add(a) => {
@@ -1632,6 +1669,9 @@ impl Pattern {
                     for child in a {
                         args.push(Self::from_view(child, false));
                     }
+
+                    // sort the arguments so that wildcards are last for efficiecy
+                    sort_wildcard_last(&mut args);
 
                     Pattern::Add(args)
                 }
@@ -3191,7 +3231,7 @@ impl<'a, 'b> AtomMatchIterator<'a, 'b> {
 
 /// An iterator that matches a slice of patterns to a slice of atoms.
 /// Use the [`SubSliceIterator::next`] to get the next match, if any.
-///  
+///
 /// The flag `complete` determines whether the pattern should match the entire
 /// slice `target`. The flag `ordered_gapless` determines whether the the patterns
 /// may match the slice of atoms in any order. For a non-symmetric function, this
@@ -3698,17 +3738,18 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     continue;
                                 }
                             } else {
-                                f.get_symbol() == *name
+                                target_name == *name
                             };
 
                             if name_match {
+                                // inherit symmetric attributes from the matched target
                                 let mut it = SubSliceIterator::from_list(
                                     args,
                                     f.to_slice(),
                                     match_stack,
                                     true,
-                                    !name.is_antisymmetric() && !name.is_symmetric(),
-                                    name.is_cyclesymmetric(),
+                                    !target_name.is_antisymmetric() && !target_name.is_symmetric(),
+                                    target_name.is_cyclesymmetric(),
                                 );
 
                                 if let Some((x, _)) = it.next(match_stack) {

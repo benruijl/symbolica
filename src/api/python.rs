@@ -12831,7 +12831,7 @@ impl PythonGraph {
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
     #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None,
-        max_bridges = None, allow_self_loops = None, filter_fn = None))]
+        max_bridges = None, allow_self_loops = None, allow_zero_flow_edges = None, filter_fn = None))]
     #[classmethod]
     fn generate(
         _cls: &Bound<'_, PyType>,
@@ -12844,6 +12844,7 @@ impl PythonGraph {
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
         allow_self_loops: Option<bool>,
+        allow_zero_flow_edges: Option<bool>,
         filter_fn: Option<PyObject>,
     ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
         if max_vertices.is_none() && max_loops.is_none() {
@@ -12880,6 +12881,10 @@ impl PythonGraph {
 
         if let Some(allow_self_loops) = allow_self_loops {
             settings = settings.allow_self_loops(allow_self_loops);
+        }
+
+        if let Some(allow_zero_flow_edge) = allow_zero_flow_edges {
+            settings = settings.allow_zero_flow_edges(allow_zero_flow_edge);
         }
 
         let abort = Arc::new(std::sync::atomic::AtomicBool::new(false));

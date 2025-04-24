@@ -4306,6 +4306,7 @@ class Graph:
                  max_loops: Optional[int] = None,
                  max_bridges: Optional[int] = None,
                  allow_self_loops: bool = False,
+                 allow_zero_flow_edges: bool = False,
                  filter_fn: Optional[Callable[[Graph, int], bool]] = None) -> dict[Graph, Expression]:
         """Generate all connected graphs with `external_edges` half-edges and the given allowed list
         of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
@@ -4344,6 +4345,8 @@ class Graph:
             The maximum number of bridges in the graph.
         allow_self_loops: bool, optional
             Whether self-edges are allowed.
+        allow_zero_flow_edges: bool, optional
+            Whether bridges that do not need to be crossed to connect external vertices are allowed.
         filter_fn: Optional[Callable[[Graph, int], bool]], optional
             Set a filter function that is called during the graph generation.
             The first argument is the graph `g` and the second argument the vertex count `n`

@@ -78,9 +78,21 @@ impl From<i64> for Coefficient {
     }
 }
 
+impl From<&i64> for Coefficient {
+    fn from(value: &i64) -> Self {
+        Coefficient::Rational((*value).into())
+    }
+}
+
 impl From<i32> for Coefficient {
     fn from(value: i32) -> Self {
         Coefficient::Rational(value.into())
+    }
+}
+
+impl From<&i32> for Coefficient {
+    fn from(value: &i32) -> Self {
+        Coefficient::Rational((*value).into())
     }
 }
 
@@ -90,10 +102,23 @@ impl From<f64> for Coefficient {
     }
 }
 
+impl From<&f64> for Coefficient {
+    fn from(value: &f64) -> Self {
+        Coefficient::Float(Float::with_val(53, value))
+    }
+}
+
 impl From<(i64, i64)> for Coefficient {
     #[inline]
     fn from(r: (i64, i64)) -> Self {
         Coefficient::Rational(r.into())
+    }
+}
+
+impl From<&(i64, i64)> for Coefficient {
+    #[inline]
+    fn from(r: &(i64, i64)) -> Self {
+        Coefficient::Rational((*r).into())
     }
 }
 

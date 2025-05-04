@@ -1866,6 +1866,18 @@ impl std::ops::Add<Atom> for &Atom {
     }
 }
 
+impl std::ops::AddAssign<&Atom> for Atom {
+    fn add_assign(&mut self, rhs: &Atom) {
+        *self = self.as_ref() + rhs;
+    }
+}
+
+impl std::ops::AddAssign<Atom> for Atom {
+    fn add_assign(&mut self, rhs: Atom) {
+        *self = self.as_ref() + rhs;
+    }
+}
+
 impl std::ops::Sub<Atom> for Atom {
     type Output = Atom;
 
@@ -1908,6 +1920,18 @@ impl std::ops::Mul<Atom> for &Atom {
     }
 }
 
+impl std::ops::MulAssign<&Atom> for Atom {
+    fn mul_assign(&mut self, rhs: &Atom) {
+        *self = self.as_ref() * rhs;
+    }
+}
+
+impl std::ops::MulAssign<Atom> for Atom {
+    fn mul_assign(&mut self, rhs: Atom) {
+        *self = self.as_ref() * rhs;
+    }
+}
+
 impl std::ops::Mul<Atom> for Atom {
     type Output = Atom;
 
@@ -1927,6 +1951,18 @@ impl std::ops::Div<Atom> for Atom {
         });
 
         rhs
+    }
+}
+
+impl std::ops::DivAssign<&Atom> for Atom {
+    fn div_assign(&mut self, rhs: &Atom) {
+        *self = self.as_ref() / rhs;
+    }
+}
+
+impl std::ops::DivAssign<Atom> for Atom {
+    fn div_assign(&mut self, rhs: Atom) {
+        *self = self.as_ref() / rhs;
     }
 }
 
@@ -2001,6 +2037,18 @@ impl std::ops::Sub<&Atom> for Atom {
 
     fn sub(self, rhs: &Atom) -> Atom {
         self - rhs.as_view()
+    }
+}
+
+impl std::ops::SubAssign<&Atom> for Atom {
+    fn sub_assign(&mut self, rhs: &Atom) {
+        *self = self.as_ref() - rhs;
+    }
+}
+
+impl std::ops::SubAssign<Atom> for Atom {
+    fn sub_assign(&mut self, rhs: Atom) {
+        *self = self.as_ref() - rhs;
     }
 }
 
@@ -2238,6 +2286,36 @@ impl<T: Into<Coefficient>> std::ops::Add<T> for &Atom {
         })
     }
 }
+
+impl<T: Into<Coefficient>> std::ops::AddAssign<T> for Atom {
+    fn add_assign(&mut self, rhs: T) {
+        *self = self.as_ref() + rhs;
+    }
+}
+
+impl<T: Into<Coefficient>> std::ops::MulAssign<T> for Atom {
+    fn mul_assign(&mut self, rhs: T) {
+        *self = self.as_ref() * rhs;
+    }
+}
+
+impl<'a> std::ops::AddAssign<AtomView<'a>> for Atom {
+    fn add_assign(&mut self, rhs: AtomView<'a>) {
+        *self = self.as_view() + rhs;
+    }
+}
+
+impl<'a> std::ops::MulAssign<AtomView<'a>> for Atom {
+    fn mul_assign(&mut self, rhs: AtomView<'a>) {
+        *self = self.as_view() * rhs;
+    }
+}
+
+// impl<T: Into<Coefficient> + Clone> std::ops::AddAssign<&T> for Atom {
+//     fn add_assign(&mut self, rhs: Atom) {
+//         *self = self.as_ref() + rhs;
+//     }
+// }
 
 impl<T: Into<Coefficient>> std::ops::Sub<T> for &Atom {
     type Output = Atom;

@@ -11851,12 +11851,15 @@ impl PythonCompiledExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
-    fn vec_evaluate_complex(&mut self, inputs: Vec<Vec<Complex<f64>>>) -> Vec<Vec<Complex<f64>>> {
+    fn vec_evaluate_complex<'py>(&mut self, 
+        python: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>
+    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
         let n : usize = inputs.len();
-        let mut res = vec![0.; self.output_len * n];
+        let mut res : Vec<Complex<f64>> = vec![Complex::<f64>::default(); self.output_len * n];
         let flat_input: Vec<Complex<f64>> = inputs.iter().flat_map(|row| row.iter().cloned()).collect();
         self.eval.vec_evaluate(&flat_input, &mut res, n);
-        return res.chunks(n).map(|chunk| chunk.to_vec()).collect();
+        return res.chunks(n).map(|chunk| chunk.into_iter().map(|x| PyComplex::from_doubles(python, x.re, x.im)).collect()).collect();
     }
 }
 

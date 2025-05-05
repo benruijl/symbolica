@@ -1515,8 +1515,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             function_name
         );
 
-        res += &format!("\nextern \"C\" {{\n\tvoid vec_{0}_double(double *params, double *buffer, double *out, int n) {{\n\t\tfor (int j = 0; j < n ; j++) {{ {0}_double(params + {1}*j, buffer, out + j); }}\n\t}}\n}}\n", function_name, self.param_count);
-        res += &format!("\nextern \"C\" {{\n\tvoid vec_{0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out, int n) {{\n\t\tfor (int j = 0; j < n ; j++) {{ {0}_complex(params + {1}*j, buffer, out + j); }}\n\t}}\n}}\n", function_name, self.param_count);
+        res += &format!("\nextern \"C\" {{\n\tvoid vec_{0}_double(double *params, double *buffer, double *out, size_t n) {{\n\t\tfor (size_t j = 0; j < n ; j++) {{ {0}_double(params + {1}*j, buffer, out + j); }}\n\t}}\n}}\n", function_name, self.param_count);
+        res += &format!("\nextern \"C\" {{\n\tvoid vec_{0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out, size_t n) {{\n\t\tfor (size_t j = 0; j < n ; j++) {{ {0}_complex(params + {1}*j, buffer, out + j); }}\n\t}}\n}}\n", function_name, self.param_count);
 
         res
     }
@@ -4423,6 +4423,19 @@ struct EvaluatorFunctions<'a> {
             out: *mut Complex<f64>,
         ),
     >,
+    vec_eval_double: libloading::Symbol<
+        'a,
+        unsafe extern "C" fn(params: *const f64, buffer: *mut f64, out: *mut f64, n : usize),
+    >,
+    vec_eval_complex: libloading::Symbol<
+        'a,
+        unsafe extern "C" fn(
+            params: *const Complex<f64>,
+            buffer: *mut Complex<f64>,
+            out: *mut Complex<f64>,
+            n : usize,
+        ),
+    >,
     get_buffer_len: libloading::Symbol<'a, unsafe extern "C" fn() -> c_ulong>,
 }
 
@@ -4459,6 +4472,7 @@ impl Clone for CompiledEvaluator {
 /// A floating point type that can be used for compiled evaluation.
 pub trait CompiledEvaluatorFloat: Sized {
     fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]);
+    fn vec_evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self], n : usize);
 }
 
 impl CompiledEvaluatorFloat for f64 {
@@ -4466,12 +4480,20 @@ impl CompiledEvaluatorFloat for f64 {
     fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
         eval.evaluate_double(args, out);
     }
+    #[inline(always)]
+    fn vec_evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self], n : usize) {
+        eval.vec_evaluate_double(args, out,n);
+    }
 }
 
 impl CompiledEvaluatorFloat for Complex<f64> {
     #[inline(always)]
     fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
         eval.evaluate_complex(args, out);
+    }
+    #[inline(always)]
+    fn vec_evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self], n : usize) {
+        eval.vec_evaluate_complex(args, out,n);
     }
 }
 
@@ -4484,8 +4506,14 @@ impl CompiledEvaluator {
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
+                    vec_eval_double: lib
+                        .get(format!("vec_{}_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
                     eval_complex: lib
                         .get(format!("{}_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    vec_eval_complex: lib
+                        .get(format!("vec_{}_complex", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
                     get_buffer_len: lib
                         .get(format!("{}_get_buffer_len", function_name).as_bytes())
@@ -4519,8 +4547,14 @@ impl CompiledEvaluator {
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
+                    vec_eval_double: lib
+                        .get(format!("vec_{}_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
                     eval_complex: lib
                         .get(format!("{}_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    vec_eval_complex: lib
+                        .get(format!("vec_{}_complex", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
                     get_buffer_len: lib
                         .get(format!("{}_get_buffer_len", function_name).as_bytes())
@@ -4545,6 +4579,12 @@ impl CompiledEvaluator {
         T::evaluate(self, args, out);
     }
 
+    /// Evaluate the compiled code.
+    #[inline(always)]
+    pub fn vec_evaluate<T: CompiledEvaluatorFloat>(&mut self, args: &[T], out: &mut [T], n :usize) {
+        T::vec_evaluate(self, args, out, n);
+    }
+
     /// Evaluate the compiled code with double-precision floating point numbers.
     #[inline(always)]
     pub fn evaluate_double(&mut self, args: &[f64], out: &mut [f64]) {
@@ -4557,6 +4597,19 @@ impl CompiledEvaluator {
         }
     }
 
+    /// Evaluate the compiled code with double-precision floating point numbers.
+    #[inline(always)]
+    pub fn vec_evaluate_double(&mut self, args: &[f64], out: &mut [f64], n : usize) {
+        unsafe {
+            (self.library.borrow_dependent().vec_eval_double)(
+                args.as_ptr(),
+                self.buffer_double.as_mut_ptr(),
+                out.as_mut_ptr(),
+                n
+            )
+        }
+    }
+
     /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
     pub fn evaluate_complex(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
@@ -4565,6 +4618,19 @@ impl CompiledEvaluator {
                 args.as_ptr(),
                 self.buffer_complex.as_mut_ptr(),
                 out.as_mut_ptr(),
+            )
+        }
+    }
+
+    /// Evaluate the compiled code with complex numbers.
+    #[inline(always)]
+    pub fn vec_evaluate_complex(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>], n : usize ) {
+        unsafe {
+            (self.library.borrow_dependent().vec_eval_complex)(
+                args.as_ptr(),
+                self.buffer_complex.as_mut_ptr(),
+                out.as_mut_ptr(),
+                n
             )
         }
     }

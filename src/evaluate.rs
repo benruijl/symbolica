@@ -1455,15 +1455,26 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n";
 
-        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_double(double *params, double *buffer, double *out, size_t n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\t__global__ void cuda_{0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out, size_t n) {{\n\t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\t\tif(index < n) {0}(params, buffer, out, index);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\
+        \t__global__ void cuda_{0}_double(double *params, double *buffer, double *out, size_t n) {{\n\
+        \t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\
+        \t\tif(index < n) {0}(params, buffer, out, index);\n\
+        \t\treturn;\n\
+        \t}}\n\
+        }}\n", function_name);
 
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tcuda_{0}_double<<<1,1>>>(params, buffer, out,1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out) {{\n\t\tcuda_{0}_complex<<<1,1>>>(params, buffer, out, 1);\n\t\tcudaDeviceSynchronize();\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\
+        \t__global__ void cuda_{0}_complex(cuda::std::complex<double> *params, cuda::std::complex<double> *buffer,  cuda::std::complex<double> *out, size_t n) {{\n\
+        \t\tint index = blockIdx.x * blockDim.x + threadIdx.x;\n\
+        \t\tif(index < n) {0}(params, buffer, out, index);\n\
+        \t\treturn;\n\
+        \t}}\n\
+        }}\n", function_name);
 
         // APN TODO adjust 256 hardcoded below
         res += &format!("\nextern \"C\" {{\n\
         \tvoid vec_{0}_double(double *params, double *buffer, double *out, size_t n) {{\n\
+        \t\tdouble *d_params, *d_buffer, *d_out;\n\
         \t\tcudaMalloc((void**)&d_params, n*{1} * sizeof(double));\n\
         \t\tcudaMalloc((void**)&d_buffer, sizeof(double));\n\
         \t\tcudaMalloc((void**)&d_out, n*{2}*sizeof(double));\n\
@@ -1471,9 +1482,9 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         \t\tcudaMemcpy(d_buffer, buffer, sizeof(double), cudaMemcpyHostToDevice);\n\
         \t\tint blockSize = 256; // Number of threads per block\n\
         \t\tint gridSize = (n + blockSize - 1) / blockSize; // Number of blocks\n\
-        \t\tcuda_{0}_double<<<gridSize,blockSize>>>(params, buffer, out,1);\n\
+        \t\tcuda_{0}_double<<<gridSize,blockSize>>>(d_params, d_buffer, d_out,n);\n\
         \t\tcudaDeviceSynchronize();\n\
-        \t\tcudaMemcpy(out, d_out, n*{2}sizeof(double), cudaMemcpyDeviceToHost);\n\
+        \t\tcudaMemcpy(out, d_out, n*{2}*sizeof(double), cudaMemcpyDeviceToHost);\n\
         \t\treturn;\n\
         \t}}\n\
         }}\n", function_name, self.param_count, self.result_indices.len());
@@ -1481,6 +1492,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         // APN TODO adjust 256 hardcoded below
         res += &format!("\nextern \"C\" {{\n\
         \tvoid vec_{0}_complex(std::complex<double> *params, std::complex<double> *buffer, std::complex<double> *out, size_t n) {{\n\
+        \t\tcuda::std::complex<double> *d_params, *d_buffer, *d_out;\n\
         \t\tcudaMalloc((void**)&d_params, n*{1} * sizeof(cuda::std::complex<double>));\n\
         \t\tcudaMalloc((void**)&d_buffer, sizeof(cuda::std::complex<double>));\n\
         \t\tcudaMalloc((void**)&d_out, n*{2}*sizeof(cuda::std::complex<double>));\n\
@@ -1488,12 +1500,16 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         \t\tcudaMemcpy(d_buffer, buffer, sizeof(cuda::std::complex<double>), cudaMemcpyHostToDevice);\n\
         \t\tint blockSize = 256; // Number of threads per block\n\
         \t\tint gridSize = (n + blockSize - 1) / blockSize; // Number of blocks\n\
-        \t\tcuda_{0}_complex<<<gridSize,blockSize>>>(params, buffer, out,1);\n\
+        \t\tcuda_{0}_complex<<<gridSize,blockSize>>>(d_params, d_buffer, d_out,n);\n\
         \t\tcudaDeviceSynchronize();\n\
-        \t\tcudaMemcpy(out, d_out, n*{2}sizeof(cuda::std::complex<double>), cudaMemcpyDeviceToHost);\n\
+        \t\tcudaMemcpy(out, d_out, n*{2}*sizeof(cuda::std::complex<double>), cudaMemcpyDeviceToHost);\n\
         \t\treturn;\n\
         \t}}\n\
         }}\n", function_name, self.param_count, self.result_indices.len());
+
+
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\tvec_{0}_double(params, buffer, out,1);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\tvec_{0}_complex(params, buffer, out, 1);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }

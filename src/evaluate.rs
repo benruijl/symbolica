@@ -1485,6 +1485,9 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         \t\tcuda_{0}_double<<<gridSize,blockSize>>>(d_params, d_buffer, d_out,n);\n\
         \t\tcudaDeviceSynchronize();\n\
         \t\tcudaMemcpy(out, d_out, n*{2}*sizeof(double), cudaMemcpyDeviceToHost);\n\
+        \t\tcudaFree(d_params);\n\
+        \t\tcudaFree(d_buffer);\n\
+        \t\tcudaFree(d_out);\n\
         \t\treturn;\n\
         \t}}\n\
         }}\n", function_name, self.param_count, self.result_indices.len());
@@ -1503,6 +1506,9 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         \t\tcuda_{0}_complex<<<gridSize,blockSize>>>(d_params, d_buffer, d_out,n);\n\
         \t\tcudaDeviceSynchronize();\n\
         \t\tcudaMemcpy(out, d_out, n*{2}*sizeof(cuda::std::complex<double>), cudaMemcpyDeviceToHost);\n\
+        \t\tcudaFree(d_params);\n\
+        \t\tcudaFree(d_buffer);\n\
+        \t\tcudaFree(d_out);\n\
         \t\treturn;\n\
         \t}}\n\
         }}\n", function_name, self.param_count, self.result_indices.len());

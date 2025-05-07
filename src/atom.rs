@@ -48,6 +48,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     coefficient::Coefficient,
+    domains::{float::Complex, rational::Rational},
     parser::Token,
     printer::{AtomPrinter, PrintFunction, PrintOptions},
     state::{RecycledAtom, State, Workspace},
@@ -635,7 +636,6 @@ impl Symbol {
             match *self {
                 Atom::E => f.write_char('e'),
                 Atom::PI => f.write_str("\\pi"),
-                Atom::I => f.write_char('i'),
                 Atom::COS => f.write_str("\\cos"),
                 Atom::SIN => f.write_str("\\sin"),
                 Atom::EXP => f.write_str("\\exp"),
@@ -1189,10 +1189,18 @@ impl Atom {
     pub const DERIVATIVE: Symbol = State::DERIVATIVE;
     /// The constant e, the base of the natural logarithm.
     pub const E: Symbol = State::E;
-    /// The constant i, the imaginary unit.
-    pub const I: Symbol = State::I;
     /// The mathematical constant `π`.
     pub const PI: Symbol = State::PI;
+
+    /// The string representation of the imaginary unit `i`.
+    pub const I_STR: &'static str = "𝑖";
+    /// The string representation of the constant `π`.
+    pub const PI_STR: &'static str = "𝜋";
+
+    /// The imaginary unit.
+    pub fn i() -> Atom {
+        Atom::new_num(Complex::<Rational>::new_i())
+    }
 
     /// Exponentiate the atom.
     pub fn exp(&self) -> Atom {
@@ -1854,7 +1862,7 @@ impl Atom {
     }
 
     /// Add the atoms in `args`.
-    pub fn add_many<T: AtomCore + Copy>(args: &[T]) -> Atom {
+    pub fn add_many<T: AtomCore>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
@@ -1914,7 +1922,7 @@ mod test {
         let x = parse!("v1+f1(v2)").unwrap();
         assert_eq!(
             format!("{:?}", x),
-            "AddView { data: [5, 17, 2, 13, 2, 1, 12, 3, 5, 0, 0, 0, 1, 42, 2, 1, 13] }"
+            "AddView { data: [5, 17, 2, 13, 2, 1, 11, 3, 5, 0, 0, 0, 1, 41, 2, 1, 12] }"
         );
         assert_eq!(
             x.get_all_symbols(true),

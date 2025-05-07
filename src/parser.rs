@@ -15,12 +15,16 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    LicenseManager,
     atom::{Atom, DefaultNamespace},
     coefficient::{Coefficient, ConvertToRing},
-    domains::{float::Float, integer::Integer, Ring},
-    poly::{polynomial::MultivariatePolynomial, PositiveExponent, Variable},
+    domains::{
+        Ring,
+        float::{Complex, Float},
+        integer::Integer,
+    },
+    poly::{PositiveExponent, Variable, polynomial::MultivariatePolynomial},
     state::{State, Workspace},
-    LicenseManager,
 };
 
 const HEX_DIGIT_MASK: [bool; 255] = [
@@ -409,13 +413,17 @@ impl Token {
                 Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
-                        out.to_num(Coefficient::Float(f));
+                        out.to_num(Coefficient::Float(f.into()));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol(namespace.attach_namespace(x)));
+                if x == "𝑖" {
+                    out.to_num(Coefficient::Complex(Complex::new_i()));
+                } else {
+                    out.to_var(state.get_symbol(namespace.attach_namespace(x)));
+                }
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -512,7 +520,7 @@ impl Token {
                 }
                 Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
-                        out.to_num(Coefficient::Float(f));
+                        out.to_num(Coefficient::Float(f.into()));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
                 },
@@ -683,6 +691,7 @@ impl Token {
                 ParseState::Identifier => {
                     if ops.contains(&c) || whitespace.contains(&c) {
                         state = ParseState::Any;
+
                         stack.push(Token::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
                     } else if !forbidden.contains(&c) {
@@ -910,9 +919,9 @@ impl Token {
                     match unsafe { stack.get_unchecked(stack.len() - 1) } {
                         Token::Op(true, _, op, _) => {
                             Err(format!(
-                            "Error at line {} and position {}: operator '{}' is missing left-hand side",
-                            line_counter, column_counter, op,
-                        ))?;
+                                "Error at line {} and position {}: operator '{}' is missing left-hand side",
+                                line_counter, column_counter, op,
+                            ))?;
                         }
 
                         x @ Token::CloseParenthesis | x @ Token::CloseBracket => {

@@ -22,8 +22,10 @@ use crate::{
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
     domains::{
+        InternalOrdering,
         float::{
-            Complex, ErrorPropagatingFloat, NumericalFloatLike, Real, RealNumberLike, SingleFloat,
+            Complex, ConstructibleFloat, ErrorPropagatingFloat, F64, Float, NumericalFloatLike,
+            Real, RealNumberLike, SingleFloat,
         },
         integer::Integer,
         rational::Rational,
@@ -62,7 +64,7 @@ impl<A, T> EvaluationFn<A, T> {
     trait_decode(trait = crate::state::HasStateMap)
 )]
 #[derive(Clone, Debug)]
-pub struct FunctionMap<T = Rational> {
+pub struct FunctionMap<T = Complex<Rational>> {
     map: HashMap<Atom, ConstOrExpr<T>>,
     tagged_fn_map: HashMap<(Symbol, Vec<Atom>), ConstOrExpr<T>>,
     tag: HashMap<Symbol, usize>,
@@ -204,7 +206,7 @@ pub struct OptimizationSettings {
     pub horner_iterations: usize,
     pub n_cores: usize,
     pub cpe_iterations: Option<usize>,
-    pub hot_start: Option<Vec<Expression<Rational>>>,
+    pub hot_start: Option<Vec<Expression<Complex<Rational>>>>,
     pub verbose: bool,
 }
 
@@ -282,7 +284,7 @@ impl BuiltinSymbol {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expression<T> {
     Const(T),
     Parameter(usize),
@@ -294,6 +296,39 @@ pub enum Expression<T> {
     ReadArg(usize), // read nth function argument
     BuiltinFun(BuiltinSymbol, Box<Expression<T>>),
     SubExpression(usize),
+}
+
+impl<T: InternalOrdering + Eq> PartialOrd for Expression<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: InternalOrdering + Eq> Ord for Expression<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Expression::Const(a), Expression::Const(b)) => a.internal_cmp(b),
+            (Expression::Parameter(a), Expression::Parameter(b)) => a.cmp(b),
+            (Expression::Eval(a, _), Expression::Eval(b, _)) => a.cmp(b),
+            (Expression::Add(a), Expression::Add(b)) => a.cmp(b),
+            (Expression::Mul(a), Expression::Mul(b)) => a.cmp(b),
+            (Expression::Pow(a), Expression::Pow(b)) => a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)),
+            (Expression::Powf(a), Expression::Powf(b)) => a.cmp(b),
+            (Expression::ReadArg(a), Expression::ReadArg(b)) => a.cmp(b),
+            (Expression::BuiltinFun(a, _), Expression::BuiltinFun(b, _)) => a.cmp(b),
+            (Expression::SubExpression(a), Expression::SubExpression(b)) => a.cmp(b),
+            (Expression::Const(_), _) => std::cmp::Ordering::Less,
+            (Expression::Parameter(_), _) => std::cmp::Ordering::Less,
+            (Expression::Eval(_, _), _) => std::cmp::Ordering::Less,
+            (Expression::Add(_), _) => std::cmp::Ordering::Less,
+            (Expression::Mul(_), _) => std::cmp::Ordering::Less,
+            (Expression::Pow(_), _) => std::cmp::Ordering::Less,
+            (Expression::Powf(_), _) => std::cmp::Ordering::Less,
+            (Expression::ReadArg(_), _) => std::cmp::Ordering::Less,
+            (Expression::BuiltinFun(_, _), _) => std::cmp::Ordering::Less,
+            (Expression::SubExpression(_), _) => std::cmp::Ordering::Less,
+        }
+    }
 }
 
 type ExpressionHash = u64;
@@ -412,7 +447,7 @@ impl<T: Eq + Hash> Hash for HashedExpression<T> {
     }
 }
 
-impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
+impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
     fn find_subexpression<'a>(
         &'a self,
         subexp: &mut HashMap<&'a HashedExpression<T>, usize>,
@@ -690,6 +725,12 @@ pub struct ExpressionEvaluator<T> {
     reserved_indices: usize,
     instructions: Vec<Instr>,
     result_indices: Vec<usize>,
+}
+
+impl<T: SingleFloat> ExpressionEvaluator<Complex<T>> {
+    pub fn is_real(&self) -> bool {
+        self.stack.iter().all(|x| x.is_real())
+    }
 }
 
 impl<T: Real> ExpressionEvaluator<T> {
@@ -1253,7 +1294,73 @@ impl<T> ExpressionEvaluator<T> {
     }
 }
 
-impl<T: std::fmt::Display> ExpressionEvaluator<T> {
+/// A number that can be exported to C++ code.
+pub trait ExportNumber {
+    /// Export the number as a string.
+    fn export(&self) -> String;
+    /// Export the number wrapped in a C++ type `T`.
+    fn export_wrapped(&self) -> String {
+        format!("T({})", self.export())
+    }
+    /// Check if the number is real.
+    fn is_real(&self) -> bool;
+}
+
+impl ExportNumber for f64 {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl ExportNumber for F64 {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl ExportNumber for Float {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl ExportNumber for Rational {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl<T: ExportNumber + SingleFloat> ExportNumber for Complex<T> {
+    fn export(&self) -> String {
+        if self.im.is_zero() {
+            self.re.export()
+        } else {
+            format!("{}, {}", self.re.export(), self.im.export())
+        }
+    }
+
+    fn is_real(&self) -> bool {
+        self.im.is_zero()
+    }
+}
+
+impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
     /// With `inline_asm` set to any value other than `None`,
     /// high-performance inline ASM code will be generated for most
@@ -1314,7 +1421,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
+            res += &format!("\tZ{} = {};\n", i, self.stack[i].export_wrapped());
         }
 
         Self::export_cpp_impl(&self.instructions, &mut res);
@@ -1325,10 +1432,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n";
 
-        res += &format!(
-            "\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
-            function_name
-        );
+        if self.stack.iter().all(|x| x.is_real()) {
+            res += &format!(
+                "\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
+                function_name
+            );
+        } else {
+            res += &format!(
+                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+                function_name
+            );
+        }
+
         res += &format!(
             "\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
             function_name
@@ -1417,7 +1532,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             self.reserved_indices - self.param_count + 1,
             {
                 let mut nums = (self.param_count..self.reserved_indices)
-                    .map(|i| format!("std::complex<double>({})", self.stack[i]))
+                    .map(|i| format!("std::complex<double>({})", self.stack[i].export()))
                     .collect::<Vec<_>>();
                 nums.push("std::complex<double>(0, -0.)".to_string()); // used for inversion
                 nums.join(",")
@@ -1433,28 +1548,34 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n\n";
 
-        res += &format!(
-            "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
-            function_name,
-            self.reserved_indices - self.param_count + 1,
-            {
-                let mut nums = (self.param_count..self.reserved_indices)
-                    .map(|i| format!("double({})", self.stack[i]))
-                    .collect::<Vec<_>>();
-                nums.push("1".to_string()); // used for inversion
-                nums.join(",")
-            }
-        );
+        if self.stack.iter().all(|x| x.is_real()) {
+            res += &format!(
+                "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+                function_name,
+                self.reserved_indices - self.param_count + 1,
+                {
+                    let mut nums = (self.param_count..self.reserved_indices)
+                        .map(|i| format!("double({})", self.stack[i].export()))
+                        .collect::<Vec<_>>();
+                    nums.push("1".to_string()); // used for inversion
+                    nums.join(",")
+                }
+            );
 
-        res += &format!(
-            "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n",
-            function_name
-        );
+            res += &format!(
+                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n",
+                function_name
+            );
 
-        self.export_asm_double_impl(&self.instructions, function_name, asm_flavour, &mut res);
+            self.export_asm_double_impl(&self.instructions, function_name, asm_flavour, &mut res);
 
-        res += "\treturn;\n}\n";
-
+            res += "\treturn;\n}\n";
+        } else {
+            res += &format!(
+                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+                function_name,
+            );
+        }
         res
     }
 
@@ -3220,7 +3341,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
     }
 }
 
-impl EvalTree<Rational> {
+impl EvalTree<Complex<Rational>> {
     /// Find a near-optimal Horner scheme that minimizes the number of multiplications
     /// and additions, using `iterations` iterations of the optimization algorithm
     /// and `n_cores` cores. Optionally, a starting scheme can be provided.
@@ -3228,9 +3349,9 @@ impl EvalTree<Rational> {
         &mut self,
         iterations: usize,
         n_cores: usize,
-        start_scheme: Option<Vec<Expression<Rational>>>,
+        start_scheme: Option<Vec<Expression<Complex<Rational>>>>,
         verbose: bool,
-    ) -> ExpressionEvaluator<Rational> {
+    ) -> ExpressionEvaluator<Complex<Rational>> {
         let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme, verbose);
         self.common_subexpression_elimination();
         self.clone().linearize(None)
@@ -3265,9 +3386,9 @@ impl EvalTree<Rational> {
         &mut self,
         iterations: usize,
         n_cores: usize,
-        start_scheme: Option<Vec<Expression<Rational>>>,
+        start_scheme: Option<Vec<Expression<Complex<Rational>>>>,
         verbose: bool,
-    ) -> Vec<Expression<Rational>> {
+    ) -> Vec<Expression<Complex<Rational>>> {
         let v = match start_scheme {
             Some(a) => a,
             None => {
@@ -3334,8 +3455,8 @@ impl EvalTree<Rational> {
     }
 }
 
-impl Expression<Rational> {
-    pub fn apply_horner_scheme(&mut self, scheme: &[Expression<Rational>]) {
+impl Expression<Complex<Rational>> {
+    pub fn apply_horner_scheme(&mut self, scheme: &[Expression<Complex<Rational>>]) {
         if scheme.is_empty() {
             return;
         }
@@ -3441,7 +3562,7 @@ impl Expression<Rational> {
                 }
 
                 if m.is_empty() {
-                    x = Expression::Const(Rational::one());
+                    x = Expression::Const(Complex::new_one());
                 } else if m.len() == 1 {
                     x = m.pop().unwrap();
                 }
@@ -3449,7 +3570,7 @@ impl Expression<Rational> {
                 found = pow_counter > 0;
             } else if x == scheme[0] {
                 found = true;
-                x = Expression::Const(Rational::one());
+                x = Expression::Const(Complex::new_one());
             }
 
             if found {
@@ -3481,7 +3602,7 @@ impl Expression<Rational> {
         }
 
         v.push(extracted);
-        v.retain(|x| *x != Expression::Const(Rational::one()));
+        v.retain(|x| *x != Expression::Const(Rational::one().into()));
         v.sort();
 
         let c = if v.len() == 1 {
@@ -3728,7 +3849,7 @@ impl Expression<Rational> {
         Arc::try_unwrap(best_scheme).unwrap().into_inner().unwrap()
     }
 
-    fn find_all_variables(&self, vars: &mut HashMap<Expression<Rational>, usize>) {
+    fn find_all_variables(&self, vars: &mut HashMap<Expression<Complex<Rational>>, usize>) {
         match self {
             Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
             Expression::Eval(_, ae) => {
@@ -3782,7 +3903,7 @@ impl Expression<Rational> {
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree<T> {
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrdering> EvalTree<T> {
     pub fn common_subexpression_elimination(&mut self) {
         self.expressions.common_subexpression_elimination();
 
@@ -3805,7 +3926,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrdering>
+    SplitExpression<T>
+{
     /// Eliminate common subexpressions in the expression, also checking for subexpressions
     /// up to length `max_subexpr_len`.
     pub fn common_subexpression_elimination(&mut self) {
@@ -3881,7 +4004,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrdering> Expression<T> {
     fn rename_subexpression(&mut self, subexp: &HashMap<usize, usize>) {
         match self {
             Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
@@ -3943,7 +4066,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrdering>
+    SplitExpression<T>
+{
     pub fn count_operations(&self) -> (usize, usize) {
         let mut add = 0;
         let mut mul = 0;
@@ -3963,7 +4088,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrdering> Expression<T> {
     // Count the number of additions and multiplications in the expression.
     pub fn count_operations(&self) -> (usize, usize) {
         match self {
@@ -4603,18 +4728,18 @@ impl<'a> AtomView<'a> {
     /// Convert nested expressions to a tree.
     pub fn to_evaluation_tree(
         &self,
-        fn_map: &FunctionMap<Rational>,
+        fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
-    ) -> Result<EvalTree<Rational>, String> {
+    ) -> Result<EvalTree<Complex<Rational>>, String> {
         Self::to_eval_tree_multiple(std::slice::from_ref(self), fn_map, params)
     }
 
     /// Convert nested expressions to a tree.
     pub fn to_eval_tree_multiple<A: AtomCore>(
         exprs: &[A],
-        fn_map: &FunctionMap<Rational>,
+        fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
-    ) -> Result<EvalTree<Rational>, String> {
+    ) -> Result<EvalTree<Complex<Rational>>, String> {
         let mut funcs = vec![];
         let tree = exprs
             .iter()
@@ -4636,11 +4761,11 @@ impl<'a> AtomView<'a> {
 
     fn to_eval_tree_impl(
         &self,
-        fn_map: &FunctionMap<Rational>,
+        fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
         args: &[Symbol],
-        funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<Rational>)>,
-    ) -> Result<Expression<Rational>, String> {
+        funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<Complex<Rational>>)>,
+    ) -> Result<Expression<Complex<Rational>>, String> {
         if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
             return Ok(Expression::Parameter(p));
         }
@@ -4651,11 +4776,19 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => Ok(Expression::Const((n, d).into())),
-                CoefficientView::Large(l) => Ok(Expression::Const(l.to_rat())),
-                CoefficientView::Float(f) => {
+                CoefficientView::Natural(n, d, ni, di) => Ok(Expression::Const(Complex::new(
+                    Rational::from((n, d)),
+                    Rational::from((ni, di)),
+                ))),
+                CoefficientView::Large(l, i) => {
+                    Ok(Expression::Const(Complex::new(l.to_rat(), i.to_rat())))
+                }
+                CoefficientView::Float(r, i) => {
                     // TODO: converting back to rational is slow
-                    Ok(Expression::Const(f.to_float().to_rational()))
+                    Ok(Expression::Const(Complex::new(
+                        r.to_float().to_rational(),
+                        i.to_float().to_rational(),
+                    )))
                 }
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())
@@ -4737,8 +4870,8 @@ impl<'a> AtomView<'a> {
                 let b_eval = b.to_eval_tree_impl(fn_map, params, args, funcs)?;
 
                 if let AtomView::Num(n) = e {
-                    if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
-                        if den == 1 {
+                    if let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view() {
+                        if den == 1 && num_i == 0 {
                             if num > 1 {
                                 return Ok(Expression::Mul(vec![b_eval.clone(); num as usize]));
                             } else {
@@ -4813,11 +4946,42 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => Ok(coeff_map(&Rational::from_unchecked(n, d))),
-                CoefficientView::Large(l) => Ok(coeff_map(&l.to_rat())),
-                CoefficientView::Float(f) => {
+                CoefficientView::Natural(n, d, ni, di) => {
+                    if ni == 0 {
+                        Ok(coeff_map(&Rational::from_unchecked(n, d)))
+                    } else {
+                        let num = coeff_map(&Rational::from_unchecked(n, d));
+                        Ok(coeff_map(&Rational::from_unchecked(ni, di))
+                            * num.i().ok_or_else(|| {
+                                "Numerical type does not support imaginary unit".to_string()
+                            })?
+                            + num)
+                    }
+                }
+                CoefficientView::Large(l, i) => {
+                    if i.is_zero() {
+                        Ok(coeff_map(&l.to_rat()))
+                    } else {
+                        let num = coeff_map(&l.to_rat());
+                        Ok(coeff_map(&i.to_rat())
+                            * num.i().ok_or_else(|| {
+                                "Numerical type does not support imaginary unit".to_string()
+                            })?
+                            + num)
+                    }
+                }
+                CoefficientView::Float(r, i) => {
                     // TODO: converting back to rational is slow
-                    Ok(coeff_map(&f.to_float().to_rational()))
+                    let rm = coeff_map(&r.to_float().to_rational());
+                    if i.is_zero() {
+                        Ok(rm)
+                    } else {
+                        Ok(coeff_map(&i.to_float().to_rational())
+                            * rm.i().ok_or_else(|| {
+                                "Numerical type does not support imaginary unit".to_string()
+                            })?
+                            + rm)
+                    }
                 }
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())
@@ -4829,9 +4993,6 @@ impl<'a> AtomView<'a> {
             AtomView::Var(v) => match v.get_symbol() {
                 Atom::E => Ok(coeff_map(&1.into()).e()),
                 Atom::PI => Ok(coeff_map(&1.into()).pi()),
-                Atom::I => coeff_map(&1.into())
-                    .i()
-                    .ok_or_else(|| "Numerical type does not support imaginary unit".to_string()),
                 _ => Err(format!("Variable {} not in constant map", v.get_symbol())),
             },
             AtomView::Fun(f) => {
@@ -4873,8 +5034,8 @@ impl<'a> AtomView<'a> {
                 let b_eval = b.evaluate_impl(coeff_map, const_map, function_map, cache)?;
 
                 if let AtomView::Num(n) = e {
-                    if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
-                        if den == 1 {
+                    if let CoefficientView::Natural(num, den, ni, _di) = n.get_coeff_view() {
+                        if den == 1 && ni == 0 {
                             if num >= 0 {
                                 return Ok(b_eval.pow(num as u64));
                             } else {
@@ -4949,7 +5110,7 @@ impl<'a> AtomView<'a> {
 
         let mut rng = rand::rng();
 
-        if self.contains_symbol(State::I) {
+        if self.has_complex_coefficients() {
             let mut vars: HashMap<_, _> = self
                 .get_all_indeterminates(true)
                 .into_iter()
@@ -5064,7 +5225,10 @@ mod test {
 
     use crate::{
         atom::{Atom, AtomCore},
-        domains::{float::Float, rational::Rational},
+        domains::{
+            float::{Complex, Float},
+            rational::Rational,
+        },
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
         id::ConditionResult,
         parse, symbol,
@@ -5144,7 +5308,7 @@ mod test {
 
         let mut fn_map = FunctionMap::new();
 
-        fn_map.add_constant(symbol!("pi").into(), Rational::from((22, 7)));
+        fn_map.add_constant(symbol!("pi").into(), Complex::from(Rational::from((22, 7))));
         fn_map
             .add_tagged_function(
                 symbol!("p"),
@@ -5178,7 +5342,7 @@ mod test {
             Atom::evaluator_multiple(&[e1, e2], &fn_map, &params, OptimizationSettings::default())
                 .unwrap();
 
-        let mut e_f64 = evaluator.map_coeff(&|x| x.into());
+        let mut e_f64 = evaluator.map_coeff(&|x| x.clone().to_real().unwrap().into());
         let r = e_f64.evaluate_single(&[1.1]);
         assert!((r - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
     }

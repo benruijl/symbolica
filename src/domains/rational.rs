@@ -7,17 +7,17 @@ use std::{
 };
 
 use crate::{
-    poly::{polynomial::PolynomialRing, Exponent},
+    poly::{Exponent, polynomial::PolynomialRing},
     printer::{PrintOptions, PrintState},
 };
 
 use super::{
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, UpgradeToField,
     finite_field::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField, Two,
-        Zp, Z2,
+        Z2, Zp,
     },
     integer::{Integer, IntegerRing, Z},
-    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, UpgradeToField,
 };
 
 /// The field of rational numbers.
@@ -94,11 +94,7 @@ pub trait FractionNormalization: Ring {
 
 impl FractionNormalization for Z {
     fn get_normalization_factor(&self, a: &Integer) -> Integer {
-        if *a < 0 {
-            (-1).into()
-        } else {
-            1.into()
-        }
+        if *a < 0 { (-1).into() } else { 1.into() }
     }
 }
 
@@ -687,6 +683,10 @@ impl ToFiniteField<Two> for Rational {
 }
 
 impl Rational {
+    pub fn new<T: Into<Integer>>(num: T, den: T) -> Rational {
+        Q.to_element(num.into(), den.into(), true)
+    }
+
     pub fn from_unchecked<T: Into<Integer>>(num: T, den: T) -> Rational {
         Q.to_element(num.into(), den.into(), false)
     }
@@ -797,11 +797,7 @@ impl Rational {
             bound1
         };
 
-        if self.is_negative() {
-            res.neg()
-        } else {
-            res
-        }
+        if self.is_negative() { res.neg() } else { res }
     }
 
     /// Round the rational to the one with the smallest numerator or denominator in the interval
@@ -1218,9 +1214,9 @@ mod test {
     use crate::{
         atom::AtomCore,
         domains::{
-            integer::Z,
-            rational::{FractionField, Rational, Q},
             Field, Ring,
+            integer::Z,
+            rational::{FractionField, Q, Rational},
         },
         parse,
         poly::polynomial::PolynomialRing,

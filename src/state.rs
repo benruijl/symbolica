@@ -107,12 +107,11 @@ impl State {
     pub(crate) const SQRT: Symbol = Symbol::raw_fn(6, 0, false, false, false, false);
     pub(crate) const DERIVATIVE: Symbol = Symbol::raw_fn(7, 0, false, false, false, false);
     pub(crate) const E: Symbol = Symbol::raw_var(8, 0);
-    pub(crate) const I: Symbol = Symbol::raw_var(9, 0);
-    pub(crate) const PI: Symbol = Symbol::raw_var(10, 0);
+    pub(crate) const PI: Symbol = Symbol::raw_var(9, 0);
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 11] = [
-        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
+    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 10] = [
+        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝜋",
     ];
 
     pub fn is_builtin_name<S: AsRef<str>>(str: S) -> bool {

@@ -259,6 +259,53 @@ impl SelfRing for Float {
     }
 }
 
+impl SelfRing for Complex<Float> {
+    #[inline(always)]
+    fn is_zero(&self) -> bool {
+        SingleFloat::is_zero(&self.re) && SingleFloat::is_zero(&self.im)
+    }
+
+    #[inline(always)]
+    fn is_one(&self) -> bool {
+        SingleFloat::is_one(&self.re) && SingleFloat::is_zero(&self.im)
+    }
+
+    #[inline(always)]
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &crate::printer::PrintOptions,
+        mut state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, fmt::Error> {
+        let re_zero = SingleFloat::is_zero(&self.re);
+        let im_zero = SingleFloat::is_zero(&self.im);
+        let add_paren = (state.in_product || state.in_exp) && !re_zero && !im_zero;
+        if add_paren {
+            f.write_char('(')?;
+            state.in_sum = false;
+        }
+
+        if !re_zero {
+            self.re.format(opts, state, f)?;
+        }
+
+        if !re_zero && !im_zero {
+            state.in_sum = true;
+        }
+
+        if !im_zero {
+            self.im.format(opts, state, f)?;
+            f.write_char('𝑖')?;
+        }
+
+        if add_paren {
+            f.write_char(')')?;
+        }
+
+        Ok(false)
+    }
+}
+
 impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> EuclideanDomain
     for FloatField<T>
 {
@@ -3120,7 +3167,7 @@ impl<T: InternalOrdering> InternalOrdering for Complex<T> {
     }
 }
 
-impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
+impl<T: ConstructibleFloat> ConstructibleFloat for Complex<T> {
     fn new_from_i64(a: i64) -> Self {
         Complex {
             re: T::new_from_i64(a),
@@ -3145,7 +3192,7 @@ impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
     fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
         Complex {
             re: T::new_sample_unit(rng),
-            im: T::new_zero(),
+            im: T::new_sample_unit(rng),
         }
     }
 }
@@ -3230,6 +3277,21 @@ impl<T: Real> Complex<T> {
     #[inline]
     pub fn from_polar_coordinates(r: T, phi: T) -> Complex<T> {
         Complex::new(r.clone() * phi.cos(), r.clone() * phi.sin())
+    }
+}
+
+impl<T: SingleFloat> Complex<T> {
+    pub fn is_real(&self) -> bool {
+        self.im.is_zero()
+    }
+
+    #[inline]
+    pub fn to_real(&self) -> Option<&T> {
+        if self.im.is_zero() {
+            Some(&self.re)
+        } else {
+            None
+        }
     }
 }
 

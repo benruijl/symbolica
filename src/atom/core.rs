@@ -13,7 +13,7 @@ use crate::{
         factorized_rational_polynomial::{
             FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
         },
-        float::{Real, SingleFloat},
+        float::{Complex, Real, SingleFloat},
         integer::Z,
         rational::Rational,
         rational_polynomial::{
@@ -631,15 +631,15 @@ pub trait AtomCore {
     /// let mut tree = expr.to_evaluation_tree(&fn_map, &params).unwrap();
     /// tree.common_subexpression_elimination();
     /// let e = tree.optimize(1, 1, None, false);
-    /// let mut e = e.map_coeff(&|c| c.to_f64());
+    /// let mut e = e.map_coeff(&|c| c.to_real().unwrap().to_f64());
     /// let r = e.evaluate_single(&[0.5, 0.3]);
     /// assert_eq!(r, 0.8);
     /// ```
     fn to_evaluation_tree(
         &self,
-        fn_map: &FunctionMap<Rational>,
+        fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
-    ) -> Result<EvalTree<Rational>, String> {
+    ) -> Result<EvalTree<Complex<Rational>>, String> {
         self.as_atom_view().to_evaluation_tree(fn_map, params)
     }
 
@@ -662,15 +662,15 @@ pub trait AtomCore {
     /// let mut evaluator = expr
     ///     .evaluator(&fn_map, &params, optimization_settings)
     ///     .unwrap()
-    ///     .map_coeff(&|x| x.to_f64());
+    ///     .map_coeff(&|x| x.to_real().unwrap().to_f64());
     /// assert_eq!(evaluator.evaluate_single(&[1.0, 2.0]), 3.0);
     /// ```
     fn evaluator(
         &self,
-        fn_map: &FunctionMap<Rational>,
+        fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
         optimization_settings: OptimizationSettings,
-    ) -> Result<ExpressionEvaluator<Rational>, String> {
+    ) -> Result<ExpressionEvaluator<Complex<Rational>>, String> {
         let mut tree = self.to_evaluation_tree(fn_map, params)?;
         Ok(tree.optimize(
             optimization_settings.horner_iterations,
@@ -702,17 +702,17 @@ pub trait AtomCore {
     ///     OptimizationSettings::default(),
     /// )
     /// .unwrap();
-    /// let mut evaluator = evaluator.map_coeff(&|c| c.to_f64());
+    /// let mut evaluator = evaluator.map_coeff(&|c| c.to_real().unwrap().to_f64());
     /// let mut out = vec![0., 0.];
     /// evaluator.evaluate(&[1.0, 2.0], &mut out);
     /// assert_eq!(out, &[3.0, -1.0]);
     /// ```
     fn evaluator_multiple<A: AtomCore>(
         exprs: &[A],
-        fn_map: &FunctionMap<Rational>,
+        fn_map: &FunctionMap<Complex<Rational>>,
         params: &[Atom],
         optimization_settings: OptimizationSettings,
-    ) -> Result<ExpressionEvaluator<Rational>, String> {
+    ) -> Result<ExpressionEvaluator<Complex<Rational>>, String> {
         let mut tree = AtomView::to_eval_tree_multiple(exprs, fn_map, params)?;
         Ok(tree.optimize(
             optimization_settings.horner_iterations,
@@ -790,6 +790,20 @@ pub trait AtomCore {
             .coefficients_to_float_into(decimal_prec, out);
     }
 
+    /// Complex conjugate all numbers in the expression.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, symbol, parse};
+    /// let expr = parse!("1 + 2𝑖").unwrap() * Atom::new_var(symbol!("x")).pow(Atom::i());
+    /// let result = expr.conjugate();
+    /// assert_eq!(result, parse!("(1 - 2𝑖)*x^(-𝑖)").unwrap());
+    /// ```
+    fn conjugate(&self) -> Atom {
+        self.as_atom_view().conjugate()
+    }
+
     /// Map all coefficients using a given function.
     ///
     /// # Example
@@ -797,11 +811,12 @@ pub trait AtomCore {
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
-    /// use symbolica::domains::rational::Rational;
+    /// use symbolica::domains::{float::Complex, rational::Rational};
     /// let expr = parse!("0.33*x + 3").unwrap();
     /// let out = expr.map_coefficient(|c| match c {
-    ///     CoefficientView::Natural(r, d) => {
-    ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
+    ///     CoefficientView::Natural(r, d, ri, di) => {
+    ///         Coefficient::Float(Complex::new(Rational::from((r, d)).to_multi_prec_float(53),
+    ///             Rational::from((ri, di)).to_multi_prec_float(53)))
     ///     }
     ///     _ => c.to_owned(),
     /// });
@@ -821,12 +836,13 @@ pub trait AtomCore {
     /// ```
     /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
-    /// use symbolica::domains::rational::Rational;
+    /// use symbolica::domains::{float::Complex, rational::Rational};
     /// let expr = parse!("0.33*x + 3").unwrap();
     /// let mut out = Atom::new();
     /// expr.map_coefficient_into(|c| match c {
-    ///     CoefficientView::Natural(r, d) => {
-    ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
+    ///     CoefficientView::Natural(r, d, ri, di) => {
+    ///         Coefficient::Float(Complex::new(Rational::from((r, d)).to_multi_prec_float(53),
+    ///             Rational::from((ri, di)).to_multi_prec_float(53)))
     ///     }
     ///     _ => c.to_owned(),
     /// }, &mut out);
@@ -1381,6 +1397,29 @@ pub trait AtomCore {
     /// ```
     fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(&self, m: F) -> Atom {
         self.as_atom_view().replace_map(m)
+    }
+
+    /// Call the function `v` for every subexpression. If `v` returns `true`, the
+    /// subexpressions of the current expression will be visited.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{AtomCore, AtomView}, parse};
+    /// let mut has_complex_coefficient = false;
+    /// let expr = parse!("3*f(x,f(4+2𝑖))").unwrap();
+    /// let result = expr.visitor(&mut |a| {
+    ///     if let AtomView::Num(n) = a {
+    ///         if !n.get_coeff_view().is_real() {
+    ///             has_complex_coefficient = true;
+    ///         }
+    ///     }
+    ///     !has_complex_coefficient // early abort when found
+    /// });
+    /// assert!(has_complex_coefficient);
+    /// ```
+    fn visitor<F: FnMut(AtomView) -> bool>(&self, v: &mut F) {
+        self.as_atom_view().visitor(v)
     }
 
     /// Return an iterator over matched expressions.

@@ -24,7 +24,7 @@ use pyo3::{
     wrap_pyfunction,
 };
 use pyo3::{pyclass, types::PyModuleMethods};
-use pyo3_stub_gen::{define_stub_info_gatherer, derive::*, impl_stub_type, PyStubType, TypeInfo};
+use pyo3_stub_gen::{PyStubType, TypeInfo, impl_stub_type};
 use rug::Complete;
 use self_cell::self_cell;
 use smallvec::SmallVec;
@@ -572,7 +572,7 @@ impl PythonTransformer {
                 TransformerState::default()
             };
 
-            py.allow_threads(|| {
+            let _ = py.allow_threads(|| {
                 Workspace::get_local()
                     .with(|ws| Transformer::execute_chain(e.as_view(), &t.1, ws, &state, &mut out))
                     .map_err(|e| match e {
@@ -1583,6 +1583,11 @@ impl PythonTransformer {
         append_transformer!(self, Transformer::CollectNum)
     }
 
+    /// Complex conjugate all complex numbers in the expression.
+    pub fn conjugate(&self) -> PyResult<PythonTransformer> {
+        append_transformer!(self, Transformer::Conjugate)
+    }
+
     /// Create a transformer that collects terms involving the literal occurrence of `x`.
     pub fn coefficient(&self, x: ConvertibleToExpression) -> PyResult<PythonTransformer> {
         let a = x.to_expression().expr;
@@ -2420,6 +2425,10 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             ))
         } else if let Ok(f) = ob.extract::<PythonMultiPrecisionFloat>() {
             Ok(ConvertibleToExpression(Atom::new_num(f.0).into()))
+        } else if let Ok(num) = ob.extract::<Complex<f64>>() {
+            Ok(ConvertibleToExpression(
+                Atom::new_num(Complex::<Float>::new(num.re.into(), num.im.into())).into(),
+            ))
         } else {
             Err(exceptions::PyTypeError::new_err(
                 "Cannot convert to expression",
@@ -2914,7 +2923,7 @@ impl PythonExpression {
 
                     symbol = symbol.with_normalization_function(Box::new(
                         move |input: AtomView<'_>, out: &mut Atom| {
-                            Workspace::get_local()
+                            let _ = Workspace::get_local()
                                 .with(|ws| {
                                     Transformer::execute_chain(
                                         input,
@@ -2975,7 +2984,7 @@ impl PythonExpression {
                         let t = t.1.clone();
                         symbol = symbol.with_normalization_function(Box::new(
                             move |input: AtomView<'_>, out: &mut Atom| {
-                                Workspace::get_local()
+                                let _ = Workspace::get_local()
                                     .with(|ws| {
                                         Transformer::execute_chain(
                                             input,
@@ -3044,6 +3053,14 @@ impl PythonExpression {
             } else {
                 Ok(Atom::new_num(f.0).into())
             }
+        } else if let Ok(f) = num.extract::<Complex<f64>>(py) {
+            if let Some(relative_error) = relative_error {
+                let r = Rational::from(f.re).round(&relative_error.into());
+                let i = Rational::from(f.im).round(&relative_error.into());
+                Ok(Atom::new_num(Complex::new(r, i)).into())
+            } else {
+                Ok(Atom::new_num(Complex::<Float>::new(f.re.into(), f.im.into())).into())
+            }
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
         }
@@ -3068,7 +3085,7 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "I")]
     pub fn i() -> PythonExpression {
-        Atom::new_var(Atom::I).into()
+        Atom::i().into()
     }
 
     /// The built-in function that converts a rational polynomial to a coefficient.
@@ -3689,6 +3706,11 @@ impl PythonExpression {
         self.expr.coefficients_to_float(decimal_prec).into()
     }
 
+    /// Complex conjugate all complex numbers in the expression.
+    pub fn conjugate(&self) -> PythonExpression {
+        self.expr.conjugate().into()
+    }
+
     /// Map all floating point and rational coefficients to the best rational approximation
     /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
     pub fn rationalize_coefficients(&self, relative_error: f64) -> PyResult<PythonExpression> {
@@ -4240,12 +4262,11 @@ impl PythonExpression {
                 |x| {
                     let mut out = Atom::default();
                     Workspace::get_local().with(|ws| {
-                        Transformer::execute_chain(x, t, ws, &state, &mut out).unwrap_or_else(
-                            |e| {
+                        let _ = Transformer::execute_chain(x, t, ws, &state, &mut out)
+                            .unwrap_or_else(|e| {
                                 // TODO: capture and abort the parallel run
                                 panic!("Transformer failed during parallel execution: {:?}", e)
-                            },
-                        );
+                            });
                     });
                     out
                 },
@@ -4892,10 +4913,18 @@ impl PythonExpression {
             }
 
             let f = AlgebraicExtension::new(p);
-            PythonNumberFieldPolynomial {
-                poly: self.expr.to_polynomial(&Q, var_map).to_number_field(&f),
+            if &f.poly().exponents == &[0, 2] && f.poly().get_constant() == Rational::one() {
+                // convert complex coefficients
+                PythonNumberFieldPolynomial {
+                    poly: self.expr.to_polynomial(&f, var_map),
+                }
+                .into_py_any(py)
+            } else {
+                PythonNumberFieldPolynomial {
+                    poly: self.expr.to_polynomial(&Q, var_map).to_number_field(&f),
+                }
+                .into_py_any(py)
             }
-            .into_py_any(py)
         } else {
             PythonPolynomial {
                 poly: self.expr.to_polynomial(&Q, var_map),
@@ -5641,7 +5670,7 @@ impl PythonExpression {
             if let Ok(r) = v.expr.clone().try_into() {
                 fn_map.add_constant(k.expr, r);
             } else {
-                Err(exceptions::PyValueError::new_err("Constants must be rationals. If this is not possible, pass the value as a parameter".to_string()))?
+                Err(exceptions::PyValueError::new_err("Constants must be complex rationals. If this is not possible, pass the value as a parameter".to_string()))?
             }
         }
 
@@ -5685,8 +5714,14 @@ impl PythonExpression {
                 exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
             })?;
 
-        let eval_f64 = eval.clone().map_coeff(&|x| x.to_f64());
-        let eval_complex = eval_f64.clone().map_coeff(&|x| Complex::new(*x, 0.));
+        let eval_f64 = if eval.is_real() {
+            Some(eval.clone().map_coeff(&|x| x.to_real().unwrap().to_f64()))
+        } else {
+            None
+        };
+        let eval_complex = eval
+            .clone()
+            .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
         Ok(PythonExpressionEvaluator {
             eval_rat: eval,
@@ -5733,7 +5768,7 @@ impl PythonExpression {
             if let Ok(r) = v.expr.clone().try_into() {
                 fn_map.add_constant(k.expr, r);
             } else {
-                Err(exceptions::PyValueError::new_err("Constants must be rationals. If this is not possible, pass the value as a parameter".to_string()))?
+                Err(exceptions::PyValueError::new_err("Constants must be complex rationals. If this is not possible, pass the value as a parameter".to_string()))?
             }
         }
 
@@ -5776,8 +5811,14 @@ impl PythonExpression {
             exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
         })?;
 
-        let eval_f64 = eval.clone().map_coeff(&|x| x.to_f64());
-        let eval_complex = eval_f64.clone().map_coeff(&|x| Complex::new(*x, 0.));
+        let eval_f64 = if eval.is_real() {
+            Some(eval.clone().map_coeff(&|x| x.to_real().unwrap().to_f64()))
+        } else {
+            None
+        };
+        let eval_complex = eval
+            .clone()
+            .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
         Ok(PythonExpressionEvaluator {
             eval_rat: eval,
@@ -6376,8 +6417,8 @@ impl PythonTermStreamer {
             // map every term in the expression
             let m = self.stream.map(|x| {
                 let mut out = Atom::default();
-                Workspace::get_local().with(|ws| {
-                    Transformer::execute_chain(x.as_view(), t, ws, &state, &mut out)
+                let _ = Workspace::get_local().with(|ws| {
+                    let _ = Transformer::execute_chain(x.as_view(), t, ws, &state, &mut out)
                         .unwrap_or_else(|e| {
                             // TODO: capture and abort the parallel run
                             panic!("Transformer failed during parallel execution: {:?}", e)
@@ -6433,7 +6474,7 @@ impl PythonTermStreamer {
         let s = self.stream.map_single_thread(|x| {
             let mut out = Atom::default();
             Workspace::get_local().with(|ws| {
-                Transformer::execute_chain(x.as_view(), t, ws, &state, &mut out)
+                let _ = Transformer::execute_chain(x.as_view(), t, ws, &state, &mut out)
                     .unwrap_or_else(|e| panic!("Transformer failed during execution: {:?}", e));
             });
             out
@@ -7429,8 +7470,16 @@ impl PythonPolynomial {
             .map(|x| {
                 if let AtomView::Num(x) = x.to_expression().expr.as_view() {
                     match x.get_coeff_view() {
-                        CoefficientView::Natural(r, d) => Ok(Rational::from_unchecked(r, d)),
-                        CoefficientView::Large(r) => Ok(r.to_rat()),
+                        CoefficientView::Natural(r, d, 0, 1) => Ok(Rational::from_unchecked(r, d)),
+                        CoefficientView::Large(r, i) => {
+                            if i.is_zero() {
+                                Ok(r.to_rat())
+                            } else {
+                                Err(exceptions::PyValueError::new_err(
+                                    "Sample points must be rational numbers".to_string(),
+                                ))
+                            }
+                        }
                         _ => Err(exceptions::PyValueError::new_err(
                             "Sample points must be rational numbers".to_string(),
                         )),
@@ -11564,8 +11613,8 @@ impl ConvertibleToRationalPolynomial {
 #[pyclass(name = "Evaluator", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonExpressionEvaluator {
-    pub eval_rat: ExpressionEvaluator<Rational>,
-    pub eval: ExpressionEvaluator<f64>,
+    pub eval_rat: ExpressionEvaluator<Complex<Rational>>,
+    pub eval: Option<ExpressionEvaluator<f64>>,
     pub eval_complex: ExpressionEvaluator<Complex<f64>>,
 }
 
@@ -11695,17 +11744,21 @@ impl PythonExpressionEvaluator {
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate`.
-    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
-        let n_inputs = inputs.len() / self.eval.get_input_len();
-        let mut res = vec![0.; self.eval.get_output_len() * n_inputs];
+    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> PyResult<Vec<f64>> {
+        let eval = self.eval.as_mut().ok_or(exceptions::PyValueError::new_err(
+            "Evaluator contains complex coefficients. Use evaluate_complex_flat instead.",
+        ))?;
+
+        let n_inputs = inputs.len() / eval.get_input_len();
+        let mut res = vec![0.; eval.get_output_len() * n_inputs];
         for (r, s) in res
-            .chunks_mut(self.eval.get_output_len())
-            .zip(inputs.chunks(self.eval.get_input_len()))
+            .chunks_mut(eval.get_output_len())
+            .zip(inputs.chunks(eval.get_input_len()))
         {
-            self.eval.evaluate(s, r);
+            eval.evaluate(s, r);
         }
 
-        res
+        Ok(res)
     }
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
@@ -11730,15 +11783,19 @@ impl PythonExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        inputs
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> PyResult<Vec<Vec<f64>>> {
+        let eval = self.eval.as_mut().ok_or(exceptions::PyValueError::new_err(
+            "Evaluator contains complex coefficients. Use evaluate_complex instead.",
+        ))?;
+
+        Ok(inputs
             .iter()
             .map(|s| {
-                let mut v = vec![0.; self.eval.get_output_len()];
-                self.eval.evaluate(s, &mut v);
+                let mut v = vec![0.; eval.get_output_len()];
+                eval.evaluate(s, &mut v);
                 v
             })
-            .collect()
+            .collect())
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
@@ -11797,7 +11854,7 @@ impl PythonExpressionEvaluator {
 
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
-                .eval
+                .eval_complex
                 .export_cpp(filename, function_name, true, inline_asm)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
@@ -11808,8 +11865,8 @@ impl PythonExpressionEvaluator {
                 .map_err(|e| {
                     exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
                 })?,
-            input_len: self.eval.get_input_len(),
-            output_len: self.eval.get_output_len(),
+            input_len: self.eval_complex.get_input_len(),
+            output_len: self.eval_complex.get_output_len(),
         })
     }
 }

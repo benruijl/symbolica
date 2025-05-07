@@ -41,7 +41,7 @@ tracing_only_warnings = ["tracing/release_max_level_warn"]
 # import/export objects that do not depend on the state using serde
 serde = ["dep:serde", "rug/serde"]
 # allow importing/exporting of atoms with a state map using bincode
-bincode = ["dep:bincode"]
+bincode = ["dep:bincode", "dep:bincode-trait-derive"]
 
 [dependencies.pyo3]
 features = ["abi3", "py-clone"]
@@ -76,3 +76,4 @@ tinyjson = "2.5"
 tracing = "0.1"
 wide = "0.7"
 wolfram-library-link = {version = "0.2.9", optional = true}
+bincode-trait-derive = {git = "https://github.com/alphal00p/bincode-trait-derive.git", optional = true}

@@ -15,12 +15,12 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    atom::{Atom, DefaultNamespace},
-    coefficient::{Coefficient, ConvertToRing},
-    domains::{float::Float, integer::Integer, Ring},
-    poly::{polynomial::MultivariatePolynomial, PositiveExponent, Variable},
-    state::{State, Workspace},
     LicenseManager,
+    atom::{Atom, DefaultNamespace},
+    coefficient::{Coefficient, ComplexCoefficient, ConvertToRing},
+    domains::{Ring, float::Float, integer::Integer},
+    poly::{PositiveExponent, Variable, polynomial::MultivariatePolynomial},
+    state::{State, Workspace},
 };
 
 const HEX_DIGIT_MASK: [bool; 255] = [
@@ -415,7 +415,11 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol(namespace.attach_namespace(x)));
+                if x == "𝑖" {
+                    out.to_num(Coefficient::Complex(ComplexCoefficient::imag()));
+                } else {
+                    out.to_var(state.get_symbol(namespace.attach_namespace(x)));
+                }
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -683,6 +687,7 @@ impl Token {
                 ParseState::Identifier => {
                     if ops.contains(&c) || whitespace.contains(&c) {
                         state = ParseState::Any;
+
                         stack.push(Token::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
                     } else if !forbidden.contains(&c) {
@@ -910,9 +915,9 @@ impl Token {
                     match unsafe { stack.get_unchecked(stack.len() - 1) } {
                         Token::Op(true, _, op, _) => {
                             Err(format!(
-                            "Error at line {} and position {}: operator '{}' is missing left-hand side",
-                            line_counter, column_counter, op,
-                        ))?;
+                                "Error at line {} and position {}: operator '{}' is missing left-hand side",
+                                line_counter, column_counter, op,
+                            ))?;
                         }
 
                         x @ Token::CloseParenthesis | x @ Token::CloseBracket => {

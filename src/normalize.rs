@@ -3,8 +3,8 @@ use std::{cmp::Ordering, ops::DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    atom::{representation::InlineNum, Atom, AtomView, Fun, Symbol},
-    coefficient::{Coefficient, CoefficientView},
+    atom::{Atom, AtomView, Fun, Symbol, representation::InlineNum},
+    coefficient::{Coefficient, CoefficientView, ComplexCoefficient},
     domains::{float::Real, integer::Z, rational::Q},
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
@@ -549,7 +549,7 @@ impl Atom {
                     let num = if let AtomView::Num(n) = &last_elem {
                         n.get_coeff_view()
                     } else {
-                        CoefficientView::Natural(1, 1)
+                        CoefficientView::Natural(1, 1, 0, 1)
                     };
 
                     let new_coeff = if let AtomView::Num(n) = &last_elem2 {
@@ -1176,11 +1176,11 @@ impl AtomView<'_> {
 
                     if let AtomView::Num(e) = exp_handle.as_view() {
                         let exp_num = e.get_coeff_view();
-                        if exp_num == CoefficientView::Natural(0, 1) {
+                        if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
                             // x^0 = 1
                             out.to_num(1.into());
                             break 'pow_simplify;
-                        } else if exp_num == CoefficientView::Natural(1, 1) {
+                        } else if exp_num == CoefficientView::Natural(1, 1, 0, 1) {
                             // remove power of 1
                             out.set_from_view(&base_handle.as_view());
                             break 'pow_simplify;
@@ -1197,8 +1197,12 @@ impl AtomView<'_> {
                             exp_handle.to_num(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
                             if v.get_symbol() == Atom::I {
-                                if let CoefficientView::Natural(n, d) = exp_num {
+                                if let CoefficientView::Natural(n, d, ni, di) = exp_num {
                                     let mut new_base = workspace.new_atom();
+
+                                    if ni != 0 {
+                                        break 'pow_simplify;
+                                    }
 
                                     // the case n < 0 is handled automagically
                                     if n % 2 == 0 {

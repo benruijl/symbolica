@@ -31,8 +31,8 @@ fn main() {
         }))
         & z.restrict(WildcardRestriction::filter(|x: &Match| {
             if let Match::Single(AtomView::Num(num)) = x {
-                if let CoefficientView::Natural(x, y) = num.get_coeff_view() {
-                    y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
+                if let CoefficientView::Natural(x, y, n, _) = num.get_coeff_view() {
+                    n == 0 && y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
                 } else {
                     false
                 }
@@ -45,8 +45,7 @@ fn main() {
 
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
-        pat_expr,
-        expr
+        pat_expr, expr
     );
 
     let mut it = expr.pattern_match(&pattern, Some(&conditions), Some(&settings));

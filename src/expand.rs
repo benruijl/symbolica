@@ -64,7 +64,7 @@ impl AtomView<'_> {
                 }
 
                 if let AtomView::Num(n) = exp {
-                    if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
+                    if let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view() {
                         if n.unsigned_abs() <= u32::MAX as u64
                             && matches!(base, AtomView::Add(_) | AtomView::Mul(_))
                         {
@@ -186,7 +186,7 @@ impl AtomView<'_> {
 
                 let (negative, num) = 'get_num: {
                     if let AtomView::Num(n) = new_exp.as_view() {
-                        if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
+                        if let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view() {
                             if n.unsigned_abs() <= u32::MAX as u64 {
                                 break 'get_num (n < 0, n.unsigned_abs() as u32);
                             }

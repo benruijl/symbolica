@@ -790,16 +790,17 @@ impl AtomView<'_> {
 
                     match exp {
                         AtomView::Num(n) => match n.get_coeff_view() {
-                            CoefficientView::Natural(n, d) => {
-                                if d == 1 && n >= 0 && n <= u32::MAX as i64 {
+                            CoefficientView::Natural(n, d, ni, _di) => {
+                                if d == 1 && ni == 0 && n >= 0 && n <= u32::MAX as i64 {
                                     Ok(())
                                 } else {
                                     Err("Exponent negative or a fraction")
                                 }
                             }
-                            CoefficientView::Large(r) => {
+                            CoefficientView::Large(r, ri) => {
                                 let r = r.to_rat();
-                                if r.is_integer()
+                                if ri.is_zero()
+                                    && r.is_integer()
                                     && !r.is_negative()
                                     && r.numerator_ref() <= &u32::MAX
                                 {
@@ -889,10 +890,10 @@ impl AtomView<'_> {
 
                     match exp {
                         AtomView::Num(n) => match n.get_coeff_view() {
-                            CoefficientView::Natural(r, _) => {
+                            CoefficientView::Natural(r, _, _, _) => {
                                 exponents[var_index] += E::from_i32(r as i32)
                             }
-                            CoefficientView::Large(r) => {
+                            CoefficientView::Large(r, _) => {
                                 exponents[var_index] +=
                                     E::from_i32(r.to_rat().numerator_ref().to_i64().unwrap() as i32)
                             }
@@ -978,8 +979,8 @@ impl AtomView<'_> {
 
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
-                    if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 {
+                    if let CoefficientView::Natural(nn, nd, ni, _di) = num_n {
+                        if nd == 1 && ni == 0 {
                             if nn > 0 && nn < i32::MAX as i64 {
                                 return base.to_polynomial_impl(field, var_map).pow(nn as usize);
                             } else if nn < 0 && nn > i32::MIN as i64 {
@@ -1118,12 +1119,12 @@ impl AtomView<'_> {
 
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
-                    if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 && nn > 0 && nn < i32::MAX as i64 {
+                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n {
+                        if ni == 0 && nd == 1 && nn > 0 && nn < i32::MAX as i64 {
                             return base
                                 .to_polynomial_in_vars_impl(var_map, poly)
                                 .pow(nn as usize);
-                        } else if nd == 1 && nn < 0 && nn > i32::MIN as i64 {
+                        } else if ni == 0 && nd == 1 && nn < 0 && nn > i32::MIN as i64 {
                             // allow x^-2 as a term if supported by the exponent
                             if let Ok(e) = (nn as i32).try_into() {
                                 if let AtomView::Var(v) = base {
@@ -1237,8 +1238,8 @@ impl AtomView<'_> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
 
-                    if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 {
+                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n {
+                        if ni == 0 && nd == 1 {
                             let b = base.to_rational_polynomial_impl(field, out_field, var_map);
 
                             return if nn < 0 {
@@ -1382,8 +1383,8 @@ impl AtomView<'_> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
 
-                    if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 {
+                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n {
+                        if ni == 0 && nd == 1 {
                             let b = base
                                 .to_factorized_rational_polynomial_impl(field, out_field, var_map);
 

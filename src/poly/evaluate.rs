@@ -864,8 +864,10 @@ impl Variable<Rational> {
                         if f.get_nargs() == 1 {
                             if let Some(a) = f.iter().next() {
                                 if let AtomView::Num(n) = a {
-                                    if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                                        if d == 1 && n >= 0 {
+                                    if let CoefficientView::Natural(n, d, ni, _di) =
+                                        n.get_coeff_view()
+                                    {
+                                        if d == 1 && ni == 0 && n >= 0 {
                                             return format!("{}[{}]", f.get_symbol(), a);
                                         }
                                     }

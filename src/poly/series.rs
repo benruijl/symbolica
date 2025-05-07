@@ -911,8 +911,12 @@ impl Series<AtomField> {
 
                 if b == s {
                     if let AtomView::Num(n) = exp {
-                        if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                            Ok(self.monomial(self.field.one(), (n, d).into()))
+                        if let CoefficientView::Natural(n, d, ni, _di) = n.get_coeff_view() {
+                            if ni == 0 {
+                                Ok(self.monomial(self.field.one(), (n, d).into()))
+                            } else {
+                                unimplemented!("Cannot series expand with complex exponent")
+                            }
                         } else {
                             unimplemented!("Cannot series expand with large exponents yet")
                         }

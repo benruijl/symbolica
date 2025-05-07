@@ -8,19 +8,19 @@ use crate::{
     coefficient::ConvertToRing,
     combinatorics::CombinationIterator,
     poly::{
-        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
-        PositiveExponent, Variable,
+        PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
+        polynomial::MultivariatePolynomial,
     },
     tensors::matrix::Matrix,
 };
 
 use super::{
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     finite_field::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, ToFiniteField,
     },
     integer::Integer,
     rational::Rational,
-    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
@@ -84,11 +84,7 @@ where
     fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
         let r = self.to_integer(a);
         let s = self.size();
-        if &r * &2.into() > s {
-            &r - &s
-        } else {
-            r
-        }
+        if &r * &2.into() > s { &r - &s } else { r }
     }
 
     fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>
@@ -140,10 +136,14 @@ where
 
     fn element_from_coefficient(&self, number: crate::coefficient::Coefficient) -> Self::Element {
         match number {
-            crate::coefficient::Coefficient::Rational(r) => {
-                let n = self.element_from_integer(r.numerator());
-                let d = self.element_from_integer(r.denominator());
-                self.div(&n, &d)
+            crate::coefficient::Coefficient::Complex(r) => {
+                if r.is_real() {
+                    let n = self.element_from_integer(r.real.numerator());
+                    let d = self.element_from_integer(r.real.denominator());
+                    self.div(&n, &d)
+                } else {
+                    panic!("Cannot convert complex coefficient to algebraic number")
+                }
             }
             crate::coefficient::Coefficient::Float(_) => {
                 panic!("Cannot convert float coefficient to algebraic number")
@@ -162,12 +162,19 @@ where
         number: crate::coefficient::CoefficientView<'_>,
     ) -> Self::Element {
         match number {
-            crate::coefficient::CoefficientView::Natural(n, d) => {
+            crate::coefficient::CoefficientView::Natural(n, d, ni, _di) => {
+                if ni != 0 {
+                    panic!("Cannot convert complex coefficient to algebraic number")
+                }
+
                 let n = self.element_from_integer(n.into());
                 let d = self.element_from_integer(d.into());
                 self.div(&n, &d)
             }
-            crate::coefficient::CoefficientView::Large(l) => {
+            crate::coefficient::CoefficientView::Large(l, i) => {
+                if !i.is_zero() {
+                    panic!("Cannot convert complex coefficient to algebraic number")
+                }
                 let r: Rational = l.to_rat();
                 let n = self.element_from_integer(r.numerator());
                 let d = self.element_from_integer(r.denominator());
@@ -798,11 +805,11 @@ impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
 #[cfg(test)]
 mod tests {
     use crate::atom::AtomCore;
+    use crate::domains::Ring;
     use crate::domains::algebraic_number::AlgebraicExtension;
-    use crate::domains::finite_field::{PrimeIteratorU64, Zp, Z2};
+    use crate::domains::finite_field::{PrimeIteratorU64, Z2, Zp};
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
-    use crate::domains::Ring;
     use crate::{parse, symbol};
 
     #[test]

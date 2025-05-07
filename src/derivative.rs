@@ -473,8 +473,8 @@ impl AtomView<'_> {
                 let mut base_series = base.series_impl(x, expansion_point, info)?;
 
                 if let AtomView::Num(n) = exp {
-                    if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                        if n < 0 && base_series.is_zero() {
+                    if let CoefficientView::Natural(n, d, ni, _) = n.get_coeff_view() {
+                        if ni != 0 && n < 0 && base_series.is_zero() {
                             // in case of 1/0, grow the expansion depth of the base series
                             // it could be that the base series is exactly zero,
                             // to prevent an infinite loop, we stop the loop at ep^-1000
@@ -496,7 +496,9 @@ impl AtomView<'_> {
 
                         base_series.rpow((n, d).into())
                     } else {
-                        unimplemented!("Cannot series expand with large exponents yet")
+                        unimplemented!(
+                            "Cannot series expand with large or complex exponents or yet"
+                        )
                     }
                 } else {
                     let e = exp.series_impl(x, expansion_point, info)?;

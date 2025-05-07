@@ -4684,8 +4684,8 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => Ok(Expression::Const((n, d).into())),
-                CoefficientView::Large(l) => Ok(Expression::Const(l.to_rat())),
+                CoefficientView::Natural(n, d, ni, di) => Ok(Expression::Const((n, d).into())), // FIXME: support complex numbers
+                CoefficientView::Large(l, i) => Ok(Expression::Const(l.to_rat())),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
                     Ok(Expression::Const(f.to_float().to_rational()))
@@ -4770,8 +4770,8 @@ impl<'a> AtomView<'a> {
                 let b_eval = b.to_eval_tree_impl(fn_map, params, args, funcs)?;
 
                 if let AtomView::Num(n) = e {
-                    if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
-                        if den == 1 {
+                    if let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view() {
+                        if den == 1 && num_i == 0 {
                             if num > 1 {
                                 return Ok(Expression::Mul(vec![b_eval.clone(); num as usize]));
                             } else {
@@ -4846,8 +4846,19 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => Ok(coeff_map(&Rational::from_unchecked(n, d))),
-                CoefficientView::Large(l) => Ok(coeff_map(&l.to_rat())),
+                CoefficientView::Natural(n, d, ni, di) => {
+                    if ni == 0 {
+                        Ok(coeff_map(&Rational::from_unchecked(n, d)))
+                    } else {
+                        let num = coeff_map(&Rational::from_unchecked(n, d));
+                        Ok(coeff_map(&Rational::from_unchecked(ni, di))
+                            * num.i().ok_or_else(|| {
+                                "Numerical type does not support imaginary unit".to_string()
+                            })?
+                            + num)
+                    }
+                }
+                CoefficientView::Large(l, i) => Ok(coeff_map(&l.to_rat())),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
                     Ok(coeff_map(&f.to_float().to_rational()))
@@ -4906,8 +4917,8 @@ impl<'a> AtomView<'a> {
                 let b_eval = b.evaluate_impl(coeff_map, const_map, function_map, cache)?;
 
                 if let AtomView::Num(n) = e {
-                    if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
-                        if den == 1 {
+                    if let CoefficientView::Natural(num, den, ni, _di) = n.get_coeff_view() {
+                        if den == 1 && ni == 0 {
                             if num >= 0 {
                                 return Ok(b_eval.pow(num as u64));
                             } else {

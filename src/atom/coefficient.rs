@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use bytes::{Buf, BufMut};
-use rug::{integer::Order, Integer as MultiPrecisionInteger};
+use rug::{Integer as MultiPrecisionInteger, integer::Order};
 
 use crate::{
     coefficient::{
@@ -11,6 +11,7 @@ use crate::{
     domains::{
         finite_field::FiniteFieldElement,
         integer::{Integer, IntegerRing, Z},
+        rational::Fraction,
         rational_polynomial::RationalPolynomial,
     },
     state::{FiniteFieldIndex, State, VariableListIndex},
@@ -24,6 +25,7 @@ const FIN_NUM: u8 = 0b00000101;
 const ARB_NUM: u8 = 0b00000111;
 const RAT_POLY: u8 = 0b00001000;
 const FLOAT: u8 = 0b00001001;
+const COMPLEX: u8 = 0b00001010;
 const U8_DEN: u8 = 0b00010000;
 const U16_DEN: u8 = 0b00100000;
 const U32_DEN: u8 = 0b00110000;
@@ -135,8 +137,9 @@ pub trait PackedRationalNumberWriter {
 
 impl PackedRationalNumberWriter for Coefficient {
     fn write_packed(&self, dest: &mut Vec<u8>) {
-        match self {
-            Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
+        #[inline(always)]
+        fn write_rational(r: &Fraction<IntegerRing>, dest: &mut Vec<u8>) {
+            match (r.numerator_ref(), r.denominator_ref()) {
                 (Integer::Natural(num), Integer::Natural(den)) => {
                     (*num, *den as u64).write_packed(dest)
                 }
@@ -159,7 +162,19 @@ impl PackedRationalNumberWriter for Coefficient {
                     r.denom()
                         .write_digits(&mut dest[old_len + num_digits..], Order::Lsf);
                 }
-            },
+            }
+        }
+
+        match self {
+            Coefficient::Complex(c) => {
+                if c.imag.is_zero() {
+                    write_rational(&c.real, dest);
+                } else {
+                    dest.put_u8(COMPLEX);
+                    write_rational(&c.real, dest);
+                    write_rational(&c.imag, dest);
+                }
+            }
             Coefficient::Float(f) => {
                 dest.put_u8(FLOAT);
 
@@ -229,12 +244,27 @@ impl PackedRationalNumberWriter for Coefficient {
 
     fn write_packed_fixed(&self, mut dest: &mut [u8]) {
         match self {
-            Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
-                (Integer::Natural(num), Integer::Natural(den)) => {
-                    (*num, *den as u64).write_packed_fixed(dest)
+            Coefficient::Complex(c) => {
+                let real = c.imag.is_zero();
+                if !real {
+                    dest.put_u8(COMPLEX);
                 }
-                _ => todo!("Writing large packed rational not implemented"),
-            },
+                match (c.real.numerator_ref(), c.real.denominator_ref()) {
+                    (Integer::Natural(num), Integer::Natural(den)) => {
+                        (*num, *den as u64).write_packed_fixed(dest);
+                    }
+                    _ => todo!("Writing large packed rational not implemented"),
+                }
+
+                if !real {
+                    match (c.imag.numerator_ref(), c.imag.denominator_ref()) {
+                        (Integer::Natural(num), Integer::Natural(den)) => {
+                            (*num, *den as u64).write_packed_fixed(dest);
+                        }
+                        _ => todo!("Writing large packed rational not implemented"),
+                    }
+                }
+            }
             Coefficient::Float(_) => todo!("Writing large packed rational not implemented"),
             Coefficient::RationalPolynomial(_) => {
                 todo!("Writing packed rational polynomial not implemented")
@@ -247,8 +277,9 @@ impl PackedRationalNumberWriter for Coefficient {
     }
 
     fn get_packed_size(&self) -> u64 {
-        match self {
-            Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
+        #[inline(always)]
+        fn packed_size_rat(r: &Fraction<IntegerRing>) -> u64 {
+            match (r.numerator_ref(), r.denominator_ref()) {
                 (Integer::Natural(num), Integer::Natural(den)) => {
                     (*num, *den as u64).get_packed_size()
                 }
@@ -258,7 +289,17 @@ impl PackedRationalNumberWriter for Coefficient {
                     let d = l.denom().significant_digits::<u8>() as u64;
                     1 + (n, d).get_packed_size() + n + d
                 }
-            },
+            }
+        }
+
+        match self {
+            Coefficient::Complex(c) => {
+                if c.imag.is_zero() {
+                    packed_size_rat(&c.real)
+                } else {
+                    1 + packed_size_rat(&c.real) + packed_size_rat(&c.imag)
+                }
+            }
             Coefficient::Float(f) => {
                 let s = f.serialize();
                 1 + 8 + 4 + s.len() as u64
@@ -302,6 +343,25 @@ impl PackedRationalNumberReader for [u8] {
                 CoefficientView::Float(SerializedFloat(&start[..len])),
                 source,
             )
+        } else if disc == COMPLEX {
+            let (num, r) = source.get_coeff_view();
+            let (den, r) = r.get_coeff_view();
+
+            if let CoefficientView::Natural(n, d, _, _) = num {
+                if let CoefficientView::Natural(ni, di, _, _) = den {
+                    (CoefficientView::Natural(n, d, ni, di), r)
+                } else {
+                    unreachable!()
+                }
+            } else if let CoefficientView::Large(rn, _) = num {
+                if let CoefficientView::Large(ri, _) = den {
+                    (CoefficientView::Large(rn, ri), r)
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
         } else if (disc & NUM_MASK) == ARB_NUM {
             let (num, den);
             (num, den, source) = source.get_frac_i64();
@@ -311,11 +371,18 @@ impl PackedRationalNumberReader for [u8] {
             let den_limbs = &source[num_len..num_len + den_len];
 
             (
-                CoefficientView::Large(SerializedRational {
-                    is_negative: num < 0,
-                    num_digits: num_limbs,
-                    den_digits: den_limbs,
-                }),
+                CoefficientView::Large(
+                    SerializedRational {
+                        is_negative: num < 0,
+                        num_digits: num_limbs,
+                        den_digits: den_limbs,
+                    },
+                    SerializedRational {
+                        is_negative: false,
+                        num_digits: &[],
+                        den_digits: &[],
+                    },
+                ),
                 &source[num_len + den_len..],
             )
         } else if (disc & NUM_MASK) == FIN_NUM {
@@ -330,7 +397,7 @@ impl PackedRationalNumberReader for [u8] {
             )
         } else {
             let (num, den, source) = self.get_frac_i64();
-            (CoefficientView::Natural(num, den), source)
+            (CoefficientView::Natural(num, den, 0, 1), source)
         }
     }
 
@@ -540,7 +607,10 @@ impl PackedRationalNumberReader for [u8] {
             }
             x => {
                 let v_num = x & NUM_MASK;
-                if v_num == ARB_NUM {
+                if v_num == COMPLEX {
+                    dest = dest.skip_rational();
+                    dest = dest.skip_rational();
+                } else if v_num == ARB_NUM {
                     let (num_size, den_size);
                     (num_size, den_size, dest) = dest.get_frac_i64();
                     let num_size = num_size.unsigned_abs() as usize;

@@ -1,6 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore},
-    domains::rational::Rational,
+    domains::{float::Complex, rational::Rational},
     evaluate::{CompileOptions, FunctionMap, InlineASM, OptimizationSettings},
     parse, symbol,
 };
@@ -16,7 +16,7 @@ fn main() {
 
     let mut fn_map = FunctionMap::new();
 
-    fn_map.add_constant(symbol!("pi").into(), Rational::from((22, 7)));
+    fn_map.add_constant(symbol!("pi").into(), Complex::from(Rational::from((22, 7))));
     fn_map
         .add_tagged_function(
             symbol!("p"),
@@ -54,7 +54,7 @@ fn main() {
     )
     .unwrap();
 
-    let mut e_f64 = evaluator.map_coeff(&|x| x.into());
+    let mut e_f64 = evaluator.map_coeff(&|x| x.to_real().unwrap().into());
     let r = e_f64.evaluate_single(&[5.]);
     println!("{}", r);
 

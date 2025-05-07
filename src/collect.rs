@@ -3,7 +3,7 @@ use ahash::HashMap;
 use crate::{
     atom::{Add, Atom, AtomCore, AtomOrView, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
-    domains::{integer::Z, rational::Q},
+    domains::{float::NumericalFloatLike, integer::Z, rational::Q},
     poly::{Exponent, factor::Factorize, polynomial::MultivariatePolynomial},
     state::Workspace,
 };
@@ -306,18 +306,20 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Pow(p) = a {
                         let (b, e) = p.get_base_exp();
                         if let AtomView::Num(n) = e {
-                            if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                                if n < 0 && d == 1 {
-                                    denominators.push(
-                                        b.to_polynomial::<_, u16>(&Q, None)
-                                            .pow(n.unsigned_abs() as usize),
-                                    );
-                                    den_changed.push((a, false));
-                                    continue;
-                                } else if n > 0 && d == 1 {
-                                    numerators.push(a.to_polynomial::<_, u16>(&Q, None));
-                                    num_changed.push((a, false));
-                                    continue;
+                            if let CoefficientView::Natural(n, d, ni, _di) = n.get_coeff_view() {
+                                if ni == 0 {
+                                    if n < 0 && d == 1 {
+                                        denominators.push(
+                                            b.to_polynomial::<_, u16>(&Q, None)
+                                                .pow(n.unsigned_abs() as usize),
+                                        );
+                                        den_changed.push((a, false));
+                                        continue;
+                                    } else if n > 0 && d == 1 {
+                                        numerators.push(a.to_polynomial::<_, u16>(&Q, None));
+                                        num_changed.push((a, false));
+                                        continue;
+                                    }
                                 }
                             }
                         }
@@ -515,7 +517,7 @@ impl<'a> AtomView<'a> {
                     let (b, e) = p.get_base_exp();
                     if let Ok(e) = i64::try_from(e) {
                         if let Some(n) = get_num(b) {
-                            if let Coefficient::Rational(r) = n {
+                            if let Coefficient::Complex(r) = n {
                                 if e < 0 {
                                     return Some(r.pow((-e) as u64).inv().into());
                                 } else {

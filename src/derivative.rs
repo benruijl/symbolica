@@ -439,7 +439,7 @@ impl AtomView<'_> {
                         let constant = f_eval.finish();
 
                         let mut result = info.constant(constant.clone());
-                        for i in 0..=depth {
+                        for i in 1..=depth {
                             let mut it =
                                 CombinationWithReplacementIterator::new(args_series.len(), i);
 
@@ -473,7 +473,11 @@ impl AtomView<'_> {
                 let mut base_series = base.series_impl(x, expansion_point, info)?;
 
                 if let AtomView::Num(n) = exp {
-                    if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                    if let CoefficientView::Natural(n, d, ni, _) = n.get_coeff_view() {
+                        if ni != 0 {
+                            return Err("Cannot series expand with complex exponents or yet");
+                        }
+
                         if n < 0 && base_series.is_zero() {
                             // in case of 1/0, grow the expansion depth of the base series
                             // it could be that the base series is exactly zero,
@@ -496,7 +500,7 @@ impl AtomView<'_> {
 
                         base_series.rpow((n, d).into())
                     } else {
-                        unimplemented!("Cannot series expand with large exponents yet")
+                        Err("Cannot series expand with large or complex exponents or yet")
                     }
                 } else {
                     let e = exp.series_impl(x, expansion_point, info)?;
@@ -891,7 +895,7 @@ mod test {
             .to_atom();
 
         let res = parse!(
-            "der(0,0,f(1,0))+f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
+            "f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
             +v1^2*(1/2*der(0,2,f(1,0))+1/2*der(1,0,f(1,0))+der(1,1,f(1,0))+1/2*der(2,0,f(1,0)))"
         )
         .unwrap();

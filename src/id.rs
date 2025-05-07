@@ -26,6 +26,8 @@ use crate::{
         Atom, AtomCore, AtomType, AtomView, Num, SliceType, Symbol,
         representation::{InlineVar, ListSlice},
     },
+    coefficient::CoefficientView,
+    domains::{float::Complex, rational::Rational},
     state::{RecycledAtom, Workspace},
     transformer::{Transformer, TransformerError},
     utils::BorrowedOrOwned,
@@ -624,6 +626,65 @@ impl<'a> AtomView<'a> {
         false
     }
 
+    pub(crate) fn visitor<F: FnMut(AtomView) -> bool>(&self, v: &mut F) {
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => {
+                v(*self);
+            }
+            AtomView::Fun(f) => {
+                if !v(*self) {
+                    return;
+                }
+
+                for arg in f {
+                    arg.visitor(v);
+                }
+            }
+            AtomView::Pow(p) => {
+                if !v(*self) {
+                    return;
+                }
+
+                let (base, exp) = p.get_base_exp();
+                base.visitor(v);
+                exp.visitor(v);
+            }
+            AtomView::Mul(m) => {
+                if !v(*self) {
+                    return;
+                }
+
+                for child in m {
+                    child.visitor(v);
+                }
+            }
+            AtomView::Add(a) => {
+                if !v(*self) {
+                    return;
+                }
+
+                for child in a {
+                    child.visitor(v);
+                }
+            }
+        }
+    }
+
+    /// Check if the expression has complex coefficients.
+    pub fn has_complex_coefficients(&self) -> bool {
+        let mut has_complex_coefficient = false;
+        self.visitor(&mut |a| {
+            if let AtomView::Num(n) = a {
+                if !n.get_coeff_view().is_real() {
+                    has_complex_coefficient = true;
+                }
+            }
+            !has_complex_coefficient
+        });
+
+        has_complex_coefficient
+    }
+
     /// Check if the expression can be considered a polynomial in some variables, including
     /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
     /// `f(x)+x` is not a polynomial.
@@ -766,6 +827,32 @@ impl<'a> AtomView<'a> {
                 true
             }
         }
+    }
+
+    /// Complex conjugate all complex numbers in the expression.
+    pub(crate) fn conjugate(&self) -> Atom {
+        self.replace_map(|x, _c, out| match x {
+            AtomView::Num(n) => match n.get_coeff_view() {
+                CoefficientView::Natural(n, d, ni, di) => {
+                    out.to_num(
+                        Complex::<Rational>::new((n, d).into(), (ni, di).into())
+                            .conj()
+                            .into(),
+                    );
+                    true
+                }
+                CoefficientView::Large(r, i) => {
+                    out.to_num(Complex::new(r.to_rat().into(), i.to_rat()).conj().into());
+                    true
+                }
+                CoefficientView::Float(r, i) => {
+                    out.to_num(Complex::new(r.to_float(), i.to_float()).conj().into());
+                    true
+                }
+                _ => false,
+            },
+            _ => false,
+        })
     }
 
     /// Replace part of an expression by calling the map `m` on each subexpression.
@@ -1915,7 +2002,7 @@ impl Pattern {
                     transformer_input,
                 )?;
 
-                Transformer::execute_chain(
+                let _ = Transformer::execute_chain(
                     handle.as_view(),
                     ts,
                     workspace,

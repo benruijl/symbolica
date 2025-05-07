@@ -299,6 +299,11 @@ pub enum FunctionAttribute {
 /// let f = symbol!("f"; Symmetric).unwrap();
 /// ```
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    trait_decode(trait = crate::state::HasStateMap),
+)]
 pub struct Symbol {
     id: u32,
     wildcard_level: u8,
@@ -1129,6 +1134,11 @@ impl AtomView<'_> {
 /// ```
 #[must_use]
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
 pub enum Atom {
     Num(Num),
     Var(Var),

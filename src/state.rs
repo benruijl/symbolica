@@ -25,10 +25,10 @@ use crate::poly::Variable;
 use crate::printer::PrintFunction;
 use crate::wrap_symbol;
 use crate::{
+    LicenseManager,
     atom::{Atom, Symbol},
     coefficient::Coefficient,
     domains::finite_field::FiniteFieldCore,
-    LicenseManager,
 };
 
 pub(crate) const SYMBOLICA_MAGIC: u32 = 0x37871367;
@@ -47,6 +47,17 @@ pub struct StateMap {
     pub(crate) symbols: HashMap<u32, Symbol>,
     pub(crate) finite_fields: HashMap<FiniteFieldIndex, FiniteFieldIndex>,
     pub(crate) variables_lists: HashMap<u64, Arc<Vec<Variable>>>,
+}
+
+///Trait for anything that contains a StateMap
+pub trait HasStateMap {
+    fn get_state_map(&self) -> &StateMap;
+}
+
+impl HasStateMap for StateMap {
+    fn get_state_map(&self) -> &StateMap {
+        self
+    }
 }
 
 impl StateMap {
@@ -319,9 +330,7 @@ impl State {
                 } else {
                     let data = &ID_TO_STR[r.get_id() as usize].1;
                     if data.file.is_empty() {
-                        Err(
-                            format!("Symbol {} redefined with new attributes.", data.name).into(),
-                        )
+                        Err(format!("Symbol {} redefined with new attributes.", data.name).into())
                     } else {
                         Err(format!("Symbol {} redefined with new attributes. The first definition occurred here: {}:{}.", data.name, data.file, data.line).into())
                     }

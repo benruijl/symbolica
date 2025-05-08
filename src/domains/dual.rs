@@ -663,7 +663,7 @@ macro_rules! create_hyperdual_from_components {
                 self.values[0].fixed_precision()
             }
 
-            fn sample_unit<R: rand::Rng>(&self, rng: &mut R) -> Self {
+            fn sample_unit<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Self {
                 let mut res = self.zero();
                 res.values[0] = self.values[0].sample_unit(rng);
                 res

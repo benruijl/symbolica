@@ -342,7 +342,7 @@ pub trait NumericalFloatLike:
     fn fixed_precision(&self) -> bool;
 
     /// Sample a point on the interval [0, 1].
-    fn sample_unit<R: Rng>(&self, rng: &mut R) -> Self;
+    fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self;
 }
 
 /// A number that behaves like a single number.
@@ -733,7 +733,7 @@ impl NumericalFloatLike for F64 {
     }
 
     #[inline(always)]
-    fn sample_unit<R: Rng>(&self, rng: &mut R) -> Self {
+    fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         self.0.sample_unit(rng).into()
     }
 }
@@ -2490,7 +2490,7 @@ impl<T: RealNumberLike> NumericalFloatLike for ErrorPropagatingFloat<T> {
         self.value.fixed_precision()
     }
 
-    fn sample_unit<R: Rng>(&self, rng: &mut R) -> Self {
+    fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         let v = self.value.sample_unit(rng);
         ErrorPropagatingFloat {
             abs_err: self.abs_err * v.to_f64().abs(),
@@ -3780,7 +3780,7 @@ impl<T: NumericalFloatLike> NumericalFloatLike for Complex<T> {
         self.re.fixed_precision() || self.im.fixed_precision()
     }
 
-    fn sample_unit<R: Rng>(&self, rng: &mut R) -> Self {
+    fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         Complex {
             re: self.re.sample_unit(rng),
             im: self.im.zero(),

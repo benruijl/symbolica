@@ -76,4 +76,4 @@ tinyjson = "2.5"
 tracing = "0.1"
 wide = "0.7"
 wolfram-library-link = {version = "0.2.9", optional = true}
-bincode-trait-derive = {git = "https://github.com/alphal00p/bincode-trait-derive.git", optional = true}
+bincode-trait-derive = {git = "https://github.com/alphal00p/bincode-trait-derive.git", optional = true,rev="c092cba7f80c867fd5646cf68312e1f4f9010658"}

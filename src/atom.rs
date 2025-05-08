@@ -301,7 +301,7 @@ pub enum FunctionAttribute {
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
     trait_decode(trait = crate::state::HasStateMap),
 )]
 pub struct Symbol {
@@ -1136,7 +1136,7 @@ impl AtomView<'_> {
 #[derive(Clone)]
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
     trait_decode(trait = crate::state::HasStateMap)
 )]
 pub enum Atom {

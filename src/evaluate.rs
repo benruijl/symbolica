@@ -56,9 +56,9 @@ impl<A, T> EvaluationFn<A, T> {
 
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode::Encode),
-    derive(bincode_trait_derive::TraitDecode),
-    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
     trait_decode(trait = crate::state::HasStateMap)
 )]
 #[derive(Clone, Debug)]
@@ -173,9 +173,9 @@ impl<T> FunctionMap<T> {
 
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode::Encode),
-    derive(bincode_trait_derive::TraitDecode),
-    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
     trait_decode(trait = crate::state::HasStateMap)
 )]
 #[derive(Clone, Debug)]
@@ -186,9 +186,9 @@ enum ConstOrExpr<T> {
 
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode::Encode),
-    derive(bincode_trait_derive::TraitDecode),
-    derive(bincode_trait_derive::BorrowDecodeFromTraitDecode),
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
     trait_decode(trait = crate::state::HasStateMap)
 )]
 #[derive(Clone, Debug)]

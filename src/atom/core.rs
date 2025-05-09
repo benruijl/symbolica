@@ -797,11 +797,12 @@ pub trait AtomCore {
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
-    /// use symbolica::domains::rational::Rational;
+    /// use symbolica::domains::{float::Complex, rational::Rational};
     /// let expr = parse!("0.33*x + 3").unwrap();
     /// let out = expr.map_coefficient(|c| match c {
-    ///     CoefficientView::Natural(r, d, _, _) => {
-    ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
+    ///     CoefficientView::Natural(r, d, ri, di) => {
+    ///         Coefficient::Float(Complex::new(Rational::from((r, d)).to_multi_prec_float(53),
+    ///             Rational::from((ri, di)).to_multi_prec_float(53)))
     ///     }
     ///     _ => c.to_owned(),
     /// });
@@ -821,12 +822,13 @@ pub trait AtomCore {
     /// ```
     /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
-    /// use symbolica::domains::rational::Rational;
+    /// use symbolica::domains::{float::Complex, rational::Rational};
     /// let expr = parse!("0.33*x + 3").unwrap();
     /// let mut out = Atom::new();
     /// expr.map_coefficient_into(|c| match c {
-    ///     CoefficientView::Natural(r, d, _, _) => {
-    ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
+    ///     CoefficientView::Natural(r, d, ri, di) => {
+    ///         Coefficient::Float(Complex::new(Rational::from((r, d)).to_multi_prec_float(53),
+    ///             Rational::from((ri, di)).to_multi_prec_float(53)))
     ///     }
     ///     _ => c.to_owned(),
     /// }, &mut out);

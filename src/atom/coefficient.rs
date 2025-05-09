@@ -179,9 +179,14 @@ impl PackedRationalNumberWriter for Coefficient {
                 dest.put_u8(FLOAT);
 
                 // TODO: improve serialization
-                let s = f.serialize();
+                let s = f.re.serialize();
                 dest.put_u64_le(s.len() as u64 + 4);
-                dest.put_u32_le(f.prec());
+                dest.put_u32_le(f.re.prec());
+                dest.write_all(&s).unwrap();
+
+                let s = f.im.serialize();
+                dest.put_u64_le(s.len() as u64 + 4);
+                dest.put_u32_le(f.im.prec());
                 dest.write_all(&s).unwrap();
             }
             Coefficient::FiniteField(num, f) => {
@@ -301,8 +306,9 @@ impl PackedRationalNumberWriter for Coefficient {
                 }
             }
             Coefficient::Float(f) => {
-                let s = f.serialize();
-                1 + 8 + 4 + s.len() as u64
+                let s = f.re.serialize();
+                let si = f.im.serialize();
+                1 + 8 + 4 + s.len() as u64 + 8 + 4 + si.len() as u64
             }
             Coefficient::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
             Coefficient::RationalPolynomial(_) => {
@@ -339,8 +345,16 @@ impl PackedRationalNumberReader for [u8] {
             let len = source.get_u64_le() as usize;
             let start = source;
             source.advance(len);
+
+            let len_i = source.get_u64_le() as usize;
+            let start2 = source;
+            source.advance(len_i);
+
             (
-                CoefficientView::Float(SerializedFloat(&start[..len])),
+                CoefficientView::Float(
+                    SerializedFloat(&start[..len]),
+                    SerializedFloat(&start2[..len_i]),
+                ),
                 source,
             )
         } else if disc == COMPLEX {
@@ -625,6 +639,8 @@ impl PackedRationalNumberReader for [u8] {
                         + get_size_of_natural((var_size & DEN_MASK) >> 4);
                     dest.advance(size as usize);
                 } else if v_num == FLOAT {
+                    let size = dest.get_u64_le() as usize;
+                    dest.advance(size);
                     let size = dest.get_u64_le() as usize;
                     dest.advance(size);
                 } else {

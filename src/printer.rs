@@ -7,7 +7,7 @@ use colored::Colorize;
 use crate::{
     atom::{AddView, AtomView, MulView, NumView, PowView, VarView, representation::FunView},
     coefficient::CoefficientView,
-    domains::{SelfRing, finite_field::FiniteFieldCore},
+    domains::{SelfRing, finite_field::FiniteFieldCore, float::Complex},
     state::State,
 };
 
@@ -736,8 +736,13 @@ impl FormattedPrintNum for NumView<'_> {
 
                 Ok(false)
             }
-            CoefficientView::Float(fl) => {
-                fl.to_float().format(opts, print_state, f)?; // FIXME: paren
+            CoefficientView::Float(r, i) => {
+                if i.is_zero() {
+                    r.to_float().format(opts, print_state, f)?;
+                } else {
+                    Complex::new(r.to_float(), i.to_float()).format(opts, print_state, f)?;
+                }
+
                 Ok(false)
             }
             CoefficientView::Large(r, i) => {

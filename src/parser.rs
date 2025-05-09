@@ -409,7 +409,7 @@ impl Token {
                 Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
-                        out.to_num(Coefficient::Float(f));
+                        out.to_num(Coefficient::Float(f.into()));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
                 },
@@ -516,7 +516,7 @@ impl Token {
                 }
                 Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
-                        out.to_num(Coefficient::Float(f));
+                        out.to_num(Coefficient::Float(f.into()));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
                 },

@@ -1,7 +1,7 @@
 //! Floating-point numbers and traits.
 
 use std::{
-    f64::consts::{LOG10_2, LOG2_10},
+    f64::consts::{LOG2_10, LOG10_2},
     fmt::{self, Debug, Display, Formatter, LowerExp, Write},
     hash::Hash,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -12,10 +12,10 @@ use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
 
-use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
+use super::{EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, rational::Rational};
 use rug::{
-    ops::{CompleteRound, Pow},
     Assign, Float as MultiPrecisionFloat,
+    ops::{CompleteRound, Pow},
 };
 
 /// A field of floating point type `T`. For `f64` fields, use [`FloatField<F64>`].
@@ -253,6 +253,53 @@ impl SelfRing for Float {
             f.write_fmt(format_args!("{:+}", self))?
         } else {
             f.write_fmt(format_args!("{}", self))?
+        }
+
+        Ok(false)
+    }
+}
+
+impl SelfRing for Complex<Float> {
+    #[inline(always)]
+    fn is_zero(&self) -> bool {
+        SingleFloat::is_zero(&self.re) && SingleFloat::is_zero(&self.im)
+    }
+
+    #[inline(always)]
+    fn is_one(&self) -> bool {
+        SingleFloat::is_one(&self.re) && SingleFloat::is_zero(&self.im)
+    }
+
+    #[inline(always)]
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &crate::printer::PrintOptions,
+        mut state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, fmt::Error> {
+        let re_zero = SingleFloat::is_zero(&self.re);
+        let im_zero = SingleFloat::is_zero(&self.im);
+        let add_paren = (state.in_product || state.in_exp) && !re_zero && !im_zero;
+        if add_paren {
+            f.write_char('(')?;
+            state.in_sum = false;
+        }
+
+        if !re_zero {
+            self.re.format(opts, state, f)?;
+        }
+
+        if !re_zero && !im_zero {
+            state.in_sum = true;
+        }
+
+        if !im_zero {
+            self.im.format(opts, state, f)?;
+            f.write_char('𝑖')?;
+        }
+
+        if add_paren {
+            f.write_char(')')?;
         }
 
         Ok(false)
@@ -3230,6 +3277,12 @@ impl<T: Real> Complex<T> {
     #[inline]
     pub fn from_polar_coordinates(r: T, phi: T) -> Complex<T> {
         Complex::new(r.clone() * phi.cos(), r.clone() * phi.sin())
+    }
+}
+
+impl<T: SingleFloat> Complex<T> {
+    pub fn is_real(&self) -> bool {
+        self.im.is_zero()
     }
 }
 

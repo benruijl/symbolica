@@ -809,7 +809,7 @@ impl AtomView<'_> {
                                     Err("Exponent too large or negative or a fraction")
                                 }
                             }
-                            CoefficientView::Float(_) => {
+                            CoefficientView::Float(_, _) => {
                                 Err("Float is not supported in conversion routine")
                             }
                             CoefficientView::FiniteField(_, _) => {

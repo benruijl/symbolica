@@ -180,7 +180,7 @@ where
                 let d = self.element_from_integer(r.denominator());
                 self.div(&n, &d)
             }
-            crate::coefficient::CoefficientView::Float(_) => {
+            crate::coefficient::CoefficientView::Float(_, _) => {
                 panic!("Cannot convert float coefficient to algebraic number")
             }
             crate::coefficient::CoefficientView::FiniteField(_, _) => {

@@ -5,7 +5,11 @@ use smallvec::SmallVec;
 use crate::{
     atom::{Atom, AtomView, Fun, Symbol, representation::InlineNum},
     coefficient::{Coefficient, CoefficientView},
-    domains::{float::Real, integer::Z, rational::Q},
+    domains::{
+        float::{Complex, Real},
+        integer::Z,
+        rational::Q,
+    },
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
 };
@@ -886,25 +890,41 @@ impl AtomView<'_> {
                             }
                         }
 
-                        if let CoefficientView::Float(f) = n.get_coeff_view() {
+                        if let CoefficientView::Float(r, i) = n.get_coeff_view() {
                             match id {
                                 Atom::COS => {
-                                    let r = f.to_float().cos();
+                                    let r = if i.is_zero() {
+                                        r.to_float().cos().into()
+                                    } else {
+                                        Complex::new(r.to_float(), i.to_float()).cos()
+                                    };
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
                                 Atom::SIN => {
-                                    let r = f.to_float().sin();
+                                    let r = if i.is_zero() {
+                                        r.to_float().sin().into()
+                                    } else {
+                                        Complex::new(r.to_float(), i.to_float()).sin()
+                                    };
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
                                 Atom::EXP => {
-                                    let r = f.to_float().exp();
+                                    let r = if i.is_zero() {
+                                        r.to_float().exp().into()
+                                    } else {
+                                        Complex::new(r.to_float(), i.to_float()).exp()
+                                    };
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
                                 Atom::LOG => {
-                                    let r = f.to_float().log();
+                                    let r = if i.is_zero() {
+                                        r.to_float().log().into()
+                                    } else {
+                                        Complex::new(r.to_float(), i.to_float()).log()
+                                    };
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }

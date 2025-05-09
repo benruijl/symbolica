@@ -4725,9 +4725,26 @@ impl<'a> AtomView<'a> {
                         }
                     }
                 }
-                CoefficientView::Float(f) => {
+                CoefficientView::Float(r, i) => {
                     // TODO: converting back to rational is slow
-                    Ok(Expression::Const(f.to_float().to_rational()))
+                    if i.is_zero() {
+                        Ok(Expression::Const(r.to_float().to_rational()))
+                    } else {
+                        if let Some(p) = args.iter().position(|s| *s == Atom::I) {
+                            return Ok(Expression::Add(vec![
+                                Expression::Mul(vec![
+                                    Expression::ReadArg(p),
+                                    Expression::Const(i.to_float().to_rational()),
+                                ]),
+                                Expression::Const(r.to_float().to_rational()),
+                            ]));
+                        } else {
+                            return Err(format!(
+                                "Complex variable {} should be given as a parameter",
+                                Atom::I
+                            ));
+                        }
+                    }
                 }
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())
@@ -4909,9 +4926,18 @@ impl<'a> AtomView<'a> {
                             + num)
                     }
                 }
-                CoefficientView::Float(f) => {
+                CoefficientView::Float(r, i) => {
                     // TODO: converting back to rational is slow
-                    Ok(coeff_map(&f.to_float().to_rational()))
+                    let rm = coeff_map(&r.to_float().to_rational());
+                    if i.is_zero() {
+                        Ok(rm)
+                    } else {
+                        Ok(coeff_map(&i.to_float().to_rational())
+                            * rm.i().ok_or_else(|| {
+                                "Numerical type does not support imaginary unit".to_string()
+                            })?
+                            + rm)
+                    }
                 }
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())

@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use crate::{
     atom::{Atom, AtomView, Fun, Symbol, representation::InlineNum},
-    coefficient::{Coefficient, CoefficientView, ComplexCoefficient},
+    coefficient::{Coefficient, CoefficientView},
     domains::{float::Real, integer::Z, rational::Q},
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
@@ -1197,7 +1197,7 @@ impl AtomView<'_> {
                             exp_handle.to_num(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
                             if v.get_symbol() == Atom::I {
-                                if let CoefficientView::Natural(n, d, ni, di) = exp_num {
+                                if let CoefficientView::Natural(n, d, ni, _di) = exp_num {
                                     let mut new_base = workspace.new_atom();
 
                                     if ni != 0 {

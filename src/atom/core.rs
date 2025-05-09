@@ -800,7 +800,7 @@ pub trait AtomCore {
     /// use symbolica::domains::rational::Rational;
     /// let expr = parse!("0.33*x + 3").unwrap();
     /// let out = expr.map_coefficient(|c| match c {
-    ///     CoefficientView::Natural(r, d) => {
+    ///     CoefficientView::Natural(r, d, _, _) => {
     ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
     ///     }
     ///     _ => c.to_owned(),
@@ -825,7 +825,7 @@ pub trait AtomCore {
     /// let expr = parse!("0.33*x + 3").unwrap();
     /// let mut out = Atom::new();
     /// expr.map_coefficient_into(|c| match c {
-    ///     CoefficientView::Natural(r, d) => {
+    ///     CoefficientView::Natural(r, d, _, _) => {
     ///         Coefficient::Float(Rational::from((r, d)).to_multi_prec_float(53))
     ///     }
     ///     _ => c.to_owned(),

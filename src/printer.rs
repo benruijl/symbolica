@@ -605,15 +605,16 @@ impl FormattedPrintNum for NumView<'_> {
 
         let d = self.get_coeff_view();
 
-        let is_negative = match d {
+        let global_negative = match d {
             CoefficientView::Natural(n, _, ni, _) => n < 0 && ni == 0 || ni < 0 && n == 0,
             CoefficientView::Large(r, ri) => {
                 r.is_negative() && ri.is_zero() || ri.is_negative() && r.is_zero()
             }
             _ => false,
-        };
+        } && !print_state.in_product
+            && !print_state.in_exp;
 
-        if is_negative {
+        if global_negative {
             if print_state.top_level_add_child
                 && opts.mode.is_symbolica()
                 && opts.color_top_level_sum
@@ -645,7 +646,11 @@ impl FormattedPrintNum for NumView<'_> {
                     return Ok(true);
                 }
 
-                if print_state.in_product && num != 0 && num_i != 0 {
+                let need_paren = (print_state.in_product || print_state.in_exp)
+                    && (num != 0 && num_i != 0)
+                    || print_state.in_exp && (num < 0 || num_i < 0 || den != 1 || den_i != 1);
+
+                if need_paren {
                     f.write_char('(')?;
                 }
 
@@ -654,7 +659,7 @@ impl FormattedPrintNum for NumView<'_> {
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
                     if num != 0 {
-                        if !is_negative && num < 0 {
+                        if !global_negative && num < 0 {
                             f.write_char('-')?;
                         }
 
@@ -670,7 +675,7 @@ impl FormattedPrintNum for NumView<'_> {
                     }
 
                     if num_i != 0 {
-                        if !is_negative && num_i < 0 {
+                        if !global_negative && num_i < 0 {
                             f.write_char('-')?;
                         }
                         format_num(num_i.unsigned_abs().to_string(), opts, &print_state, f)?;
@@ -681,8 +686,8 @@ impl FormattedPrintNum for NumView<'_> {
                         f.write_char('𝑖')?;
                     }
                 } else {
-                    if num != 0 {
-                        if !is_negative && num < 0 {
+                    if num != 0 || num_i == 0 {
+                        if !global_negative && num < 0 {
                             f.write_char('-')?;
                         }
                         if den != 1 {
@@ -700,12 +705,12 @@ impl FormattedPrintNum for NumView<'_> {
                         }
                     }
 
-                    if num != 0 && num_i != 0 {
+                    if num != 0 && num_i > 0 {
                         f.write_char('+')?;
                     }
 
                     if num_i != 0 {
-                        if !is_negative && num_i < 0 {
+                        if !global_negative && num_i < 0 {
                             f.write_char('-')?;
                         }
                         if den_i != 1 {
@@ -725,21 +730,29 @@ impl FormattedPrintNum for NumView<'_> {
                     }
                 }
 
-                if print_state.in_product && num != 0 && num_i != 0 {
+                if need_paren {
                     f.write_char(')')?;
                 }
 
                 Ok(false)
             }
             CoefficientView::Float(fl) => {
-                fl.to_float().format(opts, print_state, f)?;
+                fl.to_float().format(opts, print_state, f)?; // FIXME: paren
                 Ok(false)
             }
             CoefficientView::Large(r, i) => {
                 let real = r.to_rat();
                 let imag = i.to_rat();
 
-                if print_state.in_product && !real.is_zero() && !imag.is_zero() {
+                let need_paren = (print_state.in_product || print_state.in_exp)
+                    && (!real.is_zero() && !imag.is_zero())
+                    || print_state.in_exp
+                        && (real.is_negative()
+                            || imag.is_negative()
+                            || !real.is_integer()
+                            || !imag.is_integer());
+
+                if need_paren {
                     f.write_char('(')?;
                 }
 
@@ -748,7 +761,7 @@ impl FormattedPrintNum for NumView<'_> {
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
                     if !real.is_zero() {
-                        if !is_negative && real.is_negative() {
+                        if !global_negative && real.is_negative() {
                             f.write_char('-')?;
                         }
 
@@ -764,12 +777,12 @@ impl FormattedPrintNum for NumView<'_> {
                         }
                     }
 
-                    if !real.is_zero() && !imag.is_zero() {
+                    if !real.is_zero() && !imag.is_zero() && !imag.is_negative() {
                         f.write_char('+')?;
                     }
 
                     if !imag.is_zero() {
-                        if !is_negative && imag.is_negative() {
+                        if !global_negative && imag.is_negative() {
                             f.write_char('-')?;
                         }
                         format_num(
@@ -785,8 +798,8 @@ impl FormattedPrintNum for NumView<'_> {
                         f.write_char('𝑖')?;
                     }
                 } else {
-                    if !real.is_zero() {
-                        if !is_negative && real.is_negative() {
+                    if !real.is_zero() || imag.is_zero() {
+                        if !global_negative && real.is_negative() {
                             f.write_char('-')?;
                         }
                         if !real.is_integer() {
@@ -813,7 +826,7 @@ impl FormattedPrintNum for NumView<'_> {
                     }
 
                     if !imag.is_zero() {
-                        if !is_negative && imag.is_negative() {
+                        if !global_negative && imag.is_negative() {
                             f.write_char('-')?;
                         }
                         if !imag.is_integer() {
@@ -837,7 +850,7 @@ impl FormattedPrintNum for NumView<'_> {
                     }
                 }
 
-                if print_state.in_product && !real.is_zero() && !imag.is_zero() {
+                if need_paren {
                     f.write_char(')')?;
                 }
 
@@ -935,21 +948,7 @@ impl FormattedPrintMul for MulView<'_> {
             }
             first = false;
 
-            if let AtomView::Add(_) = x {
-                if opts.mode.is_latex() {
-                    f.write_str("\\left(")?;
-                } else {
-                    f.write_char('(')?;
-                }
-                x.format(f, opts, print_state)?;
-                if opts.mode.is_latex() {
-                    f.write_str("\\right)")?;
-                } else {
-                    f.write_char(')')?;
-                }
-            } else {
-                x.format(f, opts, print_state)?;
-            }
+            x.format(f, opts, print_state)?;
         }
 
         if add_paren {
@@ -998,6 +997,8 @@ impl FormattedPrintFn for FunView<'_> {
         print_state.top_level_add_child = false;
         print_state.level += 1;
         print_state.in_sum = false;
+        print_state.in_product = false;
+        print_state.in_exp = false;
         print_state.suppress_one = false;
         let mut first = true;
         for x in self.iter() {
@@ -1043,12 +1044,19 @@ impl FormattedPrintPow for PowView<'_> {
             }
         }
 
+        let add_paren = print_state.in_exp;
+        if add_paren {
+            f.write_char('(')?;
+            print_state.in_exp = false;
+        }
+
         let b = self.get_base();
         let e = self.get_exp();
 
         print_state.top_level_add_child = false;
         print_state.level += 1;
         print_state.in_sum = false;
+        print_state.in_product = false;
         print_state.suppress_one = false;
 
         let mut superscript_exponent = false;
@@ -1068,46 +1076,9 @@ impl FormattedPrintPow for PowView<'_> {
             }
         }
 
-        let base_needs_parentheses =
-            matches!(b, AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_))
-                || if let AtomView::Num(n) = b {
-                    match n.get_coeff_view() {
-                        CoefficientView::Natural(n, d, ni, di) => {
-                            n < 0 || d != 1 || (n != 0 && ni != 0) || ni < 0 || di != 1
-                        }
-                        CoefficientView::Float(_) => true, // TODO
-                        CoefficientView::Large(r, d) => {
-                            r.is_negative()
-                                || !r.to_rat().is_integer()
-                                || (!r.is_zero() && !d.is_zero())
-                                || d.is_negative()
-                                || !d.to_rat().is_integer()
-                        }
-                        CoefficientView::FiniteField(n, i) => {
-                            opts.symmetric_representation_for_finite_field
-                                && n.0 * 2 > State::get_finite_field(i).get_prime()
-                        }
-                        CoefficientView::RationalPolynomial(_) => true,
-                    }
-                } else {
-                    false
-                };
+        print_state.in_exp = true;
 
-        if base_needs_parentheses {
-            if opts.mode.is_latex() {
-                f.write_str("\\left(")?;
-            } else {
-                f.write_char('(')?;
-            }
-            b.format(f, opts, print_state)?;
-            if opts.mode.is_latex() {
-                f.write_str("\\right)")?;
-            } else {
-                f.write_char(')')?;
-            }
-        } else {
-            b.format(f, opts, print_state)?;
-        }
+        b.format(f, opts, print_state)?;
 
         if !superscript_exponent {
             if opts.mode.is_sympy()
@@ -1121,24 +1092,24 @@ impl FormattedPrintPow for PowView<'_> {
 
         if opts.mode.is_latex() {
             f.write_char('{')?;
+            print_state.in_exp = false;
             e.format(f, opts, print_state)?;
             f.write_char('}')?;
         } else {
-            let exp_needs_parentheses = matches!(e, AtomView::Add(_) | AtomView::Mul(_))
-                || if let AtomView::Num(n) = e {
-                    !n.get_coeff_view().is_integer()
-                } else {
-                    false
-                };
-
-            if exp_needs_parentheses {
-                f.write_char('(')?;
+            if superscript_exponent {
+                print_state.in_exp = false;
+                print_state.superscript = true;
                 e.format(f, opts, print_state)?;
-                f.write_char(')')?;
             } else {
-                print_state.superscript = superscript_exponent;
+                if let AtomView::Pow(_) = e {
+                    print_state.in_exp = false; // right associative
+                }
                 e.format(f, opts, print_state)?;
             }
+        }
+
+        if add_paren {
+            f.write_char(')')?;
         }
 
         Ok(false)
@@ -1177,7 +1148,12 @@ impl FormattedPrintAdd for AddView<'_> {
             print_state.in_sum = false;
             print_state.in_product = false;
             print_state.in_exp = false;
-            f.write_char('(')?;
+
+            if opts.mode.is_latex() {
+                f.write_str("\\left(")?;
+            } else {
+                f.write_char('(')?;
+            }
         }
 
         let mut count = 0;
@@ -1213,7 +1189,11 @@ impl FormattedPrintAdd for AddView<'_> {
         }
 
         if add_paren {
-            f.write_char(')')?;
+            if opts.mode.is_latex() {
+                f.write_str("\\right)")?;
+            } else {
+                f.write_char(')')?;
+            }
         }
         Ok(false)
     }

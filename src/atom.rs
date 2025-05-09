@@ -1820,7 +1820,7 @@ impl Atom {
     }
 
     /// Add the atoms in `args`.
-    pub fn add_many<T: AtomCore + Copy>(args: &[T]) -> Atom {
+    pub fn add_many<T: AtomCore>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();

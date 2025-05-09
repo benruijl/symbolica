@@ -132,6 +132,10 @@ impl ComplexCoefficient {
     }
 
     pub fn pow(&self, e: u64) -> Self {
+        if self.is_real() {
+            return self.real.pow(e).into();
+        }
+
         let mut r = ComplexCoefficient::one();
 
         for _ in 0..e {
@@ -978,34 +982,15 @@ impl CoefficientView<'_> {
         // TODO: normalize 4^1/3 to 2^(2/3)?
         match (self, other) {
             (
-                &CoefficientView::Natural(mut n1, mut d1, mut ni1, mut di1),
-                &CoefficientView::Natural(mut n2, d2, _, _),
+                &CoefficientView::Natural(n1, d1, ni1, di1),
+                &CoefficientView::Natural(n2, d2, _, _),
             ) => {
-                // FIXME: power the imag part
+                let mut base = ComplexCoefficient::new((n1, d1).into(), (ni1, di1).into());
                 if n2 < 0 {
-                    if n1 == 0 {
-                        panic!("Division by 0");
-                    }
-
-                    n2 = n2.saturating_abs();
-                    (n1, d1) = (d1, n1);
+                    base = base.inv();
                 }
-
-                if n2 <= u32::MAX as i64 {
-                    if let Some(pn) = n1.checked_pow(n2 as u32) {
-                        if let Some(pd) = d1.checked_pow(n2 as u32) {
-                            // TODO: simplify 4^(1/2)
-                            return ((pn, pd).into(), Rational::from_unchecked(1, d2).into());
-                        }
-                    }
-
-                    (
-                        Rational::from_unchecked(n1, d1).pow(n2 as u64).into(),
-                        Rational::from_unchecked(1, d2).into(),
-                    )
-                } else {
-                    panic!("Power is too large: {}", n2);
-                }
+                base = base.pow(n2.unsigned_abs());
+                (base.into(), Rational::from_unchecked(1, d2).into())
             }
             (&CoefficientView::RationalPolynomial(r), &CoefficientView::Natural(n2, d2, _, _)) => {
                 if n2.unsigned_abs() > u32::MAX as u64 {
@@ -1026,23 +1011,12 @@ impl CoefficientView<'_> {
                 }
             }
             (&CoefficientView::Large(r, i), &CoefficientView::Natural(n2, d2, _, _)) => {
-                // FIXME: power the imag part
-                if n2.unsigned_abs() > u32::MAX as u64 {
-                    panic!("Power is too large: {}", n2);
-                }
-
+                let mut base = ComplexCoefficient::new(r.to_rat(), i.to_rat().into());
                 if n2 < 0 {
-                    let r = r.to_rat().clone().inv();
-                    (
-                        r.pow(n2.unsigned_abs()).into(),
-                        Rational::from_unchecked(1, d2).into(),
-                    )
-                } else {
-                    (
-                        r.to_rat().pow(n2 as u64).into(),
-                        Rational::from_unchecked(1, d2).into(),
-                    )
+                    base = base.inv();
                 }
+                base = base.pow(n2.unsigned_abs());
+                (base.into(), Rational::from_unchecked(1, d2).into())
             }
             (&CoefficientView::Float(f), &CoefficientView::Natural(n2, d2, _, _)) => {
                 // FIXME: what precision should be used?
@@ -1062,7 +1036,11 @@ impl CoefficientView<'_> {
                     Coefficient::one(),
                 )
             }
-            (&CoefficientView::Natural(n2, d2, ni2, di2), &CoefficientView::Float(f)) => {
+            (&CoefficientView::Natural(n2, d2, ni2, _di2), &CoefficientView::Float(f)) => {
+                if ni2 != 0 {
+                    panic!("Complex float is not yet supported");
+                }
+
                 let f = f.to_float();
                 let p = f.prec();
                 (
@@ -1074,6 +1052,10 @@ impl CoefficientView<'_> {
                 )
             }
             (&CoefficientView::Large(r, d), &CoefficientView::Float(f)) => {
+                if !d.is_zero() {
+                    panic!("Complex float is not yet supported");
+                }
+
                 let f = f.to_float();
                 let p = f.prec();
                 (
@@ -1118,19 +1100,27 @@ impl Ord for CoefficientView<'_> {
             (
                 CoefficientView::Natural(n1, d1, ni1, di1),
                 CoefficientView::Natural(n2, d2, ni2, di2),
-            ) => Rational::from_unchecked(*n1, *d1).cmp(&Rational::from_unchecked(*n2, *d2)),
-            (CoefficientView::Large(n1, d1), CoefficientView::Large(n2, d2)) => {
-                n1.to_rat().cmp(&n2.to_rat())
-            }
+            ) => Rational::from_unchecked(*n1, *d1)
+                .cmp(&Rational::from_unchecked(*n2, *d2))
+                .then_with(|| {
+                    Rational::from_unchecked(*ni1, *di1).cmp(&Rational::from_unchecked(*ni2, *di2))
+                }),
+            (CoefficientView::Large(n1, d1), CoefficientView::Large(n2, d2)) => n1
+                .to_rat()
+                .cmp(&n2.to_rat())
+                .then_with(|| d1.to_rat().cmp(&d2.to_rat())),
             (CoefficientView::FiniteField(n1, _), CoefficientView::FiniteField(n2, _)) => {
                 n1.0.cmp(&n2.0)
             }
-            (&CoefficientView::Natural(n1, d1, ni1, di1), CoefficientView::Large(n2, d)) => {
-                Rational::from_unchecked(n1, d1).cmp(&n2.to_rat())
+            (CoefficientView::Natural(n1, d1, ni1, di1), CoefficientView::Large(n2, d)) => {
+                Rational::from_unchecked(*n1, *d1)
+                    .cmp(&n2.to_rat())
+                    .then_with(|| Rational::from_unchecked(*ni1, *di1).cmp(&d.to_rat()))
             }
-            (CoefficientView::Large(n1, d), &CoefficientView::Natural(n2, d2, ni2, di2)) => {
-                n1.to_rat().cmp(&Rational::from_unchecked(n2, d2))
-            }
+            (CoefficientView::Large(n1, d), CoefficientView::Natural(n2, d2, ni2, di2)) => n1
+                .to_rat()
+                .cmp(&Rational::from_unchecked(*n2, *d2))
+                .then_with(|| d.to_rat().cmp(&Rational::from_unchecked(*ni2, *di2))),
             (CoefficientView::Float(f1), CoefficientView::Float(f2)) => f1
                 .to_float()
                 .partial_cmp(&f2.to_float())
@@ -1200,8 +1190,11 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             (_, CoefficientView::FiniteField(_, _)) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
-            (CoefficientView::Natural(n, d, ni, di), CoefficientView::RationalPolynomial(p))
-            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d, ni, di)) => {
+            (CoefficientView::Natural(n, d, ni, _di), CoefficientView::RationalPolynomial(p))
+            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d, ni, _di)) => {
+                if ni != 0 {
+                    panic!("Cannot add complex number with polynomial");
+                }
                 let r = p.deserialize();
                 let r2 = RationalPolynomial {
                     numerator: r.numerator.constant(Integer::Natural(n)),
@@ -1211,6 +1204,9 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             }
             (CoefficientView::Large(l, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l, d)) => {
+                if !d.is_zero() {
+                    panic!("Cannot add complex number with polynomial");
+                }
                 let r = p.deserialize();
                 let l = l.to_rat();
                 let r2 = RationalPolynomial {
@@ -1236,13 +1232,22 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                     Coefficient::RationalPolynomial(r)
                 }
             }
-            (CoefficientView::Natural(n, d, ni, di), CoefficientView::Float(f))
-            | (CoefficientView::Float(f), CoefficientView::Natural(n, d, ni, di)) => {
+            (CoefficientView::Natural(n, d, ni, _di), CoefficientView::Float(f))
+            | (CoefficientView::Float(f), CoefficientView::Natural(n, d, ni, _di)) => {
+                // TODO: support complex poly
+                if ni != 0 {
+                    panic!("Cannot add complex number with float");
+                }
+
                 let f = f.to_float();
                 Coefficient::Float(f + Rational::from((n, d)))
             }
             (CoefficientView::Large(r, d), CoefficientView::Float(f))
             | (CoefficientView::Float(f), CoefficientView::Large(r, d)) => {
+                if !d.is_zero() {
+                    panic!("Cannot add complex number with float");
+                }
+
                 let r = r.to_rat();
                 let f = f.to_float();
                 Coefficient::Float(f + r)
@@ -1314,8 +1319,12 @@ impl Mul for CoefficientView<'_> {
                     "Cannot multiply finite field to non-finite number. Convert other number first?"
                 );
             }
-            (CoefficientView::Natural(n, d, ni, di), CoefficientView::RationalPolynomial(p))
-            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d, ni, di)) => {
+            (CoefficientView::Natural(n, d, ni, _di), CoefficientView::RationalPolynomial(p))
+            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d, ni, _di)) => {
+                if ni != 0 {
+                    panic!("Cannot multiply complex number with polynomial");
+                }
+
                 let mut r = p.deserialize();
                 let (n, d) = (Integer::Natural(n), Integer::Natural(d));
 
@@ -1327,6 +1336,10 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::Large(l, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l, d)) => {
+                if !d.is_zero() {
+                    panic!("Cannot multiply complex number with polynomial");
+                }
+
                 let mut r = p.deserialize();
                 let l = l.to_rat();
                 let (n, d) = (l.numerator_ref(), l.denominator_ref());
@@ -1364,9 +1377,13 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::Large(r, d), CoefficientView::Float(f))
             | (CoefficientView::Float(f), CoefficientView::Large(r, d)) => {
-                let r = r.to_rat();
-                let f = f.to_float();
-                Coefficient::Float(f * r)
+                if d.is_zero() {
+                    let r = r.to_rat();
+                    let f = f.to_float();
+                    Coefficient::Float(f * r)
+                } else {
+                    panic!("Complex floats are not supported yet");
+                }
             }
             (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
                 Coefficient::Float(f1.to_float() * f2.to_float())
@@ -1710,7 +1727,7 @@ impl AtomView<'_> {
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
                 CoefficientView::Natural(n, d, ni, _di) => {
-                    if ni != 0 {
+                    if ni == 0 {
                         out.to_num(Coefficient::Float(
                             Float::with_val(binary_prec, n) / Float::with_val(binary_prec, d),
                         ));
@@ -1728,9 +1745,13 @@ impl AtomView<'_> {
                     }
                 }
                 CoefficientView::Large(r, d) => {
-                    out.to_num(Coefficient::Float(
-                        r.to_rat().to_multi_prec_float(binary_prec),
-                    ));
+                    if d.is_zero() {
+                        out.to_num(Coefficient::Float(
+                            r.to_rat().to_multi_prec_float(binary_prec),
+                        ));
+                    } else {
+                        panic!("Cannot convert complex number to float");
+                    }
                 }
                 CoefficientView::FiniteField(_, _) => {
                     panic!("Cannot convert finite field to float");
@@ -1837,7 +1858,10 @@ impl AtomView<'_> {
 
                         Coefficient::Complex(ComplexCoefficient::new(real, imag))
                     }
-                    CoefficientView::Large(r, d) => r.to_rat().round(relative_error).into(),
+                    CoefficientView::Large(r, d) => Coefficient::Complex(ComplexCoefficient::new(
+                        r.to_rat().round(relative_error),
+                        d.to_rat().round(relative_error),
+                    )),
                     _ => c.to_owned(),
                 },
                 true,

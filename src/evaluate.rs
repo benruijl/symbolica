@@ -4667,6 +4667,7 @@ impl<'a> AtomView<'a> {
         })
     }
 
+    // TODO: return Expression<Complex> instead
     fn to_eval_tree_impl(
         &self,
         fn_map: &FunctionMap<Rational>,
@@ -4684,8 +4685,46 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d, ni, di) => Ok(Expression::Const((n, d).into())), // FIXME: support complex numbers
-                CoefficientView::Large(l, i) => Ok(Expression::Const(l.to_rat())),
+                CoefficientView::Natural(n, d, ni, di) => {
+                    if ni == 0 {
+                        Ok(Expression::Const((n, d).into()))
+                    } else {
+                        if let Some(p) = args.iter().position(|s| *s == Atom::I) {
+                            return Ok(Expression::Add(vec![
+                                Expression::Mul(vec![
+                                    Expression::ReadArg(p),
+                                    Expression::Const((ni, di).into()),
+                                ]),
+                                Expression::Const((n, d).into()),
+                            ]));
+                        } else {
+                            return Err(format!(
+                                "Complex variable {} should be given as a parameter",
+                                Atom::I
+                            ));
+                        }
+                    }
+                }
+                CoefficientView::Large(l, i) => {
+                    if i.is_zero() {
+                        Ok(Expression::Const(l.to_rat()))
+                    } else {
+                        if let Some(p) = args.iter().position(|s| *s == Atom::I) {
+                            return Ok(Expression::Add(vec![
+                                Expression::Mul(vec![
+                                    Expression::ReadArg(p),
+                                    Expression::Const(i.to_rat()),
+                                ]),
+                                Expression::Const(l.to_rat()),
+                            ]));
+                        } else {
+                            return Err(format!(
+                                "Complex variable {} should be given as a parameter",
+                                Atom::I
+                            ));
+                        }
+                    }
+                }
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
                     Ok(Expression::Const(f.to_float().to_rational()))
@@ -4858,7 +4897,18 @@ impl<'a> AtomView<'a> {
                             + num)
                     }
                 }
-                CoefficientView::Large(l, i) => Ok(coeff_map(&l.to_rat())),
+                CoefficientView::Large(l, i) => {
+                    if i.is_zero() {
+                        Ok(coeff_map(&l.to_rat()))
+                    } else {
+                        let num = coeff_map(&l.to_rat());
+                        Ok(coeff_map(&i.to_rat())
+                            * num.i().ok_or_else(|| {
+                                "Numerical type does not support imaginary unit".to_string()
+                            })?
+                            + num)
+                    }
+                }
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
                     Ok(coeff_map(&f.to_float().to_rational()))

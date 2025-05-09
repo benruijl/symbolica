@@ -306,7 +306,7 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Pow(p) = a {
                         let (b, e) = p.get_base_exp();
                         if let AtomView::Num(n) = e {
-                            if let CoefficientView::Natural(n, d, ni, di) = n.get_coeff_view() {
+                            if let CoefficientView::Natural(n, d, ni, _di) = n.get_coeff_view() {
                                 if ni == 0 {
                                     if n < 0 && d == 1 {
                                         denominators.push(

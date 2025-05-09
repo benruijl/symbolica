@@ -38,7 +38,7 @@ use crate::{
         Atom, AtomCore, AtomType, AtomView, DefaultNamespace, FunctionAttribute, ListIterator,
         Symbol,
     },
-    coefficient::CoefficientView,
+    coefficient::{CoefficientView, ComplexCoefficient},
     domains::{
         Ring, SelfRing,
         algebraic_number::AlgebraicExtension,
@@ -2377,6 +2377,10 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             ))
         } else if let Ok(f) = ob.extract::<PythonMultiPrecisionFloat>() {
             Ok(ConvertibleToExpression(Atom::new_num(f.0).into()))
+        } else if let Ok(num) = ob.extract::<Complex<f64>>() {
+            Ok(ConvertibleToExpression(
+                Atom::new_num(Complex::new(num.re.into(), num.im.into())).into(),
+            ))
         } else {
             Err(exceptions::PyTypeError::new_err(
                 "Cannot convert to expression",
@@ -2967,6 +2971,14 @@ impl PythonExpression {
                 Ok(Atom::new_num(r).into())
             } else {
                 Ok(Atom::new_num(f.0).into())
+            }
+        } else if let Ok(f) = num.extract::<Complex<f64>>(py) {
+            if let Some(relative_error) = relative_error {
+                let r = Rational::from(f.re).round(&relative_error.into());
+                let i = Rational::from(f.im).round(&relative_error.into());
+                Ok(Atom::new_num(ComplexCoefficient::new(r, i)).into())
+            } else {
+                Ok(Atom::new_num(Complex::new(f.re.into(), f.im.into())).into())
             }
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
@@ -7347,8 +7359,16 @@ impl PythonPolynomial {
             .map(|x| {
                 if let AtomView::Num(x) = x.to_expression().expr.as_view() {
                     match x.get_coeff_view() {
-                        CoefficientView::Natural(r, d) => Ok(Rational::from_unchecked(r, d)),
-                        CoefficientView::Large(r) => Ok(r.to_rat()),
+                        CoefficientView::Natural(r, d, 0, 1) => Ok(Rational::from_unchecked(r, d)),
+                        CoefficientView::Large(r, i) => {
+                            if i.is_zero() {
+                                Ok(r.to_rat())
+                            } else {
+                                Err(exceptions::PyValueError::new_err(
+                                    "Sample points must be rational numbers".to_string(),
+                                ))
+                            }
+                        }
                         _ => Err(exceptions::PyValueError::new_err(
                             "Sample points must be rational numbers".to_string(),
                         )),

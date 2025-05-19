@@ -439,7 +439,7 @@ impl AtomView<'_> {
                         let constant = f_eval.finish();
 
                         let mut result = info.constant(constant.clone());
-                        for i in 0..=depth {
+                        for i in 1..=depth {
                             let mut it =
                                 CombinationWithReplacementIterator::new(args_series.len(), i);
 
@@ -893,7 +893,7 @@ mod test {
             .to_atom();
 
         let res = parse!(
-            "der(0,0,f(1,0))+f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
+            "f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
             +v1^2*(1/2*der(0,2,f(1,0))+1/2*der(1,0,f(1,0))+der(1,1,f(1,0))+1/2*der(2,0,f(1,0)))"
         )
         .unwrap();

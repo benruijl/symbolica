@@ -12,7 +12,7 @@
 use std::{
     cmp::Ordering,
     f64::consts::LOG2_10,
-    ops::{Add, Div, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg},
     sync::Arc,
 };
 
@@ -30,7 +30,7 @@ use crate::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
             Zp64,
         },
-        float::{Complex, Float, Real, SingleFloat},
+        float::{Complex, Float, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Fraction, Q, Rational},
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
@@ -58,239 +58,10 @@ pub trait ConvertToRing: Ring {
 /// The borrowed version of this is [CoefficientView].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Coefficient {
-    Complex(ComplexCoefficient),
+    Complex(Complex<Rational>),
     Float(Complex<Float>),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
-}
-
-/// A Gaussian rational.
-///
-/// The ordering is for internal use only.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ComplexCoefficient {
-    pub real: Rational,
-    pub imag: Rational,
-}
-
-impl From<Rational> for ComplexCoefficient {
-    fn from(real: Rational) -> Self {
-        ComplexCoefficient {
-            real,
-            imag: Rational::zero(),
-        }
-    }
-}
-
-impl From<i64> for ComplexCoefficient {
-    fn from(real: i64) -> Self {
-        ComplexCoefficient {
-            real: Rational::from(real),
-            imag: Rational::zero(),
-        }
-    }
-}
-
-impl From<(Rational, Rational)> for ComplexCoefficient {
-    fn from((real, imag): (Rational, Rational)) -> Self {
-        ComplexCoefficient { real, imag }
-    }
-}
-
-impl ComplexCoefficient {
-    /// Create a new complex coefficient.
-    pub fn new(real: Rational, imag: Rational) -> Self {
-        ComplexCoefficient { real, imag }
-    }
-
-    pub fn is_real(&self) -> bool {
-        self.imag == Rational::zero()
-    }
-
-    pub fn is_imaginary(&self) -> bool {
-        self.real == Rational::zero()
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self.real == Rational::zero() && self.imag == Rational::zero()
-    }
-
-    pub fn is_one(&self) -> bool {
-        self.real == Rational::one() && self.imag == Rational::zero()
-    }
-
-    pub fn zero() -> Self {
-        ComplexCoefficient::new(Rational::zero(), Rational::zero())
-    }
-
-    pub fn one() -> Self {
-        ComplexCoefficient::new(Rational::one(), Rational::zero())
-    }
-
-    pub fn imag() -> Self {
-        ComplexCoefficient::new(Rational::zero(), Rational::one())
-    }
-
-    pub fn pow(&self, e: u64) -> Self {
-        if self.is_real() {
-            return self.real.pow(e).into();
-        }
-
-        let mut r = ComplexCoefficient::one();
-
-        for _ in 0..e {
-            r = r * self.clone();
-        }
-        r
-    }
-
-    pub fn inv(&self) -> Self {
-        let denom = &self.real * &self.real + &self.imag * &self.imag;
-        ComplexCoefficient::new(&self.real / &denom, -(&self.imag / &denom))
-    }
-
-    // TODO: what does this mean?
-    pub fn is_negative(&self) -> bool {
-        self.real.is_negative() && self.imag.is_zero()
-            || self.imag.is_negative() && self.real.is_zero()
-    }
-
-    pub fn conjugate(self) -> Self {
-        ComplexCoefficient {
-            real: self.real,
-            imag: -self.imag,
-        }
-    }
-
-    pub fn gcd(&self, other: &Self) -> Self {
-        self.real
-            .gcd(&other.real)
-            .gcd(&self.imag)
-            .gcd(&other.imag)
-            .into()
-    }
-}
-
-impl Neg for ComplexCoefficient {
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        ComplexCoefficient {
-            real: -self.real,
-            imag: -self.imag,
-        }
-    }
-}
-
-impl Add for ComplexCoefficient {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        ComplexCoefficient {
-            real: self.real + other.real,
-            imag: self.imag + other.imag,
-        }
-    }
-}
-
-impl Add<&ComplexCoefficient> for ComplexCoefficient {
-    type Output = Self;
-
-    fn add(self, other: &Self) -> Self {
-        ComplexCoefficient {
-            real: self.real + &other.real,
-            imag: self.imag + &other.imag,
-        }
-    }
-}
-
-impl Sub for ComplexCoefficient {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        ComplexCoefficient {
-            real: self.real - other.real,
-            imag: self.imag - other.imag,
-        }
-    }
-}
-
-impl Mul for ComplexCoefficient {
-    type Output = Self;
-
-    fn mul(self, other: Self) -> Self {
-        ComplexCoefficient {
-            real: &self.real * &other.real - &self.imag * &other.imag,
-            imag: self.real * other.imag + self.imag * other.real,
-        }
-    }
-}
-
-impl Mul<&ComplexCoefficient> for ComplexCoefficient {
-    type Output = Self;
-
-    fn mul(self, other: &Self) -> Self {
-        ComplexCoefficient {
-            real: &self.real * &other.real - &self.imag * &other.imag,
-            imag: self.real * &other.imag + self.imag * &other.real,
-        }
-    }
-}
-
-impl Div for ComplexCoefficient {
-    type Output = Self;
-
-    fn div(self, other: Self) -> Self {
-        let denominator = &other.real * &other.real + &other.imag * &other.imag;
-        ComplexCoefficient {
-            real: (&self.real * &other.real + &self.imag * &other.imag) / &denominator,
-            imag: (self.imag * other.real - self.real * other.imag) / denominator,
-        }
-    }
-}
-
-impl Add<Rational> for ComplexCoefficient {
-    type Output = Self;
-
-    fn add(self, other: Rational) -> Self {
-        ComplexCoefficient {
-            real: self.real + other,
-            imag: self.imag,
-        }
-    }
-}
-
-impl Sub<Rational> for ComplexCoefficient {
-    type Output = Self;
-
-    fn sub(self, other: Rational) -> Self {
-        ComplexCoefficient {
-            real: self.real - other,
-            imag: self.imag,
-        }
-    }
-}
-
-impl Mul<Rational> for ComplexCoefficient {
-    type Output = Self;
-
-    fn mul(self, other: Rational) -> Self {
-        ComplexCoefficient {
-            real: self.real * &other,
-            imag: self.imag * other,
-        }
-    }
-}
-
-impl Div<Rational> for ComplexCoefficient {
-    type Output = Self;
-
-    fn div(self, other: Rational) -> Self {
-        ComplexCoefficient {
-            real: self.real / &other,
-            imag: self.imag / other,
-        }
-    }
 }
 
 impl Coefficient {
@@ -370,15 +141,21 @@ impl From<Rational> for Coefficient {
     }
 }
 
-impl From<ComplexCoefficient> for Coefficient {
+/*impl From<ComplexCoefficient> for Coefficient {
     fn from(value: ComplexCoefficient) -> Self {
         Coefficient::Complex(value)
     }
-}
+}*/
 
 impl From<Float> for Coefficient {
     fn from(value: Float) -> Self {
         Coefficient::Float(value.into())
+    }
+}
+
+impl From<Complex<Rational>> for Coefficient {
+    fn from(value: Complex<Rational>) -> Self {
+        Coefficient::Complex(value)
     }
 }
 
@@ -400,10 +177,30 @@ impl PartialOrd for Coefficient {
     }
 }
 
+impl Complex<Rational> {
+    pub fn gcd(&self, other: &Self) -> Self {
+        if self.is_zero() {
+            return other.clone();
+        }
+        if other.is_zero() {
+            return self.clone();
+        }
+
+        let gcd_re = self.re.gcd(&other.re);
+        let gcd_im = self.im.gcd(&other.im);
+
+        Complex::new(gcd_re, gcd_im)
+    }
+}
+
 impl Ord for Coefficient {
     fn cmp(&self, other: &Coefficient) -> Ordering {
         match (self, other) {
-            (Coefficient::Complex(r1), Coefficient::Complex(r2)) => r1.cmp(r2),
+            (Coefficient::Complex(r1), Coefficient::Complex(r2)) => r1
+                .re
+                .partial_cmp(&r2.re)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| r1.im.partial_cmp(&r2.im).unwrap_or(Ordering::Equal)),
             (Coefficient::FiniteField(n1, _), Coefficient::FiniteField(n2, _)) => n1.0.cmp(&n2.0),
             (Coefficient::Float(f1), Coefficient::Float(f2)) => f1
                 .re
@@ -429,16 +226,18 @@ impl Coefficient {
     }
 
     pub fn zero() -> Coefficient {
-        Coefficient::Complex(ComplexCoefficient::zero())
+        Coefficient::Complex(Complex::new_zero())
     }
 
     pub fn one() -> Coefficient {
-        Coefficient::Complex(ComplexCoefficient::one())
+        Coefficient::Complex(Complex::new(Rational::one(), Rational::zero()))
     }
 
     pub fn is_negative(&self) -> bool {
         match self {
-            Coefficient::Complex(r) => r.is_negative(),
+            Coefficient::Complex(r) => {
+                r.re.is_negative() && r.im.is_zero() || r.im.is_negative() && r.re.is_zero()
+            }
             Coefficient::Float(f) => {
                 f.re.is_negative() && f.im.is_zero() || f.im.is_negative() && f.re.is_zero()
             }
@@ -493,8 +292,8 @@ impl Coefficient {
             | (Coefficient::RationalPolynomial(rp), Coefficient::Complex(r)) => {
                 if r.is_real() {
                     let p = RationalPolynomial::from_num_den(
-                        rp.numerator.constant(r.real.numerator()),
-                        rp.numerator.constant(r.real.denominator()),
+                        rp.numerator.constant(r.re.numerator()),
+                        rp.numerator.constant(r.re.denominator()),
                         &Z,
                         false,
                     );
@@ -575,8 +374,8 @@ impl Add for Coefficient {
             | (Coefficient::RationalPolynomial(rp), Coefficient::Complex(r)) => {
                 if r.is_real() {
                     let r2 = RationalPolynomial {
-                        numerator: rp.numerator.constant(r.real.numerator()),
-                        denominator: rp.denominator.constant(r.real.denominator()),
+                        numerator: rp.numerator.constant(r.re.numerator()),
+                        denominator: rp.denominator.constant(r.re.denominator()),
                     };
                     Coefficient::RationalPolynomial(&rp + &r2)
                 } else {
@@ -600,7 +399,7 @@ impl Add for Coefficient {
             }
             (Coefficient::Complex(r), Coefficient::Float(f))
             | (Coefficient::Float(f), Coefficient::Complex(r)) => {
-                Coefficient::Float(Complex::new(f.re + r.real, f.im + r.imag))
+                Coefficient::Float(Complex::new(f.re + r.re, f.im + r.im))
             }
             (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 + f2),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
@@ -635,16 +434,16 @@ impl Mul for Coefficient {
             (Coefficient::Complex(r), Coefficient::RationalPolynomial(mut rp))
             | (Coefficient::RationalPolynomial(mut rp), Coefficient::Complex(r)) => {
                 if r.is_real() {
-                    let gcd1 = Z.gcd(&r.real.numerator(), &rp.denominator.content());
-                    let gcd2 = Z.gcd(&r.real.denominator(), &rp.numerator.content());
+                    let gcd1 = Z.gcd(&r.re.numerator(), &rp.denominator.content());
+                    let gcd2 = Z.gcd(&r.re.denominator(), &rp.numerator.content());
                     rp.numerator = rp
                         .numerator
                         .div_coeff(&gcd2)
-                        .mul_coeff(r.real.numerator().div(&gcd1));
+                        .mul_coeff(r.re.numerator().div(&gcd1));
                     rp.denominator = rp
                         .denominator
                         .div_coeff(&gcd1)
-                        .mul_coeff(r.real.denominator().div(&gcd2));
+                        .mul_coeff(r.re.denominator().div(&gcd2));
                     Coefficient::RationalPolynomial(rp)
                 } else {
                     panic!(
@@ -667,8 +466,8 @@ impl Mul for Coefficient {
             }
             (Coefficient::Complex(r), Coefficient::Float(f))
             | (Coefficient::Float(f), Coefficient::Complex(r)) => Coefficient::Float(Complex::new(
-                f.re.clone() * r.real.clone() - f.im.clone() * r.imag.clone(),
-                f.re * r.imag + f.im * r.real,
+                f.re.clone() * r.re.clone() - f.im.clone() * r.im.clone(),
+                f.re * r.im + f.im * r.re,
             )),
             (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 * f2),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
@@ -749,7 +548,7 @@ impl ConvertToRing for Q {
         match number {
             Coefficient::Complex(r) => {
                 if r.is_real() {
-                    r.real
+                    r.re
                 } else {
                     panic!("Cannot convert complex to rational")
                 }
@@ -803,8 +602,8 @@ impl ConvertToRing for IntegerRing {
         match number {
             Coefficient::Complex(r) => {
                 if r.is_real() {
-                    if r.real.is_integer() {
-                        r.real.numerator()
+                    if r.re.is_integer() {
+                        r.re.numerator()
                     } else {
                         panic!("Cannot convert non-integer real number to integer")
                     }
@@ -886,8 +685,8 @@ where
             Coefficient::Complex(r) => {
                 if r.is_real() {
                     self.div(
-                        &r.real.numerator().to_finite_field(self),
-                        &r.real.denominator().to_finite_field(self),
+                        &r.re.numerator().to_finite_field(self),
+                        &r.re.denominator().to_finite_field(self),
                     )
                 } else {
                     panic!("Cannot convert complex number to finite field")
@@ -944,9 +743,9 @@ where
 impl CoefficientView<'_> {
     pub fn normalize(&self) -> Coefficient {
         match self {
-            CoefficientView::Natural(nr, dr, ni, di) => Coefficient::Complex(
-                ComplexCoefficient::new((*nr, *dr).into(), (*ni, *di).into()),
-            ),
+            CoefficientView::Natural(nr, dr, ni, di) => {
+                Coefficient::Complex(Complex::new((*nr, *dr).into(), (*ni, *di).into()))
+            }
             CoefficientView::Float(_, _)
             | CoefficientView::Large(_, _)
             | CoefficientView::FiniteField(_, _)
@@ -956,16 +755,13 @@ impl CoefficientView<'_> {
 
     pub fn to_owned(&self) -> Coefficient {
         match self {
-            CoefficientView::Natural(nr, dr, ni, di) => {
-                Coefficient::Complex(ComplexCoefficient::new(
-                    Rational::from_unchecked(*nr, *dr),
-                    Rational::from_unchecked(*ni, *di),
-                ))
+            CoefficientView::Natural(nr, dr, ni, di) => Coefficient::Complex(Complex::new(
+                Rational::from_unchecked(*nr, *dr),
+                Rational::from_unchecked(*ni, *di),
+            )),
+            CoefficientView::Large(rr, ri) => {
+                Coefficient::Complex(Complex::new(rr.to_rat(), ri.to_rat()))
             }
-            CoefficientView::Large(rr, ri) => Coefficient::Complex(ComplexCoefficient {
-                real: rr.to_rat(),
-                imag: ri.to_rat(),
-            }),
             CoefficientView::Float(r, i) => {
                 Coefficient::Float(Complex::new(r.to_float(), i.to_float()))
             }
@@ -994,7 +790,7 @@ impl CoefficientView<'_> {
                 &CoefficientView::Natural(n1, d1, ni1, di1),
                 &CoefficientView::Natural(n2, d2, _, _),
             ) => {
-                let mut base = ComplexCoefficient::new((n1, d1).into(), (ni1, di1).into());
+                let mut base: Complex<Rational> = Complex::new((n1, d1).into(), (ni1, di1).into());
                 if n2 < 0 {
                     base = base.inv();
                 }
@@ -1020,7 +816,7 @@ impl CoefficientView<'_> {
                 }
             }
             (&CoefficientView::Large(r, i), &CoefficientView::Natural(n2, d2, _, _)) => {
-                let mut base = ComplexCoefficient::new(r.to_rat(), i.to_rat().into());
+                let mut base = Complex::new(r.to_rat(), i.to_rat().into());
                 if n2 < 0 {
                     base = base.inv();
                 }
@@ -1110,6 +906,16 @@ impl CoefficientView<'_> {
             CoefficientView::RationalPolynomial(_) => false,
         }
     }
+
+    pub fn is_real(&self) -> bool {
+        match self {
+            CoefficientView::Natural(_, _, i, _) => *i == 0,
+            CoefficientView::Float(_, i) => i.is_zero(),
+            CoefficientView::Large(_, i) => i.is_zero(),
+            CoefficientView::FiniteField(_, _) => true,
+            CoefficientView::RationalPolynomial(_) => true,
+        }
+    }
 }
 
 impl PartialOrd for CoefficientView<'_> {
@@ -1178,10 +984,10 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                 CoefficientView::Natural(n1, d1, ni1, di1),
                 CoefficientView::Natural(n2, d2, ni2, di2),
             ) => Coefficient::Complex(
-                ComplexCoefficient::new(
+                Complex::new(
                     Rational::from_unchecked(n1, d1),
                     Rational::from_unchecked(ni1, di1),
-                ) + ComplexCoefficient::new(
+                ) + Complex::new(
                     Rational::from_unchecked(n2, d2),
                     Rational::from_unchecked(ni2, di2),
                 ),
@@ -1189,8 +995,8 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             (CoefficientView::Natural(n1, d1, ni1, di1), CoefficientView::Large(r2, d))
             | (CoefficientView::Large(r2, d), CoefficientView::Natural(n1, d1, ni1, di1)) => {
                 Coefficient::Complex(
-                    ComplexCoefficient::new(r2.to_rat(), d.to_rat())
-                        + ComplexCoefficient::new(
+                    Complex::new(r2.to_rat(), d.to_rat())
+                        + Complex::new(
                             Rational::from_unchecked(n1, d1),
                             Rational::from_unchecked(ni1, di1),
                         ),
@@ -1198,8 +1004,7 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             }
             (CoefficientView::Large(r1, d1), CoefficientView::Large(r2, d2)) => {
                 Coefficient::Complex(
-                    ComplexCoefficient::new(r1.to_rat(), d1.to_rat())
-                        + ComplexCoefficient::new(r2.to_rat(), d2.to_rat()),
+                    Complex::new(r1.to_rat(), d1.to_rat()) + Complex::new(r2.to_rat(), d2.to_rat()),
                 )
             }
             (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
@@ -1294,10 +1099,10 @@ impl Mul for CoefficientView<'_> {
                 CoefficientView::Natural(n1, d1, ni1, di1),
                 CoefficientView::Natural(n2, d2, ni2, di2),
             ) => Coefficient::Complex(
-                ComplexCoefficient::new(
+                Complex::new(
                     Rational::from_unchecked(n1, d1),
                     Rational::from_unchecked(ni1, di1),
-                ) * ComplexCoefficient::new(
+                ) * Complex::new(
                     Rational::from_unchecked(n2, d2),
                     Rational::from_unchecked(ni2, di2),
                 ),
@@ -1305,8 +1110,8 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Natural(n1, d1, ni1, di1), CoefficientView::Large(r2, d2))
             | (CoefficientView::Large(r2, d2), CoefficientView::Natural(n1, d1, ni1, di1)) => {
                 Coefficient::Complex(
-                    ComplexCoefficient::new(r2.to_rat(), d2.to_rat())
-                        * ComplexCoefficient::new(
+                    Complex::new(r2.to_rat(), d2.to_rat())
+                        * Complex::new(
                             Rational::from_unchecked(n1, d1),
                             Rational::from_unchecked(ni1, di1),
                         ),
@@ -1314,8 +1119,7 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::Large(r1, d1), CoefficientView::Large(r2, d2)) => {
                 Coefficient::Complex(
-                    ComplexCoefficient::new(r1.to_rat(), d1.to_rat())
-                        + ComplexCoefficient::new(r2.to_rat(), d2.to_rat()),
+                    Complex::new(r1.to_rat(), d1.to_rat()) + Complex::new(r2.to_rat(), d2.to_rat()),
                 )
             }
             (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
@@ -1433,7 +1237,7 @@ impl Add<i64> for CoefficientView<'_> {
     fn add(self, other: i64) -> Coefficient {
         match self {
             CoefficientView::Natural(n1, d1, ni1, di1) => Coefficient::Complex(
-                ComplexCoefficient::new(
+                Complex::new(
                     Rational::from_unchecked(n1, d1),
                     Rational::from_unchecked(ni1, di1),
                 ) + Rational::from(other),
@@ -1441,9 +1245,9 @@ impl Add<i64> for CoefficientView<'_> {
             CoefficientView::Float(r, i) => {
                 Coefficient::Float(Complex::new(r.to_float() + other, i.to_float()))
             }
-            CoefficientView::Large(r1, d1) => Coefficient::Complex(
-                ComplexCoefficient::new(r1.to_rat(), d1.to_rat()) + Rational::from(other),
-            ),
+            CoefficientView::Large(r1, d1) => {
+                Coefficient::Complex(Complex::new(r1.to_rat(), d1.to_rat()) + Rational::from(other))
+            }
             CoefficientView::FiniteField(n1, i1) => {
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &f.element_from_coefficient(other.into())), i1)
@@ -1605,6 +1409,41 @@ impl<'a> TryFrom<AtomView<'a>> for Complex<Float> {
     }
 }
 
+impl TryFrom<Atom> for Complex<Rational> {
+    type Error = &'static str;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl TryFrom<&Atom> for Complex<Rational> {
+    type Error = &'static str;
+
+    fn try_from(value: &Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl<'a> TryFrom<AtomView<'a>> for Complex<Rational> {
+    type Error = &'static str;
+
+    fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
+        if let AtomView::Num(n) = value {
+            match n.get_coeff_view() {
+                CoefficientView::Natural(n, d, ni, di) => Ok(Complex::new(
+                    Rational::from_unchecked(n, d),
+                    Rational::from_unchecked(ni, di),
+                )),
+                CoefficientView::Large(r, i) => Ok(Complex::new(r.to_rat(), i.to_rat())),
+                _ => Err("Not a rational"),
+            }
+        } else {
+            Err("Not a number")
+        }
+    }
+}
+
 impl AtomView<'_> {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub(crate) fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
@@ -1669,7 +1508,7 @@ impl AtomView<'_> {
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
-                            exp.to_num(Coefficient::Complex((-1i64).into()));
+                            exp.to_num(Coefficient::Complex(Rational::from(-1i64).into()));
                             n3.to_pow(n2_conv.as_view(), exp.as_view());
 
                             let mut m = workspace.new_atom();
@@ -1838,11 +1677,6 @@ impl AtomView<'_> {
                             Float::with_val(binary_prec, 1).exp().into(),
                         ));
                     }
-                    Atom::I => {
-                        out.to_num(Coefficient::Float(
-                            Float::with_val(binary_prec, 1).i().unwrap().into(),
-                        ));
-                    }
                     _ => {
                         out.set_from_view(self);
                     }
@@ -1916,7 +1750,7 @@ impl AtomView<'_> {
         Workspace::get_local().with(|ws| {
             self.map_coefficient_impl(
                 |c| match c {
-                    CoefficientView::Float(r, i) => Coefficient::Complex(ComplexCoefficient::new(
+                    CoefficientView::Float(r, i) => Coefficient::Complex(Complex::new(
                         r.to_float().to_rational().round(relative_error),
                         i.to_float().to_rational().round(relative_error),
                     )),
@@ -1927,9 +1761,9 @@ impl AtomView<'_> {
                         let r = Rational::from_unchecked(ni, di);
                         let imag = r.round(relative_error).into();
 
-                        Coefficient::Complex(ComplexCoefficient::new(real, imag))
+                        Coefficient::Complex(Complex::new(real, imag))
                     }
-                    CoefficientView::Large(r, d) => Coefficient::Complex(ComplexCoefficient::new(
+                    CoefficientView::Large(r, d) => Coefficient::Complex(Complex::new(
                         r.to_rat().round(relative_error),
                         d.to_rat().round(relative_error),
                     )),

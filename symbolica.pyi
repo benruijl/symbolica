@@ -759,6 +759,9 @@ class Expression:
         """Convert all coefficients to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
 
+    def conjugate(self) -> Expression:
+        """Complex conjugate all complex numbers in the expression."""
+
     def rationalize_coefficients(self, relative_error: float) -> Expression:
         """Map all floating point and rational coefficients to the best rational approximation
         in the interval `[self*(1-relative_error),self*(1+relative_error)]`."""
@@ -2381,6 +2384,9 @@ class Transformer:
         -6*(x+y)*(x-2*y)
         ```
         """
+
+    def conjugate(self) -> Transformer:
+        """Complex conjugate all complex numbers in the expression."""
 
     def coefficient(self, x: Expression) -> Transformer:
         """Create a transformer that collects terms involving the literal occurrence of `x`.

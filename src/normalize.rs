@@ -492,13 +492,6 @@ impl Atom {
 
         // x * x => x^2
         if self.as_view() == other.as_view() {
-            if let AtomView::Var(v) = self.as_view() {
-                if v.get_symbol() == Atom::I {
-                    self.to_num((-1).into());
-                    return true;
-                }
-            }
-
             // add powers
             let exp = other.to_num(2.into());
             helper.to_pow(self.as_view(), AtomView::Num(exp.to_num_view()));
@@ -1215,45 +1208,6 @@ impl AtomView<'_> {
 
                             base_handle.to_num(new_base_num);
                             exp_handle.to_num(new_exp_num);
-                        } else if let AtomView::Var(v) = base_handle.as_view() {
-                            if v.get_symbol() == Atom::I {
-                                if let CoefficientView::Natural(n, d, ni, _di) = exp_num {
-                                    let mut new_base = workspace.new_atom();
-
-                                    if ni != 0 {
-                                        break 'pow_simplify;
-                                    }
-
-                                    // the case n < 0 is handled automagically
-                                    if n % 2 == 0 {
-                                        if n % 4 == 0 {
-                                            new_base.to_num(1.into());
-                                        } else {
-                                            new_base.to_num((-1).into());
-                                        }
-                                    } else if (n - 1) % 4 == 0 {
-                                        new_base.set_from_view(&base_handle.as_view());
-                                    } else {
-                                        let n = new_base.to_mul();
-                                        n.extend(base_handle.as_view());
-                                        let mut helper = workspace.new_atom();
-                                        helper.to_num((-1).into());
-                                        n.extend(helper.as_view());
-                                        new_base.as_view().normalize(workspace, &mut helper);
-                                        std::mem::swap(&mut new_base, &mut helper);
-                                    }
-
-                                    if d == 1 {
-                                        out.set_from_view(&new_base.as_view());
-                                    } else {
-                                        let mut new_exp = workspace.new_atom();
-                                        new_exp.to_num((1i64, d).into());
-                                        out.to_pow(new_base.as_view(), new_exp.as_view());
-                                    }
-
-                                    break 'pow_simplify;
-                                }
-                            }
                         } else if let AtomView::Pow(p_base) = base_handle.as_view() {
                             if exp_num.is_integer() {
                                 // rewrite (x^y)^3 as x^(3*y)
@@ -1602,13 +1556,6 @@ mod test {
         let res = parse!("fsl1(v2+2*v3,v1+3*v2-v3)").unwrap();
         let refr =
             parse!("fsl1(v1,v2)+2*fsl1(v1,v3)+3*fsl1(v2,v2)+5*fsl1(v2,v3)-2*fsl1(v3,v3)").unwrap();
-        assert_eq!(res, refr);
-    }
-
-    #[test]
-    fn mul_complex_i() {
-        let res = Atom::new_var(Atom::I) * &Atom::new_var(Atom::E) * &Atom::new_var(Atom::I);
-        let refr = -Atom::new_var(Atom::E);
         assert_eq!(res, refr);
     }
 

@@ -723,7 +723,7 @@ impl FormattedPrintNum for NumView<'_> {
                             } else {
                                 f.write_fmt(format_args!("{}/{}", num_i.unsigned_abs(), den_i))?;
                             }
-                        } else {
+                        } else if num_i != 1 && num_i != -1 {
                             f.write_fmt(format_args!("{}", num_i.unsigned_abs()))?;
                         }
                         f.write_char('𝑖')?;

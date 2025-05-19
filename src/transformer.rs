@@ -200,6 +200,7 @@ pub enum Transformer {
     CollectFactors,
     /// Collect numbers.
     CollectNum,
+    Conjugate,
     /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
@@ -260,6 +261,7 @@ impl std::fmt::Debug for Transformer {
                 .field(b)
                 .finish(),
             Transformer::CollectNum => f.debug_tuple("CollectNum").finish(),
+            Transformer::Conjugate => f.debug_tuple("Conjugate").finish(),
             Transformer::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
             }
@@ -687,6 +689,9 @@ impl Transformer {
                 }
                 Transformer::CollectNum => {
                     *out = cur_input.collect_num();
+                }
+                Transformer::Conjugate => {
+                    *out = cur_input.conjugate();
                 }
                 Transformer::Series(x, expansion_point, depth, depth_is_absolute) => {
                     if let Ok(s) = cur_input.series(

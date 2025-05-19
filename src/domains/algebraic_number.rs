@@ -138,10 +138,11 @@ where
         match number {
             crate::coefficient::Coefficient::Complex(r) => {
                 if r.is_real() {
-                    let n = self.element_from_integer(r.real.numerator());
-                    let d = self.element_from_integer(r.real.denominator());
+                    let n = self.element_from_integer(r.re.numerator());
+                    let d = self.element_from_integer(r.re.denominator());
                     self.div(&n, &d)
                 } else {
+                    // TODO: check if i is a root of the minimal polynomial
                     panic!("Cannot convert complex coefficient to algebraic number")
                 }
             }

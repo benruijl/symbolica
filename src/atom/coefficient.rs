@@ -167,12 +167,12 @@ impl PackedRationalNumberWriter for Coefficient {
 
         match self {
             Coefficient::Complex(c) => {
-                if c.imag.is_zero() {
-                    write_rational(&c.real, dest);
+                if c.im.is_zero() {
+                    write_rational(&c.re, dest);
                 } else {
                     dest.put_u8(COMPLEX);
-                    write_rational(&c.real, dest);
-                    write_rational(&c.imag, dest);
+                    write_rational(&c.re, dest);
+                    write_rational(&c.im, dest);
                 }
             }
             Coefficient::Float(f) => {
@@ -250,11 +250,11 @@ impl PackedRationalNumberWriter for Coefficient {
     fn write_packed_fixed(&self, mut dest: &mut [u8]) {
         match self {
             Coefficient::Complex(c) => {
-                let real = c.imag.is_zero();
+                let real = c.im.is_zero();
                 if !real {
                     dest.put_u8(COMPLEX);
                 }
-                match (c.real.numerator_ref(), c.real.denominator_ref()) {
+                match (c.re.numerator_ref(), c.re.denominator_ref()) {
                     (Integer::Natural(num), Integer::Natural(den)) => {
                         (*num, *den as u64).write_packed_fixed(dest);
                     }
@@ -262,7 +262,7 @@ impl PackedRationalNumberWriter for Coefficient {
                 }
 
                 if !real {
-                    match (c.imag.numerator_ref(), c.imag.denominator_ref()) {
+                    match (c.im.numerator_ref(), c.im.denominator_ref()) {
                         (Integer::Natural(num), Integer::Natural(den)) => {
                             (*num, *den as u64).write_packed_fixed(dest);
                         }
@@ -299,10 +299,10 @@ impl PackedRationalNumberWriter for Coefficient {
 
         match self {
             Coefficient::Complex(c) => {
-                if c.imag.is_zero() {
-                    packed_size_rat(&c.real)
+                if c.im.is_zero() {
+                    packed_size_rat(&c.re)
                 } else {
-                    1 + packed_size_rat(&c.real) + packed_size_rat(&c.imag)
+                    1 + packed_size_rat(&c.re) + packed_size_rat(&c.im)
                 }
             }
             Coefficient::Float(f) => {

@@ -17,8 +17,12 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     LicenseManager,
     atom::{Atom, DefaultNamespace},
-    coefficient::{Coefficient, ComplexCoefficient, ConvertToRing},
-    domains::{Ring, float::Float, integer::Integer},
+    coefficient::{Coefficient, ConvertToRing},
+    domains::{
+        Ring,
+        float::{Complex, Float},
+        integer::Integer,
+    },
     poly::{PositiveExponent, Variable, polynomial::MultivariatePolynomial},
     state::{State, Workspace},
 };
@@ -416,7 +420,7 @@ impl Token {
             },
             Token::ID(x) => {
                 if x == "𝑖" {
-                    out.to_num(Coefficient::Complex(ComplexCoefficient::imag()));
+                    out.to_num(Coefficient::Complex(Complex::new_i()));
                 } else {
                     out.to_var(state.get_symbol(namespace.attach_namespace(x)));
                 }

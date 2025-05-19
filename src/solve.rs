@@ -3,11 +3,11 @@ use std::{ops::Neg, sync::Arc};
 use crate::{
     atom::{Atom, AtomCore, AtomView, Symbol},
     domains::{
+        InternalOrdering,
         float::{FloatField, Real, SingleFloat},
         integer::Z,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
-        InternalOrdering,
     },
     evaluate::FunctionMap,
     poly::{PositiveExponent, Variable},
@@ -23,6 +23,10 @@ impl AtomView<'_> {
         prec: N,
         max_iterations: usize,
     ) -> Result<N, String> {
+        if self.has_complex_coefficients() {
+            return Err("Complex coefficients are not supported".to_owned());
+        }
+
         let v = Atom::new_var(x);
         let f = self
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))
@@ -34,8 +38,8 @@ impl AtomView<'_> {
             .unwrap()
             .optimize(0, 0, None, false);
 
-        let mut f_e = f.map_coeff(&|x| init.from_rational(x));
-        let mut df_e = df.map_coeff(&|x| init.from_rational(x));
+        let mut f_e = f.map_coeff(&|x| init.from_rational(x.to_real().unwrap()));
+        let mut df_e = df.map_coeff(&|x| init.from_rational(x.to_real().unwrap()));
 
         let mut cur = init.clone();
 
@@ -92,6 +96,10 @@ impl AtomView<'_> {
             return Ok(vec![]);
         }
 
+        if system.iter().any(|a| a.has_complex_coefficients()) {
+            return Err("Complex coefficients are not supported".to_owned());
+        }
+
         if system.len() == 1 {
             return Ok(vec![system[0].nsolve(
                 vars[0],
@@ -109,7 +117,7 @@ impl AtomView<'_> {
                 a.to_evaluation_tree(&FunctionMap::new(), &avars)
                     .unwrap()
                     .optimize(0, 0, None, false)
-                    .map_coeff(&|x| init[0].from_rational(x))
+                    .map_coeff(&|x| init[0].from_rational(x.to_real().unwrap()))
             })
             .collect::<Vec<_>>();
 
@@ -123,7 +131,7 @@ impl AtomView<'_> {
                     .to_evaluation_tree(&FunctionMap::new(), &avars)
                     .unwrap()
                     .optimize(0, 0, None, false)
-                    .map_coeff(&|x| init[0].from_rational(x));
+                    .map_coeff(&|x| init[0].from_rational(x.to_real().unwrap()));
 
                 row.push(a);
             }
@@ -296,9 +304,9 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{representation::InlineVar, AtomCore, AtomView},
+        atom::{AtomCore, AtomView, representation::InlineVar},
         domains::{
-            float::{Real, F64},
+            float::{F64, Real},
             integer::Z,
             rational::Q,
             rational_polynomial::{RationalPolynomial, RationalPolynomialField},

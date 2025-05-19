@@ -3167,7 +3167,7 @@ impl<T: InternalOrdering> InternalOrdering for Complex<T> {
     }
 }
 
-impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
+impl<T: ConstructibleFloat> ConstructibleFloat for Complex<T> {
     fn new_from_i64(a: i64) -> Self {
         Complex {
             re: T::new_from_i64(a),
@@ -3192,7 +3192,7 @@ impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
     fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
         Complex {
             re: T::new_sample_unit(rng),
-            im: T::new_zero(),
+            im: T::new_sample_unit(rng),
         }
     }
 }
@@ -3283,6 +3283,15 @@ impl<T: Real> Complex<T> {
 impl<T: SingleFloat> Complex<T> {
     pub fn is_real(&self) -> bool {
         self.im.is_zero()
+    }
+
+    #[inline]
+    pub fn to_real(&self) -> Option<&T> {
+        if self.im.is_zero() {
+            Some(&self.re)
+        } else {
+            None
+        }
     }
 }
 

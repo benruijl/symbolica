@@ -25,10 +25,10 @@ use crate::poly::Variable;
 use crate::printer::PrintFunction;
 use crate::wrap_symbol;
 use crate::{
+    LicenseManager,
     atom::{Atom, Symbol},
     coefficient::Coefficient,
     domains::finite_field::FiniteFieldCore,
-    LicenseManager,
 };
 
 pub(crate) const SYMBOLICA_MAGIC: u32 = 0x37871367;
@@ -96,12 +96,11 @@ impl State {
     pub(crate) const SQRT: Symbol = Symbol::raw_fn(6, 0, false, false, false, false);
     pub(crate) const DERIVATIVE: Symbol = Symbol::raw_fn(7, 0, false, false, false, false);
     pub(crate) const E: Symbol = Symbol::raw_var(8, 0);
-    pub(crate) const I: Symbol = Symbol::raw_var(9, 0);
-    pub(crate) const PI: Symbol = Symbol::raw_var(10, 0);
+    pub(crate) const PI: Symbol = Symbol::raw_var(9, 0);
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 11] = [
-        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
+    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 10] = [
+        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝜋",
     ];
 
     pub fn is_builtin_name<S: AsRef<str>>(str: S) -> bool {
@@ -319,9 +318,7 @@ impl State {
                 } else {
                     let data = &ID_TO_STR[r.get_id() as usize].1;
                     if data.file.is_empty() {
-                        Err(
-                            format!("Symbol {} redefined with new attributes.", data.name).into(),
-                        )
+                        Err(format!("Symbol {} redefined with new attributes.", data.name).into())
                     } else {
                         Err(format!("Symbol {} redefined with new attributes. The first definition occurred here: {}:{}.", data.name, data.file, data.line).into())
                     }

@@ -1654,6 +1654,12 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         }
 
+        for x in &self.result_indices {
+            if x >= &self.reserved_indices {
+                reg_last_use[stack_to_reg[x]] = self.instructions.len();
+            }
+        }
+
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         enum MemOrReg {
             Mem(usize),

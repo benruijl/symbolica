@@ -25,14 +25,14 @@ crate-type = ["lib"]
 name = "symbolica"
 
 [features]
-default = ["tracing_only_warnings", "python_api"]
+default = ["tracing_only_warnings"]
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]
 # sort functions based on an argument-by-argument comparison
 full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
-python_api = ["pyo3", "bincode"]
+python_api = ["pyo3", "bincode", "pyo3-build-config"]
 # do not create a Python module but allow other crates to do so
 python_no_module = ["python_api"]
 # build a module that is independent of the specific Python version
@@ -52,7 +52,7 @@ version = "0.24"
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 
 [build-dependencies]
-pyo3-build-config = "0.25"
+pyo3-build-config = {version = "0.25", optional = true}
 
 [dependencies]
 ahash = "0.8.7"

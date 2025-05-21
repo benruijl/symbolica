@@ -24,8 +24,8 @@ use crate::{
     domains::{
         InternalOrdering,
         float::{
-            Complex, ConstructibleFloat, ErrorPropagatingFloat, NumericalFloatLike, Real,
-            RealNumberLike, SingleFloat,
+            Complex, ConstructibleFloat, ErrorPropagatingFloat, F64, Float, NumericalFloatLike,
+            Real, RealNumberLike, SingleFloat,
         },
         integer::Integer,
         rational::Rational,
@@ -1333,7 +1333,73 @@ impl<T> ExpressionEvaluator<T> {
     }
 }
 
-impl<T: std::fmt::Display> ExpressionEvaluator<T> {
+/// A number that can be exported to C++ code.
+pub trait ExportNumber {
+    /// Export the number as a string.
+    fn export(&self) -> String;
+    /// Export the number wrapped in a C++ type `T`.
+    fn export_wrapped(&self) -> String {
+        format!("T({})", self.export())
+    }
+    /// Check if the number is real.
+    fn is_real(&self) -> bool;
+}
+
+impl ExportNumber for f64 {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl ExportNumber for F64 {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl ExportNumber for Float {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl ExportNumber for Rational {
+    fn export(&self) -> String {
+        self.to_string()
+    }
+
+    fn is_real(&self) -> bool {
+        true
+    }
+}
+
+impl<T: ExportNumber + SingleFloat> ExportNumber for Complex<T> {
+    fn export(&self) -> String {
+        if self.im.is_zero() {
+            self.re.export()
+        } else {
+            format!("{}, {}", self.re.export(), self.im.export())
+        }
+    }
+
+    fn is_real(&self) -> bool {
+        self.im.is_zero()
+    }
+}
+
+impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
     /// With `inline_asm` set to any value other than `None`,
     /// high-performance inline ASM code will be generated for most
@@ -1394,7 +1460,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
+            res += &format!("\tZ{} = {};\n", i, self.stack[i].export_wrapped());
         }
 
         Self::export_cpp_impl(&self.instructions, &mut res);
@@ -1405,10 +1471,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n";
 
-        res += &format!(
-            "\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
-            function_name
-        );
+        if self.stack.iter().all(|x| x.is_real()) {
+            res += &format!(
+                "\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
+                function_name
+            );
+        } else {
+            res += &format!(
+                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+                function_name
+            );
+        }
+
         res += &format!(
             "\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
             function_name
@@ -1497,7 +1571,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             self.reserved_indices - self.param_count + 1,
             {
                 let mut nums = (self.param_count..self.reserved_indices)
-                    .map(|i| format!("std::complex<double>({})", self.stack[i])) // FIXME: print complex!
+                    .map(|i| format!("std::complex<double>({})", self.stack[i].export()))
                     .collect::<Vec<_>>();
                 nums.push("std::complex<double>(0, -0.)".to_string()); // used for inversion
                 nums.join(",")
@@ -1513,28 +1587,34 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n\n";
 
-        res += &format!(
-            "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
-            function_name,
-            self.reserved_indices - self.param_count + 1,
-            {
-                let mut nums = (self.param_count..self.reserved_indices)
-                    .map(|i| format!("double({})", self.stack[i]))
-                    .collect::<Vec<_>>();
-                nums.push("1".to_string()); // used for inversion
-                nums.join(",")
-            }
-        );
+        if self.stack.iter().all(|x| x.is_real()) {
+            res += &format!(
+                "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+                function_name,
+                self.reserved_indices - self.param_count + 1,
+                {
+                    let mut nums = (self.param_count..self.reserved_indices)
+                        .map(|i| format!("double({})", self.stack[i].export()))
+                        .collect::<Vec<_>>();
+                    nums.push("1".to_string()); // used for inversion
+                    nums.join(",")
+                }
+            );
 
-        res += &format!(
-            "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n",
-            function_name
-        );
+            res += &format!(
+                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n",
+                function_name
+            );
 
-        self.export_asm_double_impl(&self.instructions, function_name, asm_flavour, &mut res);
+            self.export_asm_double_impl(&self.instructions, function_name, asm_flavour, &mut res);
 
-        res += "\treturn;\n}\n";
-
+            res += "\treturn;\n}\n";
+        } else {
+            res += &format!(
+                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+                function_name,
+            );
+        }
         res
     }
 

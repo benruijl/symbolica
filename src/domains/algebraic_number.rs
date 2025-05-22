@@ -5,12 +5,14 @@ use std::sync::Arc;
 use rand::Rng;
 
 use crate::{
+    atom::Atom,
     coefficient::ConvertToRing,
     combinatorics::CombinationIterator,
     poly::{
         PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial,
     },
+    symbol,
     tensors::matrix::Matrix,
 };
 
@@ -360,6 +362,35 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
             }
         } else {
             AlgebraicNumber { poly }
+        }
+    }
+}
+
+impl<R: Ring> AlgebraicExtension<R> {
+    /// Create a new algebraic extension `R(i)`.
+    /// This ring can be used to convert expressions with complex coefficients
+    /// to polynomials.
+    ///
+    /// # Examples
+    ///
+    /// Creating Gaussian rationals:
+    /// ```rust
+    /// use symbolica::{parse, atom::AtomCore, domains::{algebraic_number::AlgebraicExtension, rational::Q}, poly::factor::Factorize};
+    /// let Q_i = AlgebraicExtension::new_complex(Q);
+    /// let poly = parse!("(-1+6𝑖)*x+(4+2𝑖)*x^2+3𝑖").unwrap().to_polynomial::<_, u8>(&Q_i, None);
+    /// assert_eq!(poly.factor().len(), 2);
+    /// ```
+    pub fn new_complex(ring: R) -> Self {
+        let poly = MultivariatePolynomial::new(
+            &ring,
+            Some(2),
+            Arc::new(vec![symbol!(Atom::I_STR).into()]),
+        );
+
+        let poly = poly.monomial(ring.one(), vec![2]) + poly.constant(ring.one());
+
+        AlgebraicExtension {
+            poly: Arc::new(poly),
         }
     }
 }

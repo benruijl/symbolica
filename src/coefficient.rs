@@ -25,6 +25,7 @@ use crate::{
     atom::{Atom, AtomView},
     domains::{
         EuclideanDomain, Field, InternalOrdering, Ring,
+        algebraic_number::AlgebraicExtension,
         atom::AtomField,
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
@@ -735,6 +736,95 @@ where
             }
             CoefficientView::RationalPolynomial(_) => {
                 panic!("Cannot convert rational polynomial to finite field")
+            }
+        }
+    }
+}
+
+impl ConvertToRing for AlgebraicExtension<Q> {
+    #[inline]
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        self.constant(number.into())
+    }
+
+    #[inline]
+    fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
+        match number {
+            Coefficient::Complex(r) => {
+                if r.is_real() {
+                    self.constant(r.re.clone())
+                } else {
+                    if &self.poly().exponents == &[0, 2]
+                        && self.poly().get_constant() == Rational::one()
+                    {
+                        self.to_element(
+                            self.poly().monomial(r.im.clone(), vec![1])
+                                + self.poly().constant(r.re.clone()),
+                        )
+                    } else {
+                        panic!(
+                            "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                        )
+                    }
+                }
+            }
+            Coefficient::Float(_) => panic!("Cannot convert float to rational"),
+            Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to extension"),
+            Coefficient::RationalPolynomial(_) => {
+                // TODO: this may be possible!
+                panic!("Cannot convert rational polynomial to extension")
+            }
+        }
+    }
+
+    #[inline]
+    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element {
+        match number {
+            CoefficientView::Natural(r, d, cr, cd) => {
+                if cr == 0 {
+                    self.constant(Rational::from_unchecked(r, d))
+                } else {
+                    if &self.poly().exponents == &[0, 2]
+                        && self.poly().get_constant() == Rational::one()
+                    {
+                        self.to_element(
+                            self.poly()
+                                .monomial(Rational::from_unchecked(cr, cd), vec![1])
+                                + self.poly().constant(Rational::from_unchecked(r, d)),
+                        )
+                    } else {
+                        panic!(
+                            "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                        )
+                    }
+                }
+            }
+            CoefficientView::Large(r, i) => {
+                if i.is_zero() {
+                    self.constant(r.to_rat())
+                } else {
+                    if &self.poly().exponents == &[0, 2]
+                        && self.poly().get_constant() == Rational::one()
+                    {
+                        self.to_element(
+                            self.poly().monomial(i.to_rat(), vec![1])
+                                + self.poly().constant(r.to_rat()),
+                        )
+                    } else {
+                        panic!(
+                            "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                        )
+                    }
+                }
+            }
+            CoefficientView::Float(_, _) => {
+                panic!("Cannot convert float to rational")
+            }
+            CoefficientView::FiniteField(_, _) => {
+                panic!("Cannot convert finite field to rational")
+            }
+            CoefficientView::RationalPolynomial(_) => {
+                panic!("Cannot convert rational polynomial to rational")
             }
         }
     }

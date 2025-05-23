@@ -866,9 +866,21 @@ impl<'a> From<Symbol> for AtomOrView<'a> {
     }
 }
 
+impl<'a> From<&'a Symbol> for AtomOrView<'a> {
+    fn from(s: &'a Symbol) -> AtomOrView<'a> {
+        AtomOrView::Atom(Atom::new_var(*s))
+    }
+}
+
 impl<'a> From<Atom> for AtomOrView<'a> {
     fn from(a: Atom) -> AtomOrView<'a> {
         AtomOrView::Atom(a)
+    }
+}
+
+impl<'a> From<&'a Atom> for AtomOrView<'a> {
+    fn from(a: &'a Atom) -> AtomOrView<'a> {
+        AtomOrView::View(a.as_view())
     }
 }
 
@@ -1511,19 +1523,22 @@ impl FunctionBuilder {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<T: AtomCore>(mut self, arg: T) -> FunctionBuilder {
+    pub fn add_arg<'a, T: Into<AtomOrView<'a>>>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
-            f.add_arg(arg.as_atom_view());
+            f.add_arg(arg.into().as_view());
         }
 
         self
     }
 
     /// Add multiple arguments to the function.
-    pub fn add_args<T: AtomCore>(mut self, args: &[T]) -> FunctionBuilder {
+    pub fn add_args<'a, T>(mut self, args: &'a [T]) -> FunctionBuilder
+    where
+        &'a T: Into<AtomOrView<'a>>,
+    {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             for a in args {
-                f.add_arg(a.as_atom_view());
+                f.add_arg(a.into().as_view());
             }
         }
 

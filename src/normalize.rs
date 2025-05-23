@@ -3,7 +3,7 @@ use std::{cmp::Ordering, ops::DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    atom::{representation::InlineNum, Atom, AtomView, Fun, Symbol},
+    atom::{Atom, AtomView, Fun, Symbol, representation::InlineNum},
     coefficient::{Coefficient, CoefficientView},
     domains::{float::Real, integer::Z, rational::Q},
     poly::Variable,
@@ -751,6 +751,7 @@ impl AtomView<'_> {
 
                 atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
 
+                let mut second_pass = false;
                 if !atom_test_buf.is_empty() {
                     let out_mul = out.to_mul();
 
@@ -777,12 +778,23 @@ impl AtomView<'_> {
                                 }
                             }
                             last_buf = cur_buf;
+                        } else if let AtomView::Mul(_) = last_buf.as_view() {
+                            // a sub-multiplication was created during the merge of two factors, e.g. sqrt(x*y)*sqrt(x*y) = x*y
+                            // we need a second pass to normalize the multiplication
+                            second_pass = true;
                         }
                     }
 
                     if cur_len == 0 {
                         out.set_from_view(&last_buf.as_view());
                     } else {
+                        if second_pass {
+                            out_mul.extend(last_buf.as_view());
+                            out.as_view().normalize(workspace, &mut tmp);
+                            out.set_from_view(&tmp.as_view());
+                            return;
+                        }
+
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
                             if !n.is_one() {

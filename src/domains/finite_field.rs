@@ -6,8 +6,8 @@ use std::hash::Hash;
 use std::ops::{Deref, Neg};
 
 use crate::domains::integer::Integer;
-use crate::poly::gcd::PolynomialGCD;
 use crate::poly::Variable::Temporary;
+use crate::poly::gcd::PolynomialGCD;
 use crate::printer::{PrintOptions, PrintState};
 
 use super::algebraic_number::AlgebraicExtension;
@@ -112,11 +112,7 @@ where
         let i = self.from_element(a).to_integer();
         let p = self.get_prime().to_integer();
 
-        if &i * &2.into() > p {
-            &i - &p
-        } else {
-            i
-        }
+        if &i * &2.into() > p { &i - &p } else { i }
     }
 
     fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<FiniteField<UField>>
@@ -229,11 +225,7 @@ impl Zp {
         if a as u64 <= 1u64 << 31 {
             let res = (((1u64 << 31) % a as u64) << 1) as u32;
 
-            if res < a {
-                res
-            } else {
-                res - a
-            }
+            if res < a { res } else { res - a }
         } else {
             a.wrapping_neg()
         }
@@ -578,11 +570,7 @@ impl Zp64 {
         if a as u128 <= 1u128 << 63 {
             let res = (((1u128 << 63) % a as u128) << 1) as u64;
 
-            if res < a {
-                res
-            } else {
-                res - a
-            }
+            if res < a { res } else { res - a }
         } else {
             a.wrapping_neg()
         }
@@ -1032,11 +1020,7 @@ impl Ring for FiniteField<Two> {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        if e == 0 {
-            1
-        } else {
-            *b
-        }
+        if e == 0 { 1 } else { *b }
     }
 
     #[inline]
@@ -1062,11 +1046,7 @@ impl Ring for FiniteField<Two> {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if *b == 0 {
-            None
-        } else {
-            Some(*a)
-        }
+        if *b == 0 { None } else { Some(*a) }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -1277,11 +1257,7 @@ impl Ring for FiniteField<Mersenne64> {
     /// Computes -x mod n.
     #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        if *a == 0 {
-            *a
-        } else {
-            Mersenne64::PRIME - a
-        }
+        if *a == 0 { *a } else { Mersenne64::PRIME - a }
     }
 
     #[inline]
@@ -1356,8 +1332,9 @@ impl Ring for FiniteField<Mersenne64> {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng
-            .random_range(range.0.max(0)..range.1.min(Mersenne64::PRIME.min(i64::MAX as u64) as i64));
+        let r = rng.random_range(
+            range.0.max(0)..range.1.min(Mersenne64::PRIME.min(i64::MAX as u64) as i64),
+        );
         r as u64
     }
 

@@ -4,25 +4,25 @@
 use std::{cmp::Reverse, sync::Arc};
 
 use ahash::{HashMap, HashSet, HashSetExt};
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use tracing::debug;
 
 use crate::{
     combinatorics::CombinationIterator,
     domains::{
+        EuclideanDomain, Field, InternalOrdering, Ring,
         algebraic_number::AlgebraicExtension,
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, PrimeIteratorU64,
             ToFiniteField, Zp, Zp64,
         },
-        integer::{gcd_unsigned, Integer, IntegerRing, Z},
-        rational::{RationalField, Q},
-        EuclideanDomain, Field, InternalOrdering, Ring,
+        integer::{Integer, IntegerRing, Z, gcd_unsigned},
+        rational::{Q, RationalField},
     },
     poly::Variable,
 };
 
-use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, LexOrder, PositiveExponent};
+use super::{LexOrder, PositiveExponent, gcd::PolynomialGCD, polynomial::MultivariatePolynomial};
 
 /// A polynomial that can be factorized.
 pub trait Factorize: Sized {
@@ -82,11 +82,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
         let lowest_rank_var = (0..self.nvars())
             .filter_map(|x| {
                 let d = self.degree(x);
-                if d > E::zero() {
-                    Some((x, d))
-                } else {
-                    None
-                }
+                if d > E::zero() { Some((x, d)) } else { None }
             })
             .min_by_key(|a| a.1)
             .unwrap()
@@ -802,10 +798,10 @@ impl<E: PositiveExponent> Factorize
 }
 
 impl<
-        UField: FiniteFieldWorkspace,
-        F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
-        E: PositiveExponent,
-    > Factorize for MultivariatePolynomial<F, E, LexOrder>
+    UField: FiniteFieldWorkspace,
+    F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
+    E: PositiveExponent,
+> Factorize for MultivariatePolynomial<F, E, LexOrder>
 where
     FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
     <FiniteField<UField> as Ring>::Element: Copy,
@@ -957,10 +953,10 @@ where
 }
 
 impl<
-        UField: FiniteFieldWorkspace,
-        F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
-        E: PositiveExponent,
-    > MultivariatePolynomial<F, E, LexOrder>
+    UField: FiniteFieldWorkspace,
+    F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
+    E: PositiveExponent,
+> MultivariatePolynomial<F, E, LexOrder>
 where
     FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
     <FiniteField<UField> as Ring>::Element: Copy,
@@ -1647,10 +1643,7 @@ where
         if !lcoeff_left.is_one() {
             panic!(
                 "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
-                self,
-                order,
-                sample_points,
-                lcoeff_left
+                self, order, sample_points, lcoeff_left
             );
         }
 
@@ -3163,9 +3156,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 if !r.is_zero() {
                     panic!(
                         "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
-                        self,
-                        order,
-                        sample_points
+                        self, order, sample_points
                     );
                 }
 
@@ -3176,10 +3167,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         if !lcoeff_left.is_constant() {
             panic!(
                 "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
-                self,
-                order,
-                sample_points,
-                lcoeff_left
+                self, order, sample_points, lcoeff_left
             );
         }
 
@@ -3749,11 +3737,11 @@ mod test {
     use crate::{
         atom::AtomCore,
         domains::{
+            InternalOrdering,
             algebraic_number::AlgebraicExtension,
-            finite_field::{Zp, Z2},
+            finite_field::{Z2, Zp},
             integer::Z,
             rational::Q,
-            InternalOrdering,
         },
         parse,
         poly::factor::Factorize,

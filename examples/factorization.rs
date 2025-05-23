@@ -4,7 +4,7 @@ use symbolica::{
     atom::AtomCore,
     domains::{finite_field::Zp, integer::Z},
     parse,
-    poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
+    poly::{Variable, factor::Factorize, polynomial::MultivariatePolynomial},
     symbol,
 };
 

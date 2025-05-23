@@ -4837,9 +4837,11 @@ impl PythonExpression {
                 ));
             }
 
+            // TODO: support complex coefficient
+
             let f = AlgebraicExtension::new(p);
             PythonNumberFieldPolynomial {
-                poly: self.expr.to_polynomial(&Q, var_map).to_number_field(&f),
+                poly: self.expr.to_polynomial(&f, var_map).to_number_field(f),
             }
             .into_py_any(py)
         } else {

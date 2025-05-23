@@ -9,8 +9,8 @@ use std::{
 
 use rand::Rng;
 use rug::{
-    ops::{Pow, RemRounding},
     Complete, Integer as MultiPrecisionInteger,
+    ops::{Pow, RemRounding},
 };
 
 use crate::{
@@ -19,13 +19,13 @@ use crate::{
 };
 
 use super::{
+    EuclideanDomain, InternalOrdering, Ring, SelfRing,
     finite_field::{
-        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Zp,
-        Zp64, Z2,
+        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Z2, Zp,
+        Zp64,
     },
     float::{FloatField, NumericalFloatLike, Real, RealNumberLike, SingleFloat},
     rational::Rational,
-    EuclideanDomain, InternalOrdering, Ring, SelfRing,
 };
 
 /// The first 100 primes.
@@ -912,11 +912,7 @@ impl Integer {
     pub fn symmetric_mod(self, p: &Integer) -> Integer {
         let c = self % p;
 
-        if &c + &c > *p {
-            c - p
-        } else {
-            c
-        }
+        if &c + &c > *p { c - p } else { c }
     }
 
     /// Compute the modular inverse of `self` in the ring with size `n`.
@@ -1312,11 +1308,7 @@ impl Ring for IntegerRing {
         }
 
         let r = a / b;
-        if *a == &r * b {
-            Some(r)
-        } else {
-            None
-        }
+        if *a == &r * b { Some(r) } else { None }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -2402,11 +2394,7 @@ impl Ring for MultiPrecisionIntegerRing {
 
         let (r, q) = a.div_rem_ref(b).complete();
 
-        if q.is_zero() {
-            Some(r)
-        } else {
-            None
-        }
+        if q.is_zero() { Some(r) } else { None }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -2547,7 +2535,7 @@ mod test {
     use rug::Complete;
 
     use crate::domains::{
-        float::{Float, F64},
+        float::{F64, Float},
         integer::{extended_gcd, extended_gcd_i128},
     };
 

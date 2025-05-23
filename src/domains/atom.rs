@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+    Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, integer::Integer,
 };
 
 use dyn_clone::DynClone;
@@ -80,11 +80,7 @@ impl AtomField {
     fn normalize(&self, r: Atom) -> Atom {
         if let Some(f) = &self.custom_normalization {
             let mut res = Atom::new();
-            if f(r.as_view(), &mut res) {
-                res
-            } else {
-                r
-            }
+            if f(r.as_view(), &mut res) { res } else { r }
         } else {
             r
         }

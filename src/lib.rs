@@ -216,22 +216,24 @@ impl LicenseManager {
 
                 drop(o);
 
-                std::thread::spawn(move || loop {
-                    let new_port =
-                        env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
+                std::thread::spawn(move || {
+                    loop {
+                        let new_port =
+                            env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
 
-                    if port != new_port {
-                        println!("{}", MULTIPLE_INSTANCE_WARNING);
-                        abort();
-                    }
-
-                    match TcpListener::bind(format!("127.0.0.1:{}", port)) {
-                        Ok(_) => {
-                            std::thread::sleep(Duration::from_secs(1));
-                        }
-                        Err(_) => {
+                        if port != new_port {
                             println!("{}", MULTIPLE_INSTANCE_WARNING);
                             abort();
+                        }
+
+                        match TcpListener::bind(format!("127.0.0.1:{}", port)) {
+                            Ok(_) => {
+                                std::thread::sleep(Duration::from_secs(1));
+                            }
+                            Err(_) => {
+                                println!("{}", MULTIPLE_INSTANCE_WARNING);
+                                abort();
+                            }
                         }
                     }
                 });

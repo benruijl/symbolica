@@ -5,10 +5,10 @@ use std::sync::{Arc, RwLock};
 
 use smartstring::{LazyCompact, SmartString};
 
+use crate::domains::SelfRing;
 use crate::domains::finite_field::{Zp, Zp64};
 use crate::domains::integer::Z;
 use crate::domains::rational::Q;
-use crate::domains::SelfRing;
 use crate::parser::Token;
 use crate::poly::Variable;
 use crate::{

@@ -1390,7 +1390,7 @@ impl AtomView<'_> {
                                             a.extend(b.as_view());
                                         }
                                     } else {
-                                        unreachable!("Equal terms do not merge");
+                                        unreachable!("Equal terms do not merge:{}\n{}", ss, tt);
                                     }
 
                                     curst = t.next();

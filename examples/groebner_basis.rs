@@ -2,7 +2,7 @@ use symbolica::{
     atom::AtomCore,
     domains::finite_field::Zp,
     parse,
-    poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
+    poly::{GrevLexOrder, groebner::GroebnerBasis, polynomial::MultivariatePolynomial},
     symbol,
 };
 

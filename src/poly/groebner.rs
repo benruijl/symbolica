@@ -53,13 +53,13 @@ use std::{cmp::Ordering, rc::Rc};
 use ahash::HashMap;
 
 use crate::domains::{
-    algebraic_number::AlgebraicExtension,
-    finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64, Z2},
-    rational::RationalField,
     Field, Ring,
+    algebraic_number::AlgebraicExtension,
+    finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Z2, Zp, Zp64},
+    rational::RationalField,
 };
 
-use super::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder};
+use super::{Exponent, MonomialOrder, polynomial::MultivariatePolynomial};
 
 #[derive(Debug)]
 pub struct CriticalPair<R: Field, E: Exponent, O: MonomialOrder> {
@@ -673,11 +673,7 @@ impl Echelonize for Zp {
                 even_iter = !even_iter;
             }
 
-            if even_iter {
-                u1
-            } else {
-                prime - u1
-            }
+            if even_iter { u1 } else { prime - u1 }
         }
 
         matrix.resize(selected_polys.len(), vec![]);
@@ -997,7 +993,7 @@ mod test {
         atom::AtomCore,
         domains::finite_field::Zp,
         parse,
-        poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
+        poly::{GrevLexOrder, groebner::GroebnerBasis, polynomial::MultivariatePolynomial},
     };
 
     #[test]

@@ -2,9 +2,9 @@
 
 use ahash::{HashMap, HashSet, HashSetExt};
 use rand;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use std::borrow::Cow;
-use std::cmp::{max, min, Ordering};
+use std::cmp::{Ordering, max, min};
 use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument};
@@ -15,13 +15,13 @@ use crate::domains::finite_field::{
     ToFiniteField, Zp,
 };
 use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES, Z};
-use crate::domains::rational::{Rational, RationalField, Q};
+use crate::domains::rational::{Q, Rational, RationalField};
 use crate::domains::{EuclideanDomain, Field, Ring};
 use crate::poly::INLINED_EXPONENTS;
 use crate::tensors::matrix::{Matrix, MatrixError};
 
-use super::polynomial::MultivariatePolynomial;
 use super::PositiveExponent;
+use super::polynomial::MultivariatePolynomial;
 
 /// The maximum power of a variable that is cached
 pub(crate) const POW_CACHE_SIZE: usize = 1000;
@@ -920,16 +920,18 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                             second_index += 1;
                             if second_index == shape.len() {
                                 // the system remains underdetermined, that means the shape is bad
-                                debug!("Could not determine monomial scaling due to a bad shape\na={}\nb={}\na_ldegree={}, b_ldegree={}\nbounds={:?}, vars={:?}, main_var={},\nmat={}\nrhs={},\nshape=",
-                            a,
-                            b,
-                            a_ldegree,
-                            b_ldegree,
-                            bounds,
-                            vars,
-                            main_var,
-                            row_reduced_augmented_matrix,
-                            rhs);
+                                debug!(
+                                    "Could not determine monomial scaling due to a bad shape\na={}\nb={}\na_ldegree={}, b_ldegree={}\nbounds={:?}, vars={:?}, main_var={},\nmat={}\nrhs={},\nshape=",
+                                    a,
+                                    b,
+                                    a_ldegree,
+                                    b_ldegree,
+                                    bounds,
+                                    vars,
+                                    main_var,
+                                    row_reduced_augmented_matrix,
+                                    rhs
+                                );
                                 for s in shape {
                                     debug!("\t({}, {})", s.0, s.1);
                                 }
@@ -1142,11 +1144,13 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
 
             let mut lc = gv.lcoeff_varorder(vars);
 
-            let mut gseq = vec![gv.clone().mul_coeff(
-                gamma
-                    .ring
-                    .div(&gamma.replace(lastvar, &v).coefficients[0], &lc),
-            )];
+            let mut gseq = vec![
+                gv.clone().mul_coeff(
+                    gamma
+                        .ring
+                        .div(&gamma.replace(lastvar, &v).coefficients[0], &lc),
+                ),
+            ];
             let mut vseq = vec![v];
 
             // sparse reconstruction
@@ -1289,7 +1293,8 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
 
             // if the gcd is bad, we had a bad number
             debug!(
-                "Division test failed: gcd may be bad or probabilistic division test is unlucky: a1 {} b1 {} g1 {}", a1, b1, g1
+                "Division test failed: gcd may be bad or probabilistic division test is unlucky: a1 {} b1 {} g1 {}",
+                a1, b1, g1
             );
         }
     }
@@ -1695,11 +1700,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
             .map(|i| {
                 let da = a.degree(i);
                 let db = b.degree(i);
-                if da < db {
-                    da
-                } else {
-                    db
-                }
+                if da < db { da } else { db }
             })
             .collect();
 
@@ -2550,11 +2551,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
-        if a.lcoeff().is_negative() {
-            -a
-        } else {
-            a
-        }
+        if a.lcoeff().is_negative() { -a } else { a }
     }
 }
 
@@ -2608,19 +2605,12 @@ impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
-        if a.lcoeff().is_negative() {
-            -a
-        } else {
-            a
-        }
+        if a.lcoeff().is_negative() { -a } else { a }
     }
 }
 
-impl<
-        UField: FiniteFieldWorkspace,
-        F: GaloisField<Base = FiniteField<UField>>,
-        E: PositiveExponent,
-    > PolynomialGCD<E> for F
+impl<UField: FiniteFieldWorkspace, F: GaloisField<Base = FiniteField<UField>>, E: PositiveExponent>
+    PolynomialGCD<E> for F
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
@@ -2950,11 +2940,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
                         {
                             gmc_pos += 1;
                             let r = &gmc_a.poly.coefficients[gmc_pos - 1];
-                            if r.is_negative() {
-                                r + &m
-                            } else {
-                                r.clone()
-                            }
+                            if r.is_negative() { r + &m } else { r.clone() }
                         } else {
                             Integer::zero()
                         };

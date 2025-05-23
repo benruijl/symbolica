@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use symbolica::{atom::AtomCore, domains::integer::Z, parse, parser::Token, poly::Variable, symbol};
+use symbolica::{
+    atom::AtomCore, domains::integer::Z, parse, parser::Token, poly::Variable, symbol,
+};
 
 #[test]
 fn large_gcd_single_scale() {

@@ -12,7 +12,7 @@ use std::{
 };
 
 use ahash::{AHasher, HashMap};
-use rand::{Rng, rng};
+use rand::Rng;
 
 use self_cell::self_cell;
 
@@ -31,6 +31,7 @@ use crate::{
         rational::Rational,
     },
     id::ConditionResult,
+    numerical_integration::MonteCarloRng,
     state::State,
 };
 
@@ -348,24 +349,36 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
         match (self, other) {
             (Expression::Const(a), Expression::Const(b)) => a.internal_cmp(b),
             (Expression::Parameter(a), Expression::Parameter(b)) => a.cmp(b),
-            (Expression::Eval(a, _), Expression::Eval(b, _)) => a.cmp(b),
+            (Expression::Eval(a, arg1), Expression::Eval(b, arg2)) => {
+                a.cmp(b).then_with(|| arg1.cmp(arg2))
+            }
             (Expression::Add(a), Expression::Add(b)) => a.cmp(b),
             (Expression::Mul(a), Expression::Mul(b)) => a.cmp(b),
             (Expression::Pow(a), Expression::Pow(b)) => a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)),
             (Expression::Powf(a), Expression::Powf(b)) => a.cmp(b),
             (Expression::ReadArg(a), Expression::ReadArg(b)) => a.cmp(b),
-            (Expression::BuiltinFun(a, _), Expression::BuiltinFun(b, _)) => a.cmp(b),
+            (Expression::BuiltinFun(a, arg1), Expression::BuiltinFun(b, arg2)) => {
+                a.cmp(b).then_with(|| arg1.cmp(arg2))
+            }
             (Expression::SubExpression(a), Expression::SubExpression(b)) => a.cmp(b),
             (Expression::Const(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::Const(_)) => std::cmp::Ordering::Greater,
             (Expression::Parameter(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::Parameter(_)) => std::cmp::Ordering::Greater,
             (Expression::Eval(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::Eval(_, _)) => std::cmp::Ordering::Greater,
             (Expression::Add(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::Add(_)) => std::cmp::Ordering::Greater,
             (Expression::Mul(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::Mul(_)) => std::cmp::Ordering::Greater,
             (Expression::Pow(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::Pow(_)) => std::cmp::Ordering::Greater,
             (Expression::Powf(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::Powf(_)) => std::cmp::Ordering::Greater,
             (Expression::ReadArg(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::ReadArg(_)) => std::cmp::Ordering::Greater,
             (Expression::BuiltinFun(_, _), _) => std::cmp::Ordering::Less,
-            (Expression::SubExpression(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::BuiltinFun(_, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -433,16 +446,16 @@ impl<T: Clone> HashedExpression<T> {
     }
 }
 
-impl<T: Ord> PartialOrd for HashedExpression<T> {
+impl<T: Eq + InternalOrdering> PartialOrd for HashedExpression<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Ord> Ord for HashedExpression<T> {
+impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (HashedExpression::Const(_, a), HashedExpression::Const(_, b)) => a.cmp(b),
+            (HashedExpression::Const(_, a), HashedExpression::Const(_, b)) => a.internal_cmp(b),
             (HashedExpression::Parameter(_, a), HashedExpression::Parameter(_, b)) => a.cmp(b),
             (HashedExpression::Eval(_, a, b), HashedExpression::Eval(_, c, d)) => {
                 a.cmp(c).then_with(|| b.cmp(d))
@@ -756,7 +769,7 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -878,7 +891,7 @@ impl<T: Default> ExpressionEvaluator<T> {
         });
 
         // sort in other direction since we pop
-        to_remove.sort_by_key(|x| x.1.len());
+        to_remove.sort_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| a.cmp(b)));
 
         let total_remove = to_remove.len();
 
@@ -3081,7 +3094,7 @@ impl<T: Clone> ExpressionEvaluator<T> {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
@@ -3439,7 +3452,7 @@ impl EvalTree<Complex<Rational>> {
 
                 // for now, limit for parameters only
                 v.retain(|(x, _)| matches!(x, Expression::Parameter(_)));
-                v.sort_by_key(|k| std::cmp::Reverse(k.1));
+                v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
                 v.into_iter().map(|(k, _)| k).collect::<Vec<_>>()
             }
         };
@@ -3813,13 +3826,15 @@ impl Expression<Complex<Rational>> {
 
         std::thread::scope(|s| {
             for i in 0..n_cores {
+                let mut rng = MonteCarloRng::new(0, i);
+
                 let mut cvars = vars.to_vec();
                 let best_scheme = best_scheme.clone();
                 let best_mul = best_mul.clone();
                 let best_add = best_add.clone();
+                let mut last_mul = usize::MAX;
+                let mut last_add = usize::MAX;
                 s.spawn(move || {
-                    let mut r = rng();
-
                     for j in 0..iterations / n_cores {
                         // try a random swap
                         let mut t1 = 0;
@@ -3833,8 +3848,8 @@ impl Expression<Complex<Rational>> {
                             let perm = &p[i * (p.len() / n_cores) + j];
                             cvars = perm.iter().map(|x| vars[*x].clone()).collect();
                         } else {
-                            t1 = r.random_range(0..cvars.len());
-                            t2 = r.random_range(0..cvars.len() - 1);
+                            t1 = rng.random_range(0..cvars.len());
+                            t2 = rng.random_range(0..cvars.len() - 1);
 
                             cvars.swap(t1, t2);
                         }
@@ -3856,21 +3871,45 @@ impl Expression<Complex<Rational>> {
                         }
 
                         // prefer fewer multiplications
-                        if cur_ops.1 <= best_mul.load(Ordering::Relaxed)
-                            || cur_ops.1 == best_mul.load(Ordering::Relaxed)
-                                && cur_ops.0 <= best_add.load(Ordering::Relaxed)
-                        {
+                        if cur_ops.1 <= last_mul || cur_ops.1 == last_mul && cur_ops.0 <= last_add {
                             if verbose {
                                 println!(
-                                    "Accept move at core iteration {}/{}: {} additions and {} multiplications",
-                                    j, iterations / n_cores,
-                                    cur_ops.0, cur_ops.1
+                                    "Accept move at step {}/{}: {} + and {} ×",
+                                    j,
+                                    iterations / n_cores,
+                                    cur_ops.0,
+                                    cur_ops.1
                                 );
                             }
 
-                            best_mul.store(cur_ops.1, Ordering::Relaxed);
-                            best_add.store(cur_ops.0, Ordering::Relaxed);
-                            best_scheme.lock().unwrap().clone_from_slice(&cvars);
+                            last_add = cur_ops.0;
+                            last_mul = cur_ops.1;
+
+                            if cur_ops.1 <= best_mul.load(Ordering::Relaxed)
+                                || cur_ops.1 == best_mul.load(Ordering::Relaxed)
+                                    && cur_ops.0 <= best_add.load(Ordering::Relaxed)
+                            {
+                                let mut best_scheme = best_scheme.lock().unwrap();
+
+                                // check again if it is the best now that we have locked
+                                let best_mul_l = best_mul.load(Ordering::Relaxed);
+                                let best_add_l = best_add.load(Ordering::Relaxed);
+                                if cur_ops.1 <= best_mul_l
+                                    || cur_ops.1 == best_mul_l && cur_ops.0 <= best_add_l
+                                {
+                                    if cur_ops.0 == best_add_l && cur_ops.1 == best_mul_l {
+                                        if *best_scheme < cvars {
+                                            // on a draw, accept the lexicographical minimum
+                                            // to get a deterministic scheme
+                                            *best_scheme = cvars.clone();
+                                        }
+                                    } else {
+                                        best_mul.store(cur_ops.1, Ordering::Relaxed);
+                                        best_add.store(cur_ops.0, Ordering::Relaxed);
+                                        *best_scheme = cvars.clone();
+                                    }
+                                }
+                            }
                         } else {
                             cvars.swap(t1, t2);
                         }
@@ -3878,6 +3917,14 @@ impl Expression<Complex<Rational>> {
                 });
             }
         });
+
+        if verbose {
+            println!(
+                "Final scheme: {} + and {} ×",
+                best_add.load(Ordering::Relaxed),
+                best_mul.load(Ordering::Relaxed)
+            );
+        }
 
         Arc::try_unwrap(best_scheme).unwrap().into_inner().unwrap()
     }
@@ -3979,9 +4026,13 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
 
         h.retain(|_, v| *v > 1);
 
+        let mut v: Vec<_> = h.iter().map(|(k, v)| (*v, (*k).clone())).collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
         // make the second argument a unique index of the subexpression
-        for (i, v) in h.values_mut().enumerate() {
-            *v = self.subexpressions.len() + i;
+        for (i, (index, e)) in v.iter_mut().enumerate() {
+            *index = self.subexpressions.len() + i;
+            *h.get_mut(e).unwrap() = *index;
         }
 
         let mut n_hash_tree = hashed_tree.clone();
@@ -3990,10 +4041,6 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
         }
 
         self.tree = n_hash_tree.iter().map(|x| x.to_expression()).collect();
-
-        let mut v: Vec<_> = h.clone().into_iter().map(|(k, v)| (v, k)).collect();
-
-        v.sort_by_key(|k| k.0); // not needed
 
         // replace subexpressions in subexpressions and
         // sort them based on their dependencies
@@ -5141,7 +5188,7 @@ impl<'a> AtomView<'a> {
     fn zero_test_impl(&self, iterations: usize, tolerance: f64) -> ConditionResult {
         // collect all variables and functions and fill in random variables
 
-        let mut rng = rand::rng();
+        let mut rng = MonteCarloRng::new(0, 0);
 
         if self.has_complex_coefficients() {
             let mut vars: HashMap<_, _> = self

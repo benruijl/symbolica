@@ -8,18 +8,18 @@ use std::{
 
 use crate::{
     domains::{
+        EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
         float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
-        rational::{Rational, RationalField, Q},
-        EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+        rational::{Q, Rational, RationalField},
     },
     printer::{PrintOptions, PrintState},
 };
 
 use super::{
+    PositiveExponent, Variable,
     factor::Factorize,
     polynomial::{MultivariatePolynomial, PolynomialRing},
-    PositiveExponent, Variable,
 };
 
 /// A univariate polynomial ring.
@@ -552,11 +552,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
         }
 
         let (a, b) = self.quot_rem_impl(div, true);
-        if b.is_zero() {
-            Some(a)
-        } else {
-            None
-        }
+        if b.is_zero() { Some(a) } else { None }
     }
 
     fn quot_rem_impl(&self, div: &Self, early_return: bool) -> (Self, Self) {
@@ -860,11 +856,7 @@ impl UnivariatePolynomial<RationalField> {
             }
         }
 
-        if iter_bound {
-            Err(roots)
-        } else {
-            Ok(roots)
-        }
+        if iter_bound { Err(roots) } else { Ok(roots) }
     }
 }
 
@@ -1573,7 +1565,9 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             if !self.ring.is_zero(oc) {
                 let (q, r) = self.ring.quot_rem(oc, &self.ring.nth(Integer::from(p) + 1));
                 if !self.ring.is_zero(&r) {
-                    panic!("Could not compute integral since there is a remainder in the division of the exponent number.");
+                    panic!(
+                        "Could not compute integral since there is a remainder in the division of the exponent number."
+                    );
                 }
                 *nc = q;
             }

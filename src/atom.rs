@@ -860,6 +860,15 @@ impl Hash for AtomOrView<'_> {
     }
 }
 
+impl<'a, T> From<T> for AtomOrView<'a>
+where
+    T: Into<Coefficient>,
+{
+    fn from(v: T) -> AtomOrView<'a> {
+        AtomOrView::Atom(Atom::new_num(v.into()))
+    }
+}
+
 impl<'a> From<Symbol> for AtomOrView<'a> {
     fn from(s: Symbol) -> AtomOrView<'a> {
         AtomOrView::Atom(Atom::new_var(s))

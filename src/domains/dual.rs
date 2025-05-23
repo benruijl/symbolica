@@ -46,8 +46,8 @@ pub const fn get_dual_size<const N: usize>(x: &[usize; N]) -> usize {
 }
 
 /// Get the dual components for a single derivative in multiple variables.
-pub const fn get_single_derivative_dual_components<const N: usize, const N_PLUS_ONE: usize>(
-) -> [[usize; N]; N_PLUS_ONE] {
+pub const fn get_single_derivative_dual_components<const N: usize, const N_PLUS_ONE: usize>()
+-> [[usize; N]; N_PLUS_ONE] {
     let mut res = [[0; N]; N_PLUS_ONE];
 
     let mut i = 1;
@@ -134,11 +134,7 @@ pub const fn get_multiplication_index<const N: usize, const C: usize>(
         i += 1;
     }
 
-    if i == r.len() {
-        None
-    } else {
-        Some(i)
-    }
+    if i == r.len() { None } else { Some(i) }
 }
 
 /// Get the size of the multiplication table.

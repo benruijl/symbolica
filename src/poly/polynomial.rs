@@ -186,6 +186,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> EuclideanDomain
 /// Multivariate polynomial with a sparse degree and dense variable representation.
 /// Negative exponents are supported, if they are allowed by the exponent type.
 #[derive(Clone)]
+#[cfg_attr(feature = "bincode", derive(bincode_trait_derive::Encode))]
 pub struct MultivariatePolynomial<F: Ring, E: Exponent = u16, O: MonomialOrder = LexOrder> {
     // Data format: the i-th monomial is stored as coefficients[i] and
     // exponents[i * nvars .. (i + 1) * nvars]. Terms are always expanded and sorted by the exponents via
@@ -196,6 +197,34 @@ pub struct MultivariatePolynomial<F: Ring, E: Exponent = u16, O: MonomialOrder =
     pub ring: F,
     pub variables: Arc<Vec<Variable>>,
     pub(crate) _phantom: PhantomData<O>,
+}
+
+#[cfg(feature = "bincode")]
+impl<
+    C: crate::state::HasStateMap,
+    F: Ring + bincode::Decode<C>,
+    E: Exponent + bincode::Decode<C>,
+    O: MonomialOrder + bincode::Decode<C>,
+> bincode::Decode<C> for MultivariatePolynomial<F, E, O>
+where
+    F::Element: for<'a> bincode::Decode<&'a F>,
+{
+    fn decode<D: bincode::de::Decoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let ring = F::decode(decoder)?;
+
+        let coefficients = Vec::<F::Element>::decode(&mut decoder.with_context(&ring))?;
+        let exponents = Vec::<E>::decode(decoder)?;
+        let variables = Arc::<Vec<Variable>>::decode(decoder)?;
+        Ok(MultivariatePolynomial {
+            coefficients,
+            exponents,
+            ring,
+            variables,
+            _phantom: PhantomData,
+        })
+    }
 }
 
 impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {

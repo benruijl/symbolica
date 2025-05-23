@@ -1,7 +1,7 @@
 //! Floating-point numbers and traits.
 
 use std::{
-    f64::consts::{LOG10_2, LOG2_10},
+    f64::consts::{LOG2_10, LOG10_2},
     fmt::{self, Debug, Display, Formatter, LowerExp, Write},
     hash::Hash,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -12,10 +12,10 @@ use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
 
-use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
+use super::{EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, rational::Rational};
 use rug::{
-    ops::{CompleteRound, Pow},
     Assign, Float as MultiPrecisionFloat,
+    ops::{CompleteRound, Pow},
 };
 
 /// A field of floating point type `T`. For `f64` fields, use [`FloatField<F64>`].

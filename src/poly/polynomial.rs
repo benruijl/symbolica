@@ -227,24 +227,6 @@ where
     }
 }
 
-// #[cfg(feature = "bincode")]
-// impl<
-//     C: crate::state::HasStateMap,
-//     F: Ring + bincode::Encode,
-//     E: Exponent + bincode::Encode,
-//     O: MonomialOrder + bincode::Encode,
-// > bincode::Encode for MultivariatePolynomial<F, E, O>
-// where
-//     F::Element: bincode::Encode,
-// {
-//     fn encode<E: bincode::enc::Encoder>(
-//         &self,
-//         encoder: &mut E,
-//     ) -> Result<(), bincode::error::EncodeError> {
-//         ...
-//     }
-// }
-
 impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Constructs a zero polynomial. Instead of using this constructor,
     /// prefer to create new polynomials from existing ones, so that the

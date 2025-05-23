@@ -569,7 +569,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore},
+        atom::{Atom, AtomCore, representation::InlineVar},
         parse, symbol,
     };
 

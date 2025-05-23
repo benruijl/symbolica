@@ -1,7 +1,7 @@
 use symbolica::domains::{
-    finite_field::{FiniteFieldCore, Zp},
-    rational::{Rational, Q},
     Field, Ring,
+    finite_field::{FiniteFieldCore, Zp},
+    rational::{Q, Rational},
 };
 
 /// An arbitrarily complicated black-box function.

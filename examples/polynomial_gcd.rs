@@ -3,7 +3,7 @@ use symbolica::{
     domains::{integer::Z, rational::Q},
     parse,
 };
-use tracing_subscriber::{fmt, prelude::*, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*, util::SubscriberInitExt};
 
 fn gcd_integer_poly() {
     let a = parse!("5 + 8*x + 3*x^2 - 5*y - 3*x*y")

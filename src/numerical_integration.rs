@@ -291,11 +291,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
             if ans > 0 && x * 10.0f64.powi(ans) >= [0.5, 9.5, 99.5][offset] {
                 ans -= 1;
             }
-            if ans < 0 {
-                0
-            } else {
-                ans
-            }
+            if ans < 0 { 0 } else { ans }
         }
         let v = mean;
         let dv = sdev;

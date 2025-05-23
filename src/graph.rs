@@ -28,7 +28,7 @@ use std::{
 };
 
 use crate::{
-    combinatorics::{unique_permutations, CombinationIterator},
+    combinatorics::{CombinationIterator, unique_permutations},
     domains::integer::Integer,
 };
 
@@ -915,17 +915,21 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
             // check if the source is not a bridge
-            if settings.settings.allow_self_loops && settings.settings.max_bridges == Some(0) && source > external_edges.len() && self.node(source).edges.len()
-                        - self
-                            .node(source)
-                            .edges
-                            .iter()
-                            .filter(|e| {
-                                let e = self.edge(**e);
-                                e.vertices.0 == source && e.vertices.1 == source
-                            })
-                            .count()
-                        == 1 {
+            if settings.settings.allow_self_loops
+                && settings.settings.max_bridges == Some(0)
+                && source > external_edges.len()
+                && self.node(source).edges.len()
+                    - self
+                        .node(source)
+                        .edges
+                        .iter()
+                        .filter(|e| {
+                            let e = self.edge(**e);
+                            e.vertices.0 == source && e.vertices.1 == source
+                        })
+                        .count()
+                    == 1
+            {
                 return Ok(());
             }
 
@@ -956,15 +960,15 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
 
             for p1 in cur_edge_count_group_index..edge_count.len() {
-                if let Some(dir) = edge_count[p1].0 .0 {
+                if let Some(dir) = edge_count[p1].0.0 {
                     if edge_count[p1].1 == 0 {
                         continue;
                     }
 
                     // find the edge signature going in the other direction
                     for p2 in cur_edge_count_group_index + 1..edge_count.len() {
-                        if edge_count[p2].0 .0 == Some(!dir)
-                            && edge_count[p1].0 .1 == edge_count[p2].0 .1
+                        if edge_count[p2].0.0 == Some(!dir)
+                            && edge_count[p1].0.1 == edge_count[p2].0.1
                         {
                             if edge_count[p2].1 == 0 {
                                 break;
@@ -973,7 +977,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                             edge_count[p1].1 -= 1;
                             edge_count[p2].1 -= 1;
 
-                            self.add_edge(source, source, true, edge_count[p1].0 .1.clone())
+                            self.add_edge(source, source, true, edge_count[p1].0.1.clone())
                                 .unwrap();
 
                             self.distribute_edges(

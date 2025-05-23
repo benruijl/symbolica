@@ -9,13 +9,13 @@ use std::{
 
 use brotli::{CompressorWriter, Decompressor};
 use byteorder::{LittleEndian, WriteBytesExt};
-use rayon::{prelude::*, ThreadPool};
+use rayon::{ThreadPool, prelude::*};
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    LicenseManager,
     atom::{Atom, AtomView},
     state::{RecycledAtom, State, Workspace},
-    LicenseManager,
 };
 
 static TEMP_FILES_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

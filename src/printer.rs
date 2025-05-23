@@ -611,8 +611,7 @@ impl FormattedPrintNum for NumView<'_> {
                 r.is_negative() && ri.is_zero() || ri.is_negative() && r.is_zero()
             }
             _ => false,
-        } && !print_state.in_product
-            && !print_state.in_exp;
+        } && print_state.in_sum;
 
         if global_negative {
             if print_state.top_level_add_child
@@ -643,6 +642,9 @@ impl FormattedPrintNum for NumView<'_> {
         match d {
             CoefficientView::Natural(num, den, num_i, den_i) => {
                 if num_i == 0 && den == 1 && print_state.suppress_one && (num == 1 || num == -1) {
+                    if num == -1 && !global_negative {
+                        f.write_char('-')?;
+                    }
                     return Ok(true);
                 }
 
@@ -907,23 +909,9 @@ impl FormattedPrintMul for MulView<'_> {
         let mut first = true;
         let mut skip_num = false;
         if let Some(AtomView::Num(n)) = self.iter().last() {
-            // write -1*x as -x
-            if n.get_coeff_view() == CoefficientView::Natural(-1, 1, 0, 1) {
-                if print_state.top_level_add_child
-                    && opts.mode.is_symbolica()
-                    && opts.color_top_level_sum
-                {
-                    f.write_fmt(format_args!("{}", "-".yellow()))?;
-                } else {
-                    f.write_char('-')?;
-                }
-
-                first = true;
-            } else {
-                n.fmt_output(f, opts, print_state)?;
-                first = false;
-            }
-
+            print_state.suppress_one = true;
+            first = n.fmt_output(f, opts, print_state)?;
+            print_state.suppress_one = false;
             skip_num = true;
         } else if print_state.in_sum {
             if print_state.top_level_add_child
@@ -939,6 +927,7 @@ impl FormattedPrintMul for MulView<'_> {
         print_state.top_level_add_child = false;
         print_state.level += 1;
         print_state.in_sum = false;
+
         for x in self.iter().take(if skip_num {
             self.get_nargs() - 1
         } else {

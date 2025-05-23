@@ -5,7 +5,7 @@ use std::{
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
-    domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, SelfRing},
+    domains::{SelfRing, integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
     parser::Token,
     printer::{PrintOptions, PrintState},
     symbol,

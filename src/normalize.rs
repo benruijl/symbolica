@@ -410,11 +410,11 @@ impl Atom {
                 return true;
             }
 
-            // x^n * x = x^(n+1)
+            // x^n * x = x^(n+1), unless x is a number
             let pv = p1.to_pow_view();
             let (base, exp) = pv.get_base_exp();
 
-            if other.as_view() == base {
+            if !matches!(other, Atom::Num(_)) && other.as_view() == base {
                 if let AtomView::Num(n) = &exp {
                     let new_exp = n.get_coeff_view() + 1;
 
@@ -445,12 +445,12 @@ impl Atom {
             return false;
         }
 
-        // x * x^n = x^(n+1)
+        // x * x^n = x^(n+1), unless x is a number
         if let Atom::Pow(p) = other {
             let pv = p.to_pow_view();
             let (base, exp) = pv.get_base_exp();
 
-            if self.as_view() == base {
+            if !matches!(self, Atom::Num(_)) && self.as_view() == base {
                 if let AtomView::Num(n) = &exp {
                     let new_exp = n.get_coeff_view() + 1;
 
@@ -1198,10 +1198,24 @@ impl AtomView<'_> {
                             out.set_from_view(&base_handle.as_view());
                             break 'pow_simplify;
                         } else if let AtomView::Num(n) = base_handle.as_view() {
-                            // simplify a number to a numerical power
-                            let (new_base_num, new_exp_num) = n.get_coeff_view().pow(&exp_num);
+                            // simplify a number raised to a numerical power
+                            let (prefactor, new_base_num, new_exp_num) =
+                                n.get_coeff_view().pow(&exp_num);
 
-                            if new_exp_num == 1.into() {
+                            if !prefactor.is_one() {
+                                let mut mul_h = workspace.new_atom();
+                                let m = mul_h.to_mul();
+                                base_handle.to_num(prefactor);
+                                m.extend(base_handle.as_view());
+                                base_handle.to_num(new_base_num);
+                                exp_handle.to_num(new_exp_num);
+                                out.to_pow(base_handle.as_view(), exp_handle.as_view());
+                                m.extend(out.as_view());
+                                mul_h.as_view().normalize(workspace, out);
+                                break 'pow_simplify;
+                            }
+
+                            if new_exp_num.is_one() {
                                 out.to_num(new_base_num);
                                 break 'pow_simplify;
                             }

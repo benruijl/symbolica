@@ -1956,6 +1956,15 @@ impl<'a> ListSlice<'a> {
     }
 
     #[inline]
+    pub fn empty() -> Self {
+        ListSlice {
+            data: &[],
+            length: 0,
+            slice_type: SliceType::Empty,
+        }
+    }
+
+    #[inline]
     pub fn iter(&self) -> ListSliceIterator<'a> {
         ListSliceIterator { data: *self }
     }

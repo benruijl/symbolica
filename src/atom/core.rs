@@ -37,7 +37,7 @@ use crate::{
 use std::sync::Arc;
 
 use super::{
-    Atom, AtomOrView, AtomView, KeyLookup, Symbol,
+    Atom, AtomOrView, AtomView, KeyLookup, ListSlice, Symbol,
     representation::{InlineNum, InlineVar},
 };
 
@@ -1454,6 +1454,48 @@ pub trait AtomCore {
             conditions.into(),
             settings.into(),
         )
+    }
+
+    /// Return an iterator over all terms in the expression.
+    ///
+    /// # Example
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x + y + z");
+    /// let mut iter = expr.terms();
+    /// assert_eq!(iter.next().unwrap(), parse!("x").as_view());
+    /// assert_eq!(iter.next().unwrap(), parse!("y").as_view());
+    /// assert_eq!(iter.next().unwrap(), parse!("z").as_view());
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    fn terms(&self) -> impl Iterator<Item = AtomView<'_>> {
+        let s = self.as_atom_view();
+        match self.as_atom_view() {
+            AtomView::Add(a) => a.to_slice().iter(),
+            _ => ListSlice::from_one(s).iter(),
+        }
+    }
+
+    /// Return an iterator over the children of the atom.
+    ///
+    /// # Example
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("f(x,y)");
+    /// let mut iter = expr.children();
+    /// assert_eq!(iter.next().unwrap(), parse!("x").as_view());
+    /// assert_eq!(iter.next().unwrap(), parse!("y").as_view());
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    /// return `x, y`
+    fn children(&self) -> impl Iterator<Item = AtomView<'_>> {
+        match self.as_atom_view() {
+            AtomView::Add(a) => a.to_slice().iter(),
+            AtomView::Mul(a) => a.to_slice().iter(),
+            AtomView::Pow(a) => a.to_slice().iter(),
+            AtomView::Fun(a) => a.to_slice().iter(),
+            AtomView::Num(_) | AtomView::Var(_) => ListSlice::empty().iter(),
+        }
     }
 }
 

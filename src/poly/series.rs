@@ -501,6 +501,30 @@ impl<F: Ring> Series<F> {
 
         self
     }
+
+    /// Get the coefficient of the series at a given exponent.
+    pub fn coefficient(&self, exponent: Rational) -> F::Element {
+        let r = exponent * &Rational::from(self.ramification as i64);
+        if !r.is_integer() {
+            return self.field.zero();
+        }
+
+        let i = r.numerator().to_i64().unwrap() - self.shift as i64;
+
+        if i >= 0 && i < self.coefficients.len() as i64 {
+            self.coefficients[i as usize].clone()
+        } else {
+            self.field.zero()
+        }
+    }
+
+    /// Iterate over the terms of the series, yielding the exponent and its coefficient.
+    pub fn terms(&self) -> impl Iterator<Item = (Rational, &F::Element)> {
+        self.coefficients
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (self.get_exponent(i), c))
+    }
 }
 
 impl<F: Ring> SelfRing for Series<F> {

@@ -1558,8 +1558,8 @@ mod test {
 
     #[test]
     fn pow_apart() {
-        let res = parse!("v1*(v1*v2*v3)^-5").unwrap();
-        let refr = parse!("v1^-4*v2^-5*v3^-5").unwrap();
+        let res = parse!("v1*(v1*v2*v3)^-5");
+        let refr = parse!("v1^-4*v2^-5*v3^-5");
         assert_eq!(res, refr);
     }
 
@@ -1567,10 +1567,7 @@ mod test {
     fn pow_simplify() {
         assert_eq!(parse!("1^(1/2)"), parse!("1"));
         assert_eq!(
-            format!(
-                "{}",
-                parse!("(v1^2)^v2").unwrap().printer(PrintOptions::file())
-            ),
+            format!("{}", parse!("(v1^2)^v2").printer(PrintOptions::file())),
             "(symbolica::v1^2)^symbolica::v2"
         );
         assert_eq!(parse!("(v1^v2)^2"), parse!("v1^(2*v2)"));
@@ -1579,22 +1576,21 @@ mod test {
 
     #[test]
     fn linear_symmetric() {
-        let res = parse!("fsl1(v2+2*v3,v1+3*v2-v3)").unwrap();
-        let refr =
-            parse!("fsl1(v1,v2)+2*fsl1(v1,v3)+3*fsl1(v2,v2)+5*fsl1(v2,v3)-2*fsl1(v3,v3)").unwrap();
+        let res = parse!("fsl1(v2+2*v3,v1+3*v2-v3)");
+        let refr = parse!("fsl1(v1,v2)+2*fsl1(v1,v3)+3*fsl1(v2,v2)+5*fsl1(v2,v3)-2*fsl1(v3,v3)");
         assert_eq!(res, refr);
     }
 
     #[test]
     fn coeff_flag() {
-        let a = parse!("-v1*v2").unwrap();
+        let a = parse!("-v1*v2");
 
         if let Atom::Mul(m) = &a {
             assert!(m.to_mul_view().has_coefficient());
             assert!(m.to_mul_view().is_normalized());
         }
 
-        let b = a * &parse!("-v3").unwrap();
+        let b = a * &parse!("-v3");
 
         if let Atom::Mul(m) = &b {
             assert!(!m.to_mul_view().has_coefficient());
@@ -1615,16 +1611,16 @@ mod test {
 
     #[test]
     fn add_normalized() {
-        let a = parse!("v1 + v2 + v3").unwrap();
-        let b = parse!("1 + v2 + v4 + v5").unwrap();
-        assert_eq!(a + b, parse!("v1+2*v2+v3+v4+v5+1").unwrap());
+        let a = parse!("v1 + v2 + v3");
+        let b = parse!("1 + v2 + v4 + v5");
+        assert_eq!(a + b, parse!("v1+2*v2+v3+v4+v5+1"));
 
-        let a = parse!("v1 + v2 + v3").unwrap();
-        let b = parse!("v4").unwrap();
-        assert_eq!(a + b, parse!("v1+v2+v3+v4").unwrap());
+        let a = parse!("v1 + v2 + v3");
+        let b = parse!("v4");
+        assert_eq!(a + b, parse!("v1+v2+v3+v4"));
 
-        let a = parse!("v2 + v3 + v4").unwrap();
-        let b = parse!("v1").unwrap();
-        assert_eq!(a + b, parse!("v1+v2+v3+v4").unwrap());
+        let a = parse!("v2 + v3 + v4");
+        let b = parse!("v1");
+        assert_eq!(a + b, parse!("v1+v2+v3+v4"));
     }
 }

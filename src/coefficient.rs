@@ -556,8 +556,11 @@ impl SerializedFloat<'_> {
 /// serialized for efficiency.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CoefficientView<'a> {
+    /// A complex number `(n_re, d_re, n_im, d_im)` that represents `n_re/d_re + i * n_im/d_im`.
     Natural(i64, i64, i64, i64),
+    /// A floating point number `(re, im)` that represents `re + i * im`.
     Float(SerializedFloat<'a>, SerializedFloat<'a>),
+    /// A large complex number `(re, im)` that represents `re + i * im`.
     Large(SerializedRational<'a>, SerializedRational<'a>),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(SerializedRationalPolynomial<'a>),
@@ -680,15 +683,15 @@ impl ConvertToRing for IntegerRing {
 
 impl ConvertToRing for AtomField {
     fn element_from_integer(&self, number: Integer) -> Self::Element {
-        Atom::new_num(number)
+        Atom::num(number)
     }
 
     fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
-        Atom::new_num(number)
+        Atom::num(number)
     }
 
     fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element {
-        Atom::new_num(number.to_owned())
+        Atom::num(number.to_owned())
     }
 }
 
@@ -2088,8 +2091,8 @@ mod test {
 
     #[test]
     fn coeff_conversion() {
-        let expr = parse!("v1*coeff(v2+v3/v4)+v1*coeff(v2)").unwrap();
-        let res = parse!("coeff((v3+2*v2*v4)/v4)*v1").unwrap();
+        let expr = parse!("v1*coeff(v2+v3/v4)+v1*coeff(v2)");
+        let res = parse!("coeff((v3+2*v2*v4)/v4)*v1");
         assert_eq!(expr - &res, Atom::new());
     }
 
@@ -2097,40 +2100,38 @@ mod test {
     fn coeff_conversion_large() {
         let expr = parse!(
             "coeff(-8123781237821378123128937128937211238971238*v2-1289378192371289372891378127893)"
-        )
-        .unwrap();
+        );
         let res = parse!(
             "1289378192371289372891378127893+8123781237821378123128937128937211238971238*coeff(v2)"
-        )
-        .unwrap();
+        );
         assert_eq!(expr + &res, Atom::new());
     }
 
     #[test]
     fn coefficient_ring() {
-        let expr = parse!("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
+        let expr = parse!("v1*v3+v1*(v2+2)^-1*(v2+v3+1)");
 
         let v2 = symbol!("v2");
         let expr_yz = expr.set_coefficient_ring(&Arc::new(vec![v2.into(), symbol!("v3").into()]));
 
-        let a = ((&expr_yz + &Atom::new_num((1, 2))) * &Atom::new_num((3, 4))).expand();
+        let a = ((&expr_yz + &Atom::num((1, 2))) * &Atom::num((3, 4))).expand();
 
-        let a = (a / &Atom::new_num((3, 4)) - &Atom::new_num((1, 2))).expand();
+        let a = (a / &Atom::num((3, 4)) - &Atom::num((1, 2))).expand();
 
         let a = a.set_coefficient_ring(&Arc::new(vec![]));
 
-        let expr = expr.replace(v2).with(Atom::new_num(3)).expand();
+        let expr = expr.replace(v2).with(Atom::num(3)).expand();
 
-        let a = a.replace(v2).with(Atom::new_num(3)).expand();
+        let a = a.replace(v2).with(Atom::num(3)).expand();
 
         assert_eq!(a, expr);
     }
 
     #[test]
     fn float() {
-        let expr = parse!("1/2 x + 5.8912734891723 + sin(1.2334)").unwrap();
+        let expr = parse!("1/2 x + 5.8912734891723 + sin(1.2334)");
         let c = Coefficient::Float(Float::with_val(200, rug::float::Constant::Pi).into());
-        let expr = expr * &Atom::new_num(c);
+        let expr = expr * &Atom::num(c);
         let r = format!(
             "{}",
             AtomPrinter::new_with_options(
@@ -2146,7 +2147,7 @@ mod test {
 
     #[test]
     fn float_convert() {
-        let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
+        let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)");
         let expr = expr.coefficients_to_float(60);
         let r = format!(
             "{}",
@@ -2160,9 +2161,9 @@ mod test {
 
     #[test]
     fn float_to_rat() {
-        let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
+        let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)");
         let expr = expr.coefficients_to_float(60);
         let expr = expr.rationalize_coefficients(&(1, 10000).into());
-        assert_eq!(expr, parse!("1/2*x+137/201").unwrap());
+        assert_eq!(expr, parse!("1/2*x+137/201"));
     }
 }

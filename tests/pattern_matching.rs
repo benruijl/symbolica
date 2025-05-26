@@ -7,11 +7,11 @@ use symbolica::{
 #[test]
 fn fibonacci() {
     // prepare all patterns
-    let pattern = parse!("f(x_)").unwrap().to_pattern();
-    let rhs = parse!("f(x_ - 1) + f(x_ - 2)").unwrap().to_pattern();
-    let lhs_zero_pat = parse!("f(0)").unwrap().to_pattern();
-    let lhs_one_pat = parse!("f(1)").unwrap().to_pattern();
-    let rhs_one = Atom::new_num(1).to_pattern();
+    let pattern = parse!("f(x_)").to_pattern();
+    let rhs = parse!("f(x_ - 1) + f(x_ - 2)").to_pattern();
+    let lhs_zero_pat = parse!("f(0)").to_pattern();
+    let lhs_one_pat = parse!("f(1)").to_pattern();
+    let rhs_one = Atom::num(1).to_pattern();
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = symbol!("x_").filter(|v: &Match| match v {
@@ -19,7 +19,7 @@ fn fibonacci() {
         _ => false,
     });
 
-    let mut target = parse!("f(10)").unwrap();
+    let mut target = parse!("f(10)");
 
     for _ in 0..9 {
         target = target
@@ -33,15 +33,15 @@ fn fibonacci() {
             .with(&rhs_one);
     }
 
-    assert_eq!(target, Atom::new_num(89));
+    assert_eq!(target, Atom::num(89));
 }
 
 #[test]
 fn replace_once() {
-    let expr = parse!("f(z)*f(f(x))*f(y)").unwrap();
-    let pat_expr = parse!("f(x_)").unwrap();
+    let expr = parse!("f(z)*f(f(x))*f(y)");
+    let pat_expr = parse!("f(x_)");
 
-    let rhs_expr = parse!("g(x_)").unwrap();
+    let rhs_expr = parse!("g(x_)");
     let rhs = rhs_expr.as_view().to_pattern();
 
     let pattern = pat_expr.as_view().to_pattern();
@@ -55,7 +55,7 @@ fn replace_once() {
         "f(z)*f(y)*f(g(x))",
     ];
 
-    let res = res.iter().map(|x| parse!(x).unwrap()).collect::<Vec<_>>();
+    let res = res.iter().map(|x| parse!(x)).collect::<Vec<_>>();
 
     assert_eq!(r, res);
 }

@@ -19,7 +19,7 @@ fn solve() {
     let z = symbol!("z").into();
     let eqs = ["c*x + f(c)*y + z - 1", "x + c*y + z/c - 2", "(c-1)x + c*z"];
 
-    let system: Vec<_> = eqs.iter().map(|e| parse!(e).unwrap()).collect();
+    let system: Vec<_> = eqs.iter().map(|e| parse!(e)).collect();
 
     let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
@@ -44,7 +44,6 @@ fn solve_from_matrix() {
         .flatten()
         .map(|s| {
             parse!(s)
-                .unwrap()
                 .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
         })
         .collect();
@@ -53,7 +52,6 @@ fn solve_from_matrix() {
         .iter()
         .map(|s| {
             parse!(s)
-                .unwrap()
                 .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
         })
         .collect();

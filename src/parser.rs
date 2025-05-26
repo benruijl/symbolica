@@ -435,7 +435,7 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol(namespace.attach_namespace(x)));
+                out.to_var(state.get_symbol(namespace.attach_namespace(x))?);
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -500,7 +500,7 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(state.get_symbol(namespace.attach_namespace(name)));
+                let fun = out.to_fun(state.get_symbol(namespace.attach_namespace(name))?);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
@@ -1372,13 +1372,13 @@ mod test {
 
     #[test]
     fn pow() {
-        let input = parse!("v1^v2^v3^3").unwrap();
+        let input = parse!("v1^v2^v3^3");
         assert_eq!(
             format!("{}", input.printer(PrintOptions::file_no_namespace())),
             "v1^v2^v3^3"
         );
 
-        let input = parse!("(v1^v2)^v3").unwrap();
+        let input = parse!("(v1^v2)^v3");
         assert_eq!(
             format!("{}", input.printer(PrintOptions::file_no_namespace())),
             "(v1^v2)^v3"
@@ -1387,13 +1387,13 @@ mod test {
 
     #[test]
     fn unary() {
-        let input = parse!("-x^z").unwrap();
+        let input = parse!("-x^z");
         assert_eq!(
             format!("{}", input.printer(PrintOptions::file_no_namespace())),
             "-x^z"
         );
 
-        let input = parse!("(-x)^z").unwrap();
+        let input = parse!("(-x)^z");
         assert_eq!(
             format!("{}", input.printer(PrintOptions::file_no_namespace())),
             "(-x)^z"
@@ -1405,15 +1405,14 @@ mod test {
         let input = parse!(
             "89233_21837281 x   
             ^2 / y + 5 + 5x"
-        )
-        .unwrap();
-        let res = parse!("8923321837281*x^2*y^-1+5+5x").unwrap();
+        );
+        let res = parse!("8923321837281*x^2*y^-1+5+5x");
         assert_eq!(input, res);
     }
 
     #[test]
     fn float() {
-        let input = parse!("1.2`20x+1e-5`20+1e+5 * 1.1234e23 +2exp(5)").unwrap();
+        let input = parse!("1.2`20x+1e-5`20+1e+5 * 1.1234e23 +2exp(5)");
 
         let r = format!("{}", input.printer(PrintOptions::file_no_namespace()));
         assert_eq!(r, "1.2000000000000000000*x+2*exp(5)+1.123400000000000e28");
@@ -1421,8 +1420,8 @@ mod test {
 
     #[test]
     fn square_bracket_function() {
-        let input = parse!("v1  [v1, v2]+5 + v1[]").unwrap();
-        let res = parse!("v1(v1,v2)+5+v1()").unwrap();
+        let input = parse!("v1  [v1, v2]+5 + v1[]");
+        let res = parse!("v1(v1,v2)+5+v1()");
         assert_eq!(input, res);
     }
 
@@ -1436,9 +1435,7 @@ mod test {
         assert!(rest.is_empty());
         assert_eq!(
             input,
-            parse!("5+2748*v1^2*v2")
-                .unwrap()
-                .to_polynomial(&Z, var_map.clone())
+            parse!("5+2748*v1^2*v2").to_polynomial(&Z, var_map.clone())
         );
     }
 }

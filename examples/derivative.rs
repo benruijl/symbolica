@@ -10,7 +10,7 @@ fn main() {
     ];
 
     for input in inputs {
-        let input = parse!(input).unwrap();
+        let input = parse!(input);
 
         let a = input.derivative(x);
 

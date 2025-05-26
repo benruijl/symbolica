@@ -1032,14 +1032,14 @@ mod test {
 
     #[test]
     fn expand_derivative() {
-        let p = parse!("(1+v1)^2").unwrap();
+        let p = parse!("(1+v1)^2");
 
         let mut out = Atom::new();
         let _ = Workspace::get_local().with(|ws| {
             Transformer::execute_chain(
                 p.as_view(),
                 &[
-                    Transformer::Expand(Some(Atom::new_var(symbol!("v1"))), false),
+                    Transformer::Expand(Some(Atom::var(symbol!("v1"))), false),
                     Transformer::Derivative(symbol!("v1")),
                 ],
                 ws,
@@ -1049,13 +1049,13 @@ mod test {
             .unwrap()
         });
 
-        let r = parse!("2+2*v1").unwrap();
+        let r = parse!("2+2*v1");
         assert_eq!(out, r);
     }
 
     #[test]
     fn split_argcount() {
-        let p = parse!("v1+v2+v3").unwrap();
+        let p = parse!("v1+v2+v3");
 
         let mut out = Atom::new();
         let _ = Workspace::get_local().with(|ws| {
@@ -1069,13 +1069,13 @@ mod test {
             .unwrap()
         });
 
-        let r = parse!("3").unwrap();
+        let r = parse!("3");
         assert_eq!(out, r);
     }
 
     #[test]
     fn product_series() {
-        let p = parse!("arg(v1,v1+1,3)").unwrap();
+        let p = parse!("arg(v1,v1+1,3)");
 
         let mut out = Atom::new();
         let _ = Workspace::get_local().with(|ws| {
@@ -1083,7 +1083,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::Series(symbol!("v1"), Atom::new_num(1), 3.into(), true),
+                    Transformer::Series(symbol!("v1"), Atom::num(1), 3.into(), true),
                 ],
                 ws,
                 &TransformerState::default(),
@@ -1092,13 +1092,13 @@ mod test {
             .unwrap()
         });
 
-        let r = parse!("3*(v1-1)^2+9*(v1-1)+6").unwrap();
+        let r = parse!("3*(v1-1)^2+9*(v1-1)+6");
         assert_eq!(out, r);
     }
 
     #[test]
     fn sort_deduplicate() {
-        let p = parse!("f1(3,2,1,3)").unwrap();
+        let p = parse!("f1(3,2,1,3)");
 
         let mut out = Atom::new();
         let _ = Workspace::get_local().with(|ws| {
@@ -1106,8 +1106,8 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::ReplaceAll(
-                        parse!("f1(x__)").unwrap().to_pattern(),
-                        parse!("x__").unwrap().to_pattern().into(),
+                        parse!("f1(x__)").to_pattern(),
+                        parse!("x__").to_pattern().into(),
                         Condition::default(),
                         MatchSettings::default(),
                     ),
@@ -1127,13 +1127,13 @@ mod test {
             .unwrap()
         });
 
-        let r = parse!("f1(1,2,3)").unwrap();
+        let r = parse!("f1(1,2,3)");
         assert_eq!(out, r);
     }
 
     #[test]
     fn deep_nesting() {
-        let p = parse!("arg(3,2,1,3)").unwrap();
+        let p = parse!("arg(3,2,1,3)");
 
         let mut out = Atom::new();
         let _ = Workspace::get_local().with(|ws| {
@@ -1148,12 +1148,12 @@ mod test {
                     vec![Transformer::ForEach(vec![
                         Transformer::Print(PrintOptions::default()),
                         Transformer::ReplaceAll(
-                            parse!("x_").unwrap().to_pattern(),
-                            parse!("x_-1").unwrap().to_pattern().into(),
+                            parse!("x_").to_pattern(),
+                            parse!("x_-1").to_pattern().into(),
                             (
                                 symbol!("x_"),
                                 WildcardRestriction::Filter(Box::new(|x| {
-                                    x != &Match::Single(Atom::new_num(0).as_view())
+                                    x != &Match::Single(Atom::num(0).as_view())
                                 })),
                             )
                                 .into(),
@@ -1168,30 +1168,29 @@ mod test {
             .unwrap()
         });
 
-        let r = parse!("arg(0,0,0,0)").unwrap();
+        let r = parse!("arg(0,0,0,0)");
         assert_eq!(out, r);
     }
 
     #[test]
     fn linearize() {
-        let p = parse!("f1(v1+v2,4*v3*v4+3*v4/v3)").unwrap();
+        let p = parse!("f1(v1+v2,4*v3*v4+3*v4/v3)");
 
         let out = Transformer::Linearize(Some(vec![symbol!("v3")]))
             .execute(p.as_view())
             .unwrap();
 
-        let r =
-            parse!("4*v3*f1(v1,v4)+4*v3*f1(v2,v4)+3*v3^-1*f1(v1,v4)+3*v3^-1*f1(v2,v4)").unwrap();
+        let r = parse!("4*v3*f1(v1,v4)+4*v3*f1(v2,v4)+3*v3^-1*f1(v1,v4)+3*v3^-1*f1(v2,v4)");
         assert_eq!(out, r);
     }
 
     #[test]
     fn cycle_symmetrize() {
-        let p = parse!("f1(1,2,3,5,1,2,3,4)").unwrap();
+        let p = parse!("f1(1,2,3,5,1,2,3,4)");
 
         let out = Transformer::CycleSymmetrize.execute(p.as_view()).unwrap();
 
-        let r = parse!("f1(1,2,3,4,1,2,3,5)").unwrap();
+        let r = parse!("f1(1,2,3,4,1,2,3,5)");
         assert_eq!(out, r);
     }
 }

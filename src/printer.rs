@@ -321,7 +321,7 @@ define_formatters!(
 /// ```
 /// use symbolica::{atom::AtomCore, parse};
 /// use symbolica::printer::PrintOptions;
-/// let a = parse!("x + y").unwrap();
+/// let a = parse!("x + y");
 /// println!("{}", a.printer(PrintOptions::latex()));
 /// ```
 pub struct AtomPrinter<'a> {
@@ -1211,7 +1211,7 @@ mod test {
 
     #[test]
     fn atoms() {
-        let a = parse!("f(x,y^2)^(x+z)/5+3").unwrap();
+        let a = parse!("f(x,y^2)^(x+z)/5+3");
 
         if ShouldColorize::from_env().should_colorize() {
             assert_eq!(
@@ -1241,7 +1241,7 @@ mod test {
             "1/5 f[x,y^2]^(x+z)+3"
         );
 
-        let a = parse!("8127389217 x^2").unwrap();
+        let a = parse!("8127389217 x^2");
         assert_eq!(
             format!(
                 "{}",
@@ -1261,9 +1261,7 @@ mod test {
 
     #[test]
     fn polynomials() {
-        let a = parse!("15 x^2")
-            .unwrap()
-            .to_polynomial::<_, u8>(&Zp::new(17), None);
+        let a = parse!("15 x^2").to_polynomial::<_, u8>(&Zp::new(17), None);
 
         let mut s = String::new();
         a.format(
@@ -1282,21 +1280,16 @@ mod test {
 
     #[test]
     fn rational_polynomials() {
-        let a = parse!("15 x^2 / (1+x)")
-            .unwrap()
-            .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        let a = parse!("15 x^2 / (1+x)").to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert_eq!(format!("{}", a), "15*x^2/(1+x)");
 
-        let a = parse!("(15 x^2 + 6) / (1+x)")
-            .unwrap()
-            .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        let a = parse!("(15 x^2 + 6) / (1+x)").to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert_eq!(format!("{}", a), "(6+15*x^2)/(1+x)");
     }
 
     #[test]
     fn factorized_rational_polynomials() {
         let a = parse!("15 x^2 / ((1+x)(x+2))")
-            .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
             format!("{}", a) == "15*x^2/((1+x)*(2+x))"
@@ -1304,27 +1297,22 @@ mod test {
         );
 
         let a = parse!("(15 x^2 + 6) / ((1+x)(x+2))")
-            .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
             format!("{}", a) == "3*(2+5*x^2)/((1+x)*(2+x))"
                 || format!("{}", a) == "3*(2+5*x^2)/((2+x)*(1+x))"
         );
 
-        let a = parse!("1/(v1*v2)")
-            .unwrap()
-            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        let a = parse!("1/(v1*v2)").to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(format!("{}", a) == "1/(v1*v2)" || format!("{}", a) == "1/(v2*v1)");
 
-        let a = parse!("-1/(2+v1)")
-            .unwrap()
-            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        let a = parse!("-1/(2+v1)").to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(format!("{}", a) == "-1/(2+v1)");
     }
 
     #[test]
     fn base_parentheses() {
-        let a = parse!("(-1)^(x+1)-(1/2)^x").unwrap();
+        let a = parse!("(-1)^(x+1)-(1/2)^x");
         assert_eq!(
             format!(
                 "{}",
@@ -1336,14 +1324,13 @@ mod test {
 
     #[test]
     fn canon() {
-        let _ = symbol!("canon_f"; Symmetric).unwrap();
+        let _ = symbol!("canon_f"; Symmetric);
         let _ = symbol!("canon_y");
         let _ = symbol!("canon_x");
 
         let a = parse!(
             "canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)"
-        )
-        .unwrap();
+        );
         assert_eq!(
             a.to_canonical_string(),
             "(symbolica::canon_x+symbolica::canon_y)*symbolica::canon_y^2+2*symbolica::canon_x*symbolica::canon_y+symbolica::canon_f(symbolica::canon_x,symbolica::canon_y)+symbolica::canon_x^2"
@@ -1374,10 +1361,9 @@ mod test {
             }
 
             Some(fmt)
-        })
-        .unwrap();
+        });
 
-        let e = crate::parse!("mu^2 + mu(1) + mu(1,2)").unwrap();
+        let e = crate::parse!("mu^2 + mu(1) + mu(1,2)");
         let s = format!("{}", e.printer(PrintOptions::latex()));
         assert_eq!(s, "\\mu^{2}+\\mu_{1}+\\mu_{1,2}");
     }

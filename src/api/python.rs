@@ -63,7 +63,6 @@ use crate::{
         Replacement, WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
-    parse,
     parser::Token,
     poly::{
         GrevLexOrder, INLINED_EXPONENTS, LexOrder, Variable, factor::Factorize,
@@ -74,6 +73,7 @@ use crate::{
     streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError, TransformerState},
+    try_parse,
 };
 
 const DEFAULT_PRINT_OPTIONS: PrintOptions = PrintOptions {
@@ -462,7 +462,7 @@ impl ConvertibleToReplaceWith {
                 let match_stack: HashMap<PythonExpression, PythonExpression> = match_stack
                     .get_matches()
                     .iter()
-                    .map(|x| (Atom::new_var(x.0).into(), x.1.to_atom().into()))
+                    .map(|x| (Atom::var(x.0).into(), x.1.to_atom().into()))
                     .collect();
 
                 Python::with_gil(|py| {
@@ -2151,7 +2151,7 @@ impl PythonPatternRestriction {
                 let matches: HashMap<PythonExpression, PythonExpression> = m
                     .get_matches()
                     .iter()
-                    .map(|(s, t)| (Atom::new_var(*s).into(), t.to_atom().into()))
+                    .map(|(s, t)| (Atom::var(*s).into(), t.to_atom().into()))
                     .collect();
 
                 let r = Python::with_gil(|py| {
@@ -2413,21 +2413,21 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             Ok(ConvertibleToExpression(a))
         } else if let Ok(num) = ob.extract::<i64>() {
-            Ok(ConvertibleToExpression(Atom::new_num(num).into()))
+            Ok(ConvertibleToExpression(Atom::num(num).into()))
         } else if let Ok(num) = ob.downcast::<PyInt>() {
             let a = format!("{}", num);
             let i = Integer::from(rug::Integer::parse(&a).unwrap().complete());
-            Ok(ConvertibleToExpression(Atom::new_num(i).into()))
+            Ok(ConvertibleToExpression(Atom::num(i).into()))
         } else if ob.extract::<PyBackedStr>().is_ok() {
             // disallow direct string conversion
             Err(exceptions::PyTypeError::new_err(
                 "Cannot convert to expression",
             ))
         } else if let Ok(f) = ob.extract::<PythonMultiPrecisionFloat>() {
-            Ok(ConvertibleToExpression(Atom::new_num(f.0).into()))
+            Ok(ConvertibleToExpression(Atom::num(f.0).into()))
         } else if let Ok(num) = ob.extract::<Complex<f64>>() {
             Ok(ConvertibleToExpression(
-                Atom::new_num(Complex::<Float>::new(num.re.into(), num.im.into())).into(),
+                Atom::num(Complex::<Float>::new(num.re.into(), num.im.into())).into(),
             ))
         } else {
             Err(exceptions::PyTypeError::new_err(
@@ -2820,27 +2820,6 @@ impl PythonExpression {
             ));
         }
 
-        fn name_check(name: &str) -> PyResult<&str> {
-            let illegal_chars = [
-                '\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']', ' ', '\t', '\n', '\r',
-                '\\', ';', '&', '!', '%', '.',
-            ];
-
-            if name.is_empty() {
-                Err(exceptions::PyValueError::new_err("Name cannot be empty"))
-            } else if name.chars().any(|x| illegal_chars.contains(&x)) {
-                Err(exceptions::PyValueError::new_err(
-                    "Illegal character in name",
-                ))
-            } else if name.chars().next().unwrap().is_numeric() {
-                Err(exceptions::PyValueError::new_err(
-                    "Name cannot start with a number",
-                ))
-            } else {
-                Ok(name)
-            }
-        }
-
         let namespace = DefaultNamespace {
             namespace: "python".into(),
             data: "",
@@ -2858,20 +2837,20 @@ impl PythonExpression {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = Symbol::new(namespace.attach_namespace(name_check(&name)?))
+                let id = Symbol::new(namespace.attach_namespace(&name))
                     .build()
-                    .unwrap();
-                let r = PythonExpression::from(Atom::new_var(id));
+                    .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+                let r = PythonExpression::from(Atom::var(id));
                 return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = Symbol::new(namespace.attach_namespace(name_check(&name)?))
+                    let id = Symbol::new(namespace.attach_namespace(&name))
                         .build()
-                        .unwrap();
+                        .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
-                    let r = PythonExpression::from(Atom::new_var(id));
+                    let r = PythonExpression::from(Atom::var(id));
                     result.push(r);
                 }
 
@@ -2909,7 +2888,7 @@ impl PythonExpression {
 
         if names.len() == 1 {
             let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
-            let name = namespace.attach_namespace(name_check(&name)?);
+            let name = namespace.attach_namespace(&name);
 
             let mut symbol = Symbol::new(name).with_attributes(opts);
 
@@ -2964,13 +2943,13 @@ impl PythonExpression {
                 .build()
                 .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
-            let r = PythonExpression::from(Atom::new_var(symbol));
+            let r = PythonExpression::from(Atom::var(symbol));
             r.into_py_any(py)
         } else {
             let mut result = vec![];
             for a in names {
                 let name = a.extract::<PyBackedStr>()?;
-                let name = namespace.attach_namespace(name_check(&name)?);
+                let name = namespace.attach_namespace(&name);
                 let mut symbol = Symbol::new(name).with_attributes(opts.clone());
 
                 if let Some(f) = &custom_normalization {
@@ -3006,7 +2985,7 @@ impl PythonExpression {
                 let symbol = symbol
                     .build()
                     .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
-                let r = PythonExpression::from(Atom::new_var(symbol));
+                let r = PythonExpression::from(Atom::var(symbol));
                 result.push(r);
             }
 
@@ -3041,7 +3020,7 @@ impl PythonExpression {
         relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
-            Ok(Atom::new_num(num).into())
+            Ok(Atom::num(num).into())
         } else if let Ok(num) = num.downcast_bound::<PyInt>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a, "python")
@@ -3049,17 +3028,17 @@ impl PythonExpression {
             if let Some(relative_error) = relative_error {
                 let mut r: Rational = f.0.into();
                 r = r.round(&relative_error.into());
-                Ok(Atom::new_num(r).into())
+                Ok(Atom::num(r).into())
             } else {
-                Ok(Atom::new_num(f.0).into())
+                Ok(Atom::num(f.0).into())
             }
         } else if let Ok(f) = num.extract::<Complex<f64>>(py) {
             if let Some(relative_error) = relative_error {
                 let r = Rational::from(f.re).round(&relative_error.into());
                 let i = Rational::from(f.im).round(&relative_error.into());
-                Ok(Atom::new_num(Complex::new(r, i)).into())
+                Ok(Atom::num(Complex::new(r, i)).into())
             } else {
-                Ok(Atom::new_num(Complex::<Float>::new(f.re.into(), f.im.into())).into())
+                Ok(Atom::num(Complex::<Float>::new(f.re.into(), f.im.into())).into())
             }
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
@@ -3070,14 +3049,14 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "E")]
     pub fn e() -> PythonExpression {
-        Atom::new_var(Atom::E).into()
+        Atom::var(Atom::E).into()
     }
 
     /// The mathematical constant `π`.
     #[classattr]
     #[pyo3(name = "PI")]
     pub fn pi() -> PythonExpression {
-        Atom::new_var(Atom::PI).into()
+        Atom::var(Atom::PI).into()
     }
 
     /// The mathematical constant `i`, where
@@ -3092,35 +3071,35 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "COEFF")]
     pub fn coeff() -> PythonExpression {
-        Atom::new_var(Atom::COEFF).into()
+        Atom::var(Atom::COEFF).into()
     }
 
     /// The built-in cosine function.
     #[classattr]
     #[pyo3(name = "COS")]
     pub fn cos() -> PythonExpression {
-        Atom::new_var(Atom::COS).into()
+        Atom::var(Atom::COS).into()
     }
 
     /// The built-in sine function.
     #[classattr]
     #[pyo3(name = "SIN")]
     pub fn sin() -> PythonExpression {
-        Atom::new_var(Atom::SIN).into()
+        Atom::var(Atom::SIN).into()
     }
 
     /// The built-in exponential function.
     #[classattr]
     #[pyo3(name = "EXP")]
     pub fn exp() -> PythonExpression {
-        Atom::new_var(Atom::EXP).into()
+        Atom::var(Atom::EXP).into()
     }
 
     /// The built-in logarithm function.
     #[classattr]
     #[pyo3(name = "LOG")]
     pub fn log() -> PythonExpression {
-        Atom::new_var(Atom::LOG).into()
+        Atom::var(Atom::LOG).into()
     }
 
     /// Return all defined symbol names (function names and variables).
@@ -3154,7 +3133,7 @@ impl PythonExpression {
         input: &str,
         default_namespace: &str,
     ) -> PyResult<PythonExpression> {
-        let e = parse!(input, default_namespace.to_string())
+        let e = try_parse!(input, default_namespace.to_string())
             .map_err(exceptions::PyValueError::new_err)?;
         Ok(e.into())
     }
@@ -3680,7 +3659,7 @@ impl PythonExpression {
             .expr
             .get_all_symbols(include_function_symbols)
             .into_iter()
-            .map(|x| Atom::new_var(x).into())
+            .map(|x| Atom::var(x).into())
             .collect();
         s.sort_by(|x, y| x.expr.cmp(&y.expr));
         s
@@ -6548,7 +6527,7 @@ impl PythonMatchIterator {
         self.with_dependent_mut(|_, i| {
             i.next().map(|m| {
                 m.into_iter()
-                    .map(|(k, v)| (Atom::new_var(k).into(), { v.into() }))
+                    .map(|(k, v)| (Atom::var(k).into(), { v.into() }))
                     .collect()
             })
         })
@@ -6752,7 +6731,7 @@ impl PythonPolynomial {
         for x in self.poly.get_vars_ref() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -7275,7 +7254,7 @@ impl PythonPolynomial {
         Ok(uni
             .isolate_roots(refine)
             .into_iter()
-            .map(|(l, r, m)| (Atom::new_num(l).into(), Atom::new_num(r).into(), m))
+            .map(|(l, r, m)| (Atom::num(l).into(), Atom::num(r).into(), m))
             .collect())
     }
 
@@ -7667,7 +7646,7 @@ impl PythonFiniteFieldPolynomial {
         for x in self.poly.get_vars_ref() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -8433,7 +8412,7 @@ impl PythonPrimeTwoPolynomial {
         for x in self.poly.get_vars_ref() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -9078,7 +9057,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         for x in self.poly.get_vars_ref() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -9786,7 +9765,7 @@ impl PythonGaloisFieldPolynomial {
         for x in self.poly.get_vars_ref() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -10432,7 +10411,7 @@ impl PythonNumberFieldPolynomial {
         for x in self.poly.get_vars_ref() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -11001,7 +10980,7 @@ impl PythonRationalPolynomial {
         for x in self.poly.get_variables().iter() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -11342,7 +11321,7 @@ impl PythonFiniteFieldRationalPolynomial {
         for x in self.poly.get_variables().iter() {
             match x {
                 Variable::Symbol(x) => {
-                    var_list.push(Atom::new_var(*x).into());
+                    var_list.push(Atom::var(*x).into());
                 }
                 Variable::Temporary(_) => {
                     Err(exceptions::PyValueError::new_err(
@@ -11723,7 +11702,7 @@ impl PythonExpressionEvaluator {
                         [
                             "fun".into_pyobject(py)?.as_any(),
                             slot_to_object(o).into_pyobject(py)?.as_any(),
-                            PythonExpression::from(Atom::new_var(f.get_symbol()))
+                            PythonExpression::from(Atom::var(f.get_symbol()))
                                 .into_pyobject(py)?
                                 .as_any(),
                             slot_to_object(s).into_pyobject(py)?.as_any(),
@@ -11735,10 +11714,7 @@ impl PythonExpressionEvaluator {
         Ok((
             v,
             max,
-            consts
-                .into_iter()
-                .map(|x| Atom::new_num(x).into())
-                .collect(),
+            consts.into_iter().map(|x| Atom::num(x).into()).collect(),
         ))
     }
 
@@ -13063,7 +13039,7 @@ impl PythonGraph {
             Graph::generate(&external_edges, &vertex_signatures, &settings)
                 .unwrap_or_else(|e| e)
                 .into_iter()
-                .map(|(k, v)| (Self { graph: k }, Atom::new_num(v).into()))
+                .map(|(k, v)| (Self { graph: k }, Atom::num(v).into()))
                 .collect(),
         )
     }
@@ -13263,7 +13239,7 @@ impl PythonGraph {
         (
             Self { graph: c.graph },
             c.vertex_map,
-            Atom::new_num(c.automorphism_group_size).into(),
+            Atom::num(c.automorphism_group_size).into(),
             c.orbit,
         )
     }

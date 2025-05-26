@@ -11,9 +11,9 @@
 //! ```
 //! use symbolica::{atom::AtomCore, parse};
 //!
-//! let a = parse!("(x+1)^2").unwrap();
+//! let a = parse!("(x+1)^2");
 //! let b = a.expand();
-//! let r = parse!("x^2+2x+1").unwrap();
+//! let r = parse!("x^2+2x+1");
 //! assert_eq!(b, r);
 //! ```
 //!
@@ -23,8 +23,8 @@
 //! use symbolica::{atom::Atom, parse, symbol};
 //!
 //! let x = symbol!("x");
-//! let expr = Atom::new_var(x) + 1;
-//! let p = parse!("x + 1").unwrap();
+//! let expr = Atom::var(x) + 1;
+//! let p = parse!("x + 1");
 //! assert_eq!(expr, p);
 //! ```
 //!
@@ -34,9 +34,9 @@
 //! use symbolica::{function, parse, symbol};
 //! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 //!
-//! let f = symbol!("f"; Symmetric).unwrap();
+//! let f = symbol!("f"; Symmetric);
 //! let expr = function!(f, 3, 2) + (1, 4);
-//! let p = parse!("f(2,3) + 1/4").unwrap();
+//! let p = parse!("f(2,3) + 1/4");
 //! assert_eq!(expr, p);
 //! ```
 mod coefficient;
@@ -261,7 +261,7 @@ macro_rules! hide_namespace {
 /// let normalize_fn: NormalizationFunction = Box::new(|view, atom| {
 ///     // Example normalization logic
 ///     if view.is_zero() {
-///         *atom = Atom::new_num(0);
+///         *atom = Atom::num(0);
 ///         true
 ///     } else {
 ///         false
@@ -297,7 +297,7 @@ pub enum FunctionAttribute {
 ///
 /// let x = symbol!("x");
 /// let (x, y) = symbol!("x", "y");
-/// let f = symbol!("f"; Symmetric).unwrap();
+/// let f = symbol!("f"; Symmetric);
 /// ```
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -426,7 +426,7 @@ impl SymbolBuilder {
             && self.normalization_function.is_none()
             && self.print_function.is_none()
         {
-            Ok(State::get_state_mut().get_symbol(self.symbol))
+            State::get_state_mut().get_symbol(self.symbol)
         } else {
             State::get_state_mut().get_symbol_with_attributes(
                 self.symbol,
@@ -530,7 +530,7 @@ impl Symbol {
     /// ```
     /// use symbolica::symbol;
     ///
-    /// let f = symbol!("f"; Symmetric).unwrap();
+    /// let f = symbol!("f"; Symmetric);
     /// assert!(f.is_symmetric());
     /// ```
     pub fn is_symmetric(&self) -> bool {
@@ -544,7 +544,7 @@ impl Symbol {
     /// ```
     /// use symbolica::symbol;
     ///
-    /// let f = symbol!("f"; Antisymmetric).unwrap();
+    /// let f = symbol!("f"; Antisymmetric);
     /// assert!(f.is_antisymmetric());
     /// ```
     pub fn is_antisymmetric(&self) -> bool {
@@ -558,7 +558,7 @@ impl Symbol {
     /// ```
     /// use symbolica::symbol;
     ///
-    /// let f = symbol!("f"; Cyclesymmetric).unwrap();
+    /// let f = symbol!("f"; Cyclesymmetric);
     /// assert!(f.is_cyclesymmetric());
     /// ```
     pub fn is_cyclesymmetric(&self) -> bool {
@@ -572,7 +572,7 @@ impl Symbol {
     /// ```
     /// use symbolica::symbol;
     ///
-    /// let f = symbol!("f"; Linear).unwrap();
+    /// let f = symbol!("f"; Linear);
     /// assert!(f.is_linear());
     /// ```
     pub fn is_linear(&self) -> bool {
@@ -763,7 +763,7 @@ impl std::fmt::Display for AtomView<'_> {
 impl From<Symbol> for Atom {
     /// Convert a symbol to an atom. This will allocate memory.
     fn from(symbol: Symbol) -> Atom {
-        Atom::new_var(symbol)
+        Atom::var(symbol)
     }
 }
 
@@ -865,19 +865,19 @@ where
     T: Into<Coefficient>,
 {
     fn from(v: T) -> AtomOrView<'a> {
-        AtomOrView::Atom(Atom::new_num(v.into()))
+        AtomOrView::Atom(Atom::num(v.into()))
     }
 }
 
 impl<'a> From<Symbol> for AtomOrView<'a> {
     fn from(s: Symbol) -> AtomOrView<'a> {
-        AtomOrView::Atom(Atom::new_var(s))
+        AtomOrView::Atom(Atom::var(s))
     }
 }
 
 impl<'a> From<&'a Symbol> for AtomOrView<'a> {
     fn from(s: &'a Symbol) -> AtomOrView<'a> {
-        AtomOrView::Atom(Atom::new_var(*s))
+        AtomOrView::Atom(Atom::var(*s))
     }
 }
 
@@ -1098,9 +1098,9 @@ impl AtomView<'_> {
 /// ```
 /// use symbolica::{atom::AtomCore, parse};
 ///
-/// let a = parse!("(x+1)^2").unwrap();
+/// let a = parse!("(x+1)^2");
 /// let b = a.expand();
-/// let r = parse!("x^2+2x+1").unwrap();
+/// let r = parse!("x^2+2x+1");
 /// assert_eq!(b, r);
 /// ```
 ///
@@ -1110,8 +1110,8 @@ impl AtomView<'_> {
 /// use symbolica::{atom::Atom, parse, symbol};
 ///
 /// let x = symbol!("x");
-/// let expr = Atom::new_var(x) + 1;
-/// let p = parse!("x + 1").unwrap();
+/// let expr = Atom::var(x) + 1;
+/// let p = parse!("x + 1");
 /// assert_eq!(expr, p);
 /// ```
 ///
@@ -1121,9 +1121,9 @@ impl AtomView<'_> {
 /// use symbolica::{function, parse, symbol};
 /// use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 ///
-/// let f = symbol!("f"; Symmetric).unwrap();
+/// let f = symbol!("f"; Symmetric);
 /// let expr = function!(f, 3, 2) + (1, 4);
-/// let p = parse!("f(2,3) + 1/4").unwrap();
+/// let p = parse!("f(2,3) + 1/4");
 /// assert_eq!(expr, p);
 /// ```
 ///
@@ -1132,7 +1132,7 @@ impl AtomView<'_> {
 /// The output can be controlled with
 /// ```
 /// use symbolica::{hide_namespace, parse};
-/// let a = parse!("x^2+cos(x)").unwrap();
+/// let a = parse!("x^2+cos(x)");
 /// println!("{:+}", a); // print with a leading sign
 /// println!("{:#}", a); // print the namespace in front of every variable (e.g. `test::x`)
 /// println!("{}", hide_namespace!(a)); // hide the current namespace
@@ -1144,7 +1144,7 @@ impl AtomView<'_> {
 ///
 /// ```
 /// use symbolica::{atom::AtomCore, parse, printer::PrintOptions};
-/// let a = parse!("x^2+cos(x)").unwrap();
+/// let a = parse!("x^2+cos(x)");
 /// println!("{}", a.printer(PrintOptions::latex()));
 /// println!("{}", a.printer(PrintOptions::mathematica()));
 /// println!("{}", a.printer(PrintOptions::file()));
@@ -1200,7 +1200,7 @@ impl Atom {
 
     /// The imaginary unit.
     pub fn i() -> Atom {
-        Atom::new_num(Complex::<Rational>::new_i())
+        Atom::num(Complex::<Rational>::new_i())
     }
 
     /// Exponentiate the atom.
@@ -1309,13 +1309,13 @@ impl Ord for Atom {
 
 impl<T: Into<Coefficient> + Clone> PartialEq<T> for Atom {
     fn eq(&self, other: &T) -> bool {
-        *self == Atom::new_num(other.clone())
+        *self == Atom::num(other.clone())
     }
 }
 
 impl<T: Into<Coefficient> + Clone> PartialOrd<T> for Atom {
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
-        Some(self.cmp(&Atom::new_num(other.clone().into())))
+        Some(self.cmp(&Atom::num(other.clone().into())))
     }
 }
 
@@ -1339,13 +1339,15 @@ impl Atom {
         Workspace::get_local().with(|ws| Token::parse(input.data)?.to_atom(&input, ws))
     }
 
+    /// Create a new atom that represents a variable.
     #[inline]
-    pub fn new_var(id: Symbol) -> Atom {
+    pub fn var(id: Symbol) -> Atom {
         Var::new(id).into()
     }
 
+    /// Create a new atom that represents a number.
     #[inline]
-    pub fn new_num<T: Into<Coefficient>>(num: T) -> Atom {
+    pub fn num<T: Into<Coefficient>>(num: T) -> Atom {
         let c = num.into();
         if c.is_zero() {
             Atom::Zero
@@ -1364,6 +1366,7 @@ impl Atom {
         self.as_view().is_one()
     }
 
+    /// Get the number of terms in the expression.
     pub fn nterms(&self) -> usize {
         self.as_view().nterms()
     }
@@ -1516,12 +1519,12 @@ impl Atom {
 /// # use symbolica::symbol;
 /// # use symbolica::atom::{Atom, AtomCore, FunctionBuilder};
 /// # fn main() {
-/// let f_id = symbol!("f"; Symmetric).unwrap();
+/// let f_id = symbol!("f"; Symmetric);
 /// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
-///     .add_arg(&Atom::new_num(3))
-///     .add_arg(&Atom::new_num(2))
-///     .add_arg(&Atom::new_num(1))
+///     .add_arg(&Atom::num(3))
+///     .add_arg(&Atom::num(2))
+///     .add_arg(&Atom::num(1))
 ///     .finish();
 ///
 /// println!("{}", a);
@@ -1617,7 +1620,7 @@ impl FunctionArgument for Symbol {
 
 impl<T: Into<Coefficient> + Clone> FunctionArgument for T {
     fn add_arg_to_function_builder(&self, f: FunctionBuilder) -> FunctionBuilder {
-        f.add_arg(Atom::new_num(self.clone()))
+        f.add_arg(Atom::num(self.clone()))
     }
 }
 
@@ -1629,7 +1632,7 @@ impl<T: Into<Coefficient> + Clone> FunctionArgument for T {
 /// ```
 /// use symbolica::{atom::Atom, atom::Symbol, function, symbol, parse};
 /// let f_id = symbol!("f");
-/// let f = function!(symbol!("f"), 3, parse!("x").unwrap());
+/// let f = function!(symbol!("f"), 3, parse!("x"));
 /// ```
 #[macro_export]
 macro_rules! function {
@@ -1654,7 +1657,7 @@ macro_rules! function {
 /// current namespace.
 ///
 /// For example:
-/// ```
+/// ```no_run
 /// use symbolica::symbol;
 /// let x = symbol!("x");
 /// let (x, y, z) = symbol!("x", "y", "z");
@@ -1669,22 +1672,23 @@ macro_rules! function {
 /// between symbol names and attributes. The options
 /// are [Symmetric](FunctionAttribute::Symmetric), [Antisymmetric](FunctionAttribute::Antisymmetric),
 /// [Cyclesymmetric](FunctionAttribute::Cyclesymmetric), and [Linear](FunctionAttribute::Linear).
-/// ```
+/// ```no_run
 /// use symbolica::symbol;
 /// let x = symbol!("x"; Symmetric, Linear);
 /// let (x, y, z) = symbol!("x", "y", "z"; Symmetric); // define all as symmetric
 /// ```
 ///
 /// Explicitly specifying a symbol without attributes:
-/// ```
+/// ```no_run
 /// use symbolica::symbol;
 /// let x = symbol!("x";);
 /// ```
-/// will throw an error if the symbol was previously defined with attributes.
+/// will panic if the symbol was previously defined with attributes. Use
+/// [try_symbol!] for a fallible version.
 ///
 /// You can specify a normalization function for the symbol, following its
 /// attributes with a `;`.
-/// ```
+/// ```no_run
 /// use symbolica::symbol;
 /// use symbolica::atom::AtomView;
 /// let x = symbol!("f";; |f, out| {
@@ -1699,7 +1703,7 @@ macro_rules! function {
 /// ```
 ///
 /// You can also define a custom printing function by adding another `;`:
-/// ```
+/// ```no_run
 /// use symbolica::symbol;
 /// use symbolica::atom::{AtomCore, AtomView};
 /// use symbolica::printer::PrintState;
@@ -1722,14 +1726,58 @@ macro_rules! function {
 ///     }
 ///
 ///     Some(fmt)
-/// })
-/// .unwrap();
+/// });
 /// ```
 /// which renders the symbol/function as `\mu_{...}` in LaTeX.
 #[macro_export]
 macro_rules! symbol {
     ($id: expr) => {
         $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap()
+    };
+    ($id: expr; $($attr: ident),*) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build().unwrap()
+    };
+    ($id: expr; $($attr: ident),*; $norm: expr) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).build().unwrap()
+    };
+    ($id: expr; $($attr: ident),*;; $print: expr) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_print_function($print).build().unwrap()
+    };
+    ($id: expr; $($attr: ident),*; $norm: expr; $print: expr) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).with_print_function($print).build().unwrap()
+    };
+    ($($id: expr),*) => {
+        {
+            (
+                $(
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap(),
+                )+
+            )
+        }
+    };
+    ($($id: expr),*; $($attr: ident),*) => {
+        {
+            macro_rules! gen_attr {
+                () => {
+                    &[$($crate::atom::FunctionAttribute::$attr,)*]
+                };
+            }
+
+            (
+                $(
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).build().unwrap(),
+                )+
+            )
+        }
+    };
+}
+
+/// Try to create a new symbol or fetch the existing one with the same name.
+/// This is a fallible version of the [symbol!] macro.
+#[macro_export]
+macro_rules! try_symbol {
+    ($id: expr) => {
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build()
     };
     ($id: expr; $($attr: ident),*) => {
         $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build()
@@ -1747,7 +1795,7 @@ macro_rules! symbol {
         {
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap(),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build(),
                 )+
             )
         }
@@ -1770,13 +1818,14 @@ macro_rules! symbol {
 }
 
 /// Parse an atom from a string.
-/// Use [parse_lit!](crate::parse_lit) to parse from literal code.
+/// Use [parse_lit!](crate::parse_lit) to parse from literal code and
+/// [try_parse!](crate::try_parse) for fallible parsing.
 ///
 /// # Examples
 /// Parse from a literal string:
 /// ```
 /// use symbolica::parse;
-/// let a = parse!("x^2 + 5 + f(x)").unwrap();
+/// let a = parse!("x^2 + 5 + f(x)");
 /// println!("{}", a);
 /// ```
 ///
@@ -1784,21 +1833,21 @@ macro_rules! symbol {
 /// ```
 /// use symbolica::parse;
 /// let s = format!("x^{}", 2);
-/// let a = parse!(s).unwrap();
+/// let a = parse!(s);
 /// println!("{}", a);
 /// ```
 ///
 /// Parse using another default namespace:
 /// ```
 /// use symbolica::parse;
-/// let a = parse!("test::x + y", "custom").unwrap();
-/// assert_eq!(a, parse!("test::x + custom::y").unwrap());
+/// let a = parse!("test::x + y", "custom");
+/// assert_eq!(a, parse!("test::x + custom::y"));
 /// ```
 ///
 /// Parse a complex number:
 /// ```
 /// use symbolica::parse;
-/// let a = parse!("(2+3i)*x").unwrap();
+/// let a = parse!("(2+3i)*x");
 /// println!("{}", a);
 /// ```
 ///
@@ -1806,11 +1855,18 @@ macro_rules! symbol {
 /// a custom precision of 5 decimal digits:
 /// ```
 /// use symbolica::parse;
-/// let a = parse!("1.23456e-6`5").unwrap();
+/// let a = parse!("1.23456e-6`5");
 /// println!("{}", a);
 /// ```
 #[macro_export]
 macro_rules! parse {
+    ($($all_args:tt)*) => {
+        $crate::try_parse!($($all_args)*).unwrap()
+    };
+}
+
+#[macro_export]
+macro_rules! try_parse {
     ($s: expr) => {
         $crate::atom::Atom::parse($crate::wrap_input!($s))
     };
@@ -1818,23 +1874,30 @@ macro_rules! parse {
 }
 
 /// Parse an atom from literal code. Use [parse!](crate::parse) to parse from a string.
-/// Any new symbols are defined in the current namespace.
+/// Any new symbols are defined in the current namespace. Use [try_parse_lit](crate::try_parse_lit) for fallible parsing.
 ///
 /// # Examples
 /// ```
 /// use symbolica::parse_lit;
-/// let a = parse_lit!(x ^ 2 + 5 + f(x)).unwrap();
+/// let a = parse_lit!(x ^ 2 + 5 + f(x));
 /// println!("{}", a);
 /// ```
 ///
 /// Parse using another default namespace:
 /// ```
 /// use symbolica::{parse, parse_lit};
-/// let a = parse_lit!(test::x + y, "custom").unwrap();
-/// assert_eq!(a, parse!("test::x + custom::y").unwrap());
+/// let a = parse_lit!(test::x + y, "custom");
+/// assert_eq!(a, parse!("test::x + custom::y"));
 /// ```
 #[macro_export]
 macro_rules! parse_lit {
+    ($s: expr) => {{ $crate::atom::Atom::parse($crate::wrap_input!(stringify!($s))).unwrap() }};
+    ($s: expr, $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!(stringify!($s), $ns)).unwrap() }};
+}
+
+/// Try to parse an atom from literal code. Use [parse_lit!](crate::parse_lit) for parsing that panics on an error.
+#[macro_export]
+macro_rules! try_parse_lit {
     ($s: expr) => {{ $crate::atom::Atom::parse($crate::wrap_input!(stringify!($s))) }};
     ($s: expr, $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!(stringify!($s), $ns)) }};
 }
@@ -1927,15 +1990,12 @@ mod test {
 
     #[test]
     fn parse_macro() {
-        assert_eq!(
-            parse_lit!(x ^ 2 + 5 + f(x)).unwrap(),
-            parse!("x ^ 2 + 5 + f(x)").unwrap()
-        );
+        assert_eq!(parse_lit!(x ^ 2 + 5 + f(x)), parse!("x ^ 2 + 5 + f(x)"));
     }
 
     #[test]
     fn debug() {
-        let x = parse!("v1+f1(v2)").unwrap();
+        let x = parse!("v1+f1(v2)");
         assert_eq!(
             format!("{:?}", x),
             "AddView { data: [5, 17, 2, 13, 2, 1, 11, 3, 5, 0, 0, 0, 1, 41, 2, 1, 12] }"
@@ -1951,29 +2011,29 @@ mod test {
 
     #[test]
     fn composition() {
-        let v1 = parse!("v1").unwrap();
-        let v2 = parse!("v2").unwrap();
+        let v1 = parse!("v1");
+        let v2 = parse!("v2");
         let f1_id = symbol!("f1");
 
-        let f1 = function!(f1_id, v1, v2, Atom::new_num(2));
+        let f1 = function!(f1_id, v1, v2, Atom::num(2));
 
         let r = (-(&v2 + &v1 + 2) * &v2 * 6).npow(5) / &v2.pow(&v1) * &f1 / 4;
 
-        let res = parse!("1/4*(v2^v1)^-1*(-6*v2*(v1+v2+2))^5*f1(v1,v2,2)").unwrap();
+        let res = parse!("1/4*(v2^v1)^-1*(-6*v2*(v1+v2+2))^5*f1(v1,v2,2)");
         assert_eq!(res, r);
     }
 
     #[test]
     fn building() {
-        let f = FunctionBuilder::new(symbol!("a"))
+        let _ = FunctionBuilder::new(symbol!("a"))
             .add_arg(1)
             .add_args(&[1, 2])
             .add_arg(&symbol!("a"))
             .add_args(&[symbol!("b")])
-            .add_args(&[parse!("a").unwrap()])
-            .add_arg(&parse!("a").unwrap())
-            .add_arg(parse!("a").unwrap())
-            .add_arg(parse!("a").unwrap().as_view())
+            .add_args(&[parse!("a")])
+            .add_arg(&parse!("a"))
+            .add_arg(parse!("a"))
+            .add_arg(parse!("a").as_view())
             .finish();
     }
 }

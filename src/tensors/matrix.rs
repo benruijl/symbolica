@@ -1882,11 +1882,7 @@ mod test {
     #[test]
     fn jacobian() {
         let a = Vector::new(
-            vec![
-                parse!("x^2+y+z").unwrap(),
-                parse!("y+z").unwrap(),
-                parse!("z+x").unwrap(),
-            ],
+            vec![parse!("x^2+y+z"), parse!("y+z"), parse!("z+x")],
             AtomField::new(),
         );
 
@@ -1898,15 +1894,15 @@ mod test {
         assert_eq!(
             b.data,
             [
-                parse!("2*x").unwrap(),
-                Atom::new_num(1),
-                Atom::new_num(1),
-                Atom::new_num(0),
-                Atom::new_num(1),
-                Atom::new_num(1),
-                Atom::new_num(1),
-                Atom::new_num(0),
-                Atom::new_num(1)
+                parse!("2*x"),
+                Atom::num(1),
+                Atom::num(1),
+                Atom::num(0),
+                Atom::num(1),
+                Atom::num(1),
+                Atom::num(1),
+                Atom::num(0),
+                Atom::num(1)
             ]
         );
     }

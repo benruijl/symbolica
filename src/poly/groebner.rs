@@ -19,7 +19,7 @@
 //! let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
 //! .iter()
 //! .map(|x| {
-//!     let a = parse!(x).unwrap();
+//!     let a = parse!(x);
 //!     a.to_polynomial(&Zp::new(13), None)
 //! })
 //! .collect();
@@ -40,7 +40,7 @@
 //! let res: Vec<MultivariatePolynomial<_, u16>> = res
 //! .iter()
 //! .map(|x| {
-//!     let a = parse!(x).unwrap();
+//!     let a = parse!(x);
 //!     a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
 //! })
 //! .collect();
@@ -1008,7 +1008,7 @@ mod test {
         let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
             .iter()
             .map(|x| {
-                let a = parse!(x).unwrap().expand();
+                let a = parse!(x).expand();
                 a.to_polynomial(&Zp::new(13), None)
             })
             .collect();
@@ -1028,7 +1028,7 @@ mod test {
         let res: Vec<MultivariatePolynomial<_, u16>> = res
             .iter()
             .map(|x| {
-                let a = parse!(x).unwrap().expand();
+                let a = parse!(x).expand();
                 a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
             })
             .collect();
@@ -1052,7 +1052,7 @@ mod test {
         let res: Vec<MultivariatePolynomial<_, u16, _>> = res
             .iter()
             .map(|x| {
-                let a = parse!(x).unwrap().expand();
+                let a = parse!(x).expand();
                 a.to_polynomial(&Zp::new(13), ideal[0].variables.clone())
                     .reorder::<GrevLexOrder>()
             })

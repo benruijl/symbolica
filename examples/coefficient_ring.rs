@@ -3,7 +3,7 @@ use std::sync::Arc;
 use symbolica::{atom::AtomCore, parse, symbol};
 
 fn main() {
-    let expr = parse!("x*z+x*(y+2)^-1*(y+z+1)").unwrap();
+    let expr = parse!("x*z+x*(y+2)^-1*(y+z+1)");
     println!("> In: {}", expr);
 
     let expr_yz =

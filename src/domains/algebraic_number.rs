@@ -36,13 +36,13 @@ use super::{
 ///     parse,
 /// };
 ///
-/// let extension = AlgebraicExtension::new(parse!("x^2-2").unwrap().to_polynomial(&Q, None));
-/// let sqrt_2 = extension.to_element(parse!("x").unwrap().to_polynomial::<_, u16>(&Q, None));
+/// let extension = AlgebraicExtension::new(parse!("x^2-2").to_polynomial(&Q, None));
+/// let sqrt_2 = extension.to_element(parse!("x").to_polynomial::<_, u16>(&Q, None));
 ///
 /// let square = extension.mul(&sqrt_2, &sqrt_2);
 /// assert_eq!(
 ///      square,
-///      extension.to_element(parse!("2").unwrap().to_polynomial(&Q, None))
+///      extension.to_element(parse!("2").to_polynomial(&Q, None))
 /// );
 ///```
 ///
@@ -377,7 +377,7 @@ impl<R: Ring> AlgebraicExtension<R> {
     /// ```rust
     /// use symbolica::{parse, atom::AtomCore, domains::{algebraic_number::AlgebraicExtension, rational::Q}, poly::factor::Factorize};
     /// let Q_i = AlgebraicExtension::new_complex(Q);
-    /// let poly = parse!("(-1+6𝑖)*x+(4+2𝑖)*x^2+3𝑖").unwrap().to_polynomial::<_, u8>(&Q_i, None);
+    /// let poly = parse!("(-1+6𝑖)*x+(4+2𝑖)*x^2+3𝑖").to_polynomial::<_, u8>(&Q_i, None);
     /// assert_eq!(poly.factor().len(), 2);
     /// ```
     pub fn new_complex(ring: R) -> Self {
@@ -418,13 +418,13 @@ impl<R: Ring> std::fmt::Display for AlgebraicExtension<R> {
 ///     parse,
 /// };
 ///
-/// let extension = AlgebraicExtension::new(parse!("x^2-2").unwrap().to_polynomial(&Q, None));
-/// let sqrt_2 = extension.to_element(parse!("x").unwrap().to_polynomial::<_, u16>(&Q, None));
+/// let extension = AlgebraicExtension::new(parse!("x^2-2").to_polynomial(&Q, None));
+/// let sqrt_2 = extension.to_element(parse!("x").to_polynomial::<_, u16>(&Q, None));
 ///
 /// let square = extension.mul(&sqrt_2, &sqrt_2);
 /// assert_eq!(
 ///      square,
-///      extension.to_element(parse!("2").unwrap().to_polynomial(&Q, None))
+///      extension.to_element(parse!("2").to_polynomial(&Q, None))
 /// );
 ///```
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -845,23 +845,22 @@ mod tests {
     use crate::{parse, symbol};
 
     #[test]
-    fn gcd_number_field() -> Result<(), String> {
-        let ring = parse!("a^3 + 3a^2 - 46*a + 1")?.to_polynomial(&Q, None);
+    fn gcd_number_field() {
+        let ring = parse!("a^3 + 3a^2 - 46*a + 1").to_polynomial(&Q, None);
         let ring = AlgebraicExtension::new(ring);
 
-        let a = parse!("x^3-2x^2+(-2a^2+8a+2)x-a^2+11a-1")?
+        let a = parse!("x^3-2x^2+(-2a^2+8a+2)x-a^2+11a-1")
             .to_polynomial::<_, u16>(&Q, None)
             .to_number_field(&ring);
 
-        let b = parse!("x^3-2x^2-x+1")?
+        let b = parse!("x^3-2x^2-x+1")
             .to_polynomial(&Q, a.variables.clone())
             .to_number_field(&ring);
 
         let r = a.gcd(&b).from_number_field();
 
-        let expected = parse!("-50/91+x-23/91*a-1/91*a^2")?.to_polynomial(&Q, a.variables.clone());
+        let expected = parse!("-50/91+x-23/91*a-1/91*a^2").to_polynomial(&Q, a.variables.clone());
         assert_eq!(r, expected);
-        Ok(())
     }
 
     #[test]
@@ -880,15 +879,12 @@ mod tests {
 
     #[test]
     fn norm() {
-        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
-            .unwrap()
-            .to_polynomial::<_, u8>(&Q, None);
-        let f = parse!("a^4-3").unwrap().to_polynomial::<_, u16>(&Q, None);
+        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2").to_polynomial::<_, u8>(&Q, None);
+        let f = parse!("a^4-3").to_polynomial::<_, u16>(&Q, None);
         let f = AlgebraicExtension::new(f);
         let norm = a.to_number_field(&f).norm();
 
         let res = parse!("16-32*z-64*z^2-64*z^3-52*z^4-40*z^5-132*z^6-24*z^7-50*z^8+120*z^9+66*z^10+92*z^11+47*z^12+32*z^13+14*z^14+4*z^15+z^16")
-        .unwrap()
         .to_polynomial::<_, u8>(&Q, a.variables.clone());
 
         assert_eq!(norm, res);
@@ -896,57 +892,46 @@ mod tests {
 
     #[test]
     fn extend() {
-        let a = parse!("x^2-2").unwrap().to_polynomial(&Q, None);
+        let a = parse!("x^2-2").to_polynomial(&Q, None);
         let ae = AlgebraicExtension::new(a);
 
-        let b = parse!("y^2-3")
-            .unwrap()
-            .to_polynomial(&Q, None)
-            .to_number_field(&ae);
+        let b = parse!("y^2-3").to_polynomial(&Q, None).to_number_field(&ae);
 
         let (c, rep1, rep2) = ae.extend(&b);
 
-        let rf = parse!("1-10*y^2+y^4").unwrap().to_polynomial(&Q, None);
+        let rf = parse!("1-10*y^2+y^4").to_polynomial(&Q, None);
 
         assert_eq!(c.poly.as_ref(), &rf);
 
-        let r1 = parse!("-9/2y+1/2y^3")
-            .unwrap()
-            .to_polynomial::<_, u16>(&Q, None);
+        let r1 = parse!("-9/2y+1/2y^3").to_polynomial::<_, u16>(&Q, None);
         assert_eq!(rep1.poly, r1);
 
-        let r2 = parse!("11/2*y-1/2*y^3")
-            .unwrap()
-            .to_polynomial::<_, u16>(&Q, None);
+        let r2 = parse!("11/2*y-1/2*y^3").to_polynomial::<_, u16>(&Q, None);
         assert_eq!(rep2.poly, r2);
     }
 
     #[test]
     fn simplify() {
         let poly = AlgebraicExtension::new(
-            parse!("13-16v1+28v1^2+2v1^3+11v1^4+v1^6")
-                .unwrap()
-                .to_polynomial(&Q, None),
+            parse!("13-16v1+28v1^2+2v1^3+11v1^4+v1^6").to_polynomial(&Q, None),
         );
 
         let a = poly.to_element(
             parse!("-295/1882 -2693/1882v1 -237/1882v1^2 -385/941v1^3 -9/1882v1^4  -33/941v1^5")
-                .unwrap()
                 .to_polynomial::<_, u16>(&Q, None),
         );
 
         let r = poly.simplify(&a);
-        let res = parse!("1+v1+v1^2").unwrap().to_polynomial(&Q, None);
+        let res = parse!("1+v1+v1^2").to_polynomial(&Q, None);
         assert_eq!(*r.poly, res);
     }
 
     #[test]
     fn try_div() {
-        let extension =
-            AlgebraicExtension::new(parse!("v1^3-2v1+3").unwrap().to_polynomial(&Z, None));
+        let extension = AlgebraicExtension::new(parse!("v1^3-2v1+3").to_polynomial(&Z, None));
 
-        let f1 = extension.to_element(parse!("v1^2-2").unwrap().to_polynomial(&Z, None));
-        let f2 = extension.to_element(parse!("v1-5").unwrap().to_polynomial(&Z, None));
+        let f1 = extension.to_element(parse!("v1^2-2").to_polynomial(&Z, None));
+        let f2 = extension.to_element(parse!("v1-5").to_polynomial(&Z, None));
         let prod = extension.mul(&f1, &f2);
 
         assert_eq!(extension.try_div(&prod, &f2).unwrap(), f1);

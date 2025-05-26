@@ -517,54 +517,54 @@ mod test {
 
     #[test]
     fn expand_num() {
-        let exp = parse!("5+2*v3*(v1-v2)*(v4+v5)").unwrap().expand_num();
-        let res = parse!("5+v3*(v4+v5)*(2*v1-2*v2)").unwrap();
+        let exp = parse!("5+2*v3*(v1-v2)*(v4+v5)").expand_num();
+        let res = parse!("5+v3*(v4+v5)*(2*v1-2*v2)");
         assert_eq!(exp, res);
     }
 
     #[test]
     fn exponent() {
-        let exp = parse!("(1+v1+v2)^4").unwrap().expand();
-        let res = parse!("4*v1+4*v2+6*v1^2+4*v1^3+v1^4+6*v2^2+4*v2^3+v2^4+12*v1*v2+12*v1*v2^2+4*v1*v2^3+12*v1^2*v2+6*v1^2*v2^2+4*v1^3*v2+1").unwrap();
+        let exp = parse!("(1+v1+v2)^4").expand();
+        let res = parse!(
+            "4*v1+4*v2+6*v1^2+4*v1^3+v1^4+6*v2^2+4*v2^3+v2^4+12*v1*v2+12*v1*v2^2+4*v1*v2^3+12*v1^2*v2+6*v1^2*v2^2+4*v1^3*v2+1"
+        );
         assert_eq!(exp, res);
     }
 
     #[test]
     fn association() {
-        let exp = parse!("(1+v1)*(2+v2)*(3+v1)").unwrap().expand();
-        let res = parse!("8*v1+3*v2+2*v1^2+4*v1*v2+v1^2*v2+6").unwrap();
+        let exp = parse!("(1+v1)*(2+v2)*(3+v1)").expand();
+        let res = parse!("8*v1+3*v2+2*v1^2+4*v1*v2+v1^2*v2+6");
         assert_eq!(exp, res);
     }
 
     #[test]
     fn mul_pow() {
-        let exp = parse!("(v1*v2*2)^3*2").unwrap().expand();
-        let res = parse!("v1^3*v2^3*16").unwrap();
+        let exp = parse!("(v1*v2*2)^3*2").expand();
+        let res = parse!("v1^3*v2^3*16");
         assert_eq!(exp, res);
     }
 
     #[test]
     fn mul_pow_neg() {
-        let exp = parse!("(v1*v2*2)^-3").unwrap().expand();
-        let res = parse!("8^-1*v1^-3*v2^-3").unwrap();
+        let exp = parse!("(v1*v2*2)^-3").expand();
+        let res = parse!("8^-1*v1^-3*v2^-3");
         assert_eq!(exp, res);
     }
 
     #[test]
     fn expand_in_var() {
         let exp = parse!("(1+v1)^2+(1+v2)^100")
-            .unwrap()
             .expand_in_symbol(symbol!("v1"));
-        let res = parse!("1+2*v1+v1^2+(v2+1)^100").unwrap();
+        let res = parse!("1+2*v1+v1^2+(v2+1)^100");
         assert_eq!(exp, res);
     }
 
     #[test]
     fn expand_with_poly() {
         let exp = parse!("(1+v1)^2+(1+v2)^100")
-            .unwrap()
             .expand_in_symbol(symbol!("v1"));
-        let res = parse!("1+2*v1+v1^2+(v2+1)^100").unwrap();
+        let res = parse!("1+2*v1+v1^2+(v2+1)^100");
         assert_eq!(exp, res);
     }
 }

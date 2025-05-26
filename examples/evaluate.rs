@@ -8,14 +8,14 @@ fn main() {
     let x = symbol!("x");
     let f = symbol!("f");
     let g = symbol!("g");
-    let p0 = parse!("p(0)").unwrap();
-    let a = parse!("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)").unwrap();
+    let p0 = parse!("p(0)");
+    let a = parse!("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)");
 
     let mut const_map = HashMap::default();
     let mut fn_map: HashMap<_, _> = HashMap::default();
 
     // x = 6 and p(0) = 7
-    const_map.insert(Atom::new_var(x), 6.);
+    const_map.insert(Atom::var(x), 6.);
     const_map.insert(p0, 7.);
 
     // f(x, y) = x^2 + y

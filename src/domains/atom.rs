@@ -34,10 +34,10 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 /// };
 ///
 /// let r = field.div(
-///     &parse!("x^2+2x+1").unwrap(),
-///     &parse!("x+1").unwrap(),
+///     &parse!("x^2+2x+1"),
+///     &parse!("x+1"),
 /// );
-/// assert_eq!(r, parse!("x+1").unwrap());
+/// assert_eq!(r, parse!("x+1"));
 /// ```
 #[derive(Clone)]
 pub struct AtomField {
@@ -160,11 +160,11 @@ impl Ring for AtomField {
     }
 
     fn zero(&self) -> Self::Element {
-        Atom::new_num(0)
+        Atom::num(0)
     }
 
     fn one(&self) -> Self::Element {
-        Atom::new_num(1)
+        Atom::num(1)
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
@@ -202,11 +202,11 @@ impl Ring for AtomField {
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.random_range(range.0..range.1);
-        Atom::new_num(r)
+        Atom::num(r)
     }
 
     fn nth(&self, n: Integer) -> Self::Element {
-        Atom::new_num(n)
+        Atom::num(n)
     }
 
     fn characteristic(&self) -> Integer {
@@ -284,7 +284,7 @@ impl Field for AtomField {
     }
 
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        let one = Atom::new_num(1);
+        let one = Atom::num(1);
         self.normalize(self.div(&one, a))
     }
 }

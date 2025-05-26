@@ -5,7 +5,7 @@ use symbolica::{
 };
 
 fn main() {
-    let expr: Atom = parse!("f(z)*f(f(x),z)*f(y)").unwrap();
+    let expr: Atom = parse!("f(z)*f(f(x),z)*f(y)");
 
     println!("> Tree walk of {}:", expr);
 

@@ -5,9 +5,9 @@ use symbolica::{atom::Atom, parse, state::State, symbol};
 
 fn conflict() {
     symbol!("x", "y");
-    symbol!("f"; Symmetric).unwrap();
+    symbol!("f"; Symmetric);
 
-    let a = parse!("f(x, y)*x^2").unwrap();
+    let a = parse!("f(x, y)*x^2");
 
     let mut a_export = vec![];
     a.as_view().write(&mut a_export).unwrap();
@@ -30,7 +30,7 @@ fn conflict() {
 
     let a_rec = Atom::import_with_map(Cursor::new(&a_export), &state_map).unwrap();
 
-    let r = parse!("x^2*f1(y, x)").unwrap();
+    let r = parse!("x^2*f1(y, x)");
     assert_eq!(a_rec, r);
 }
 
@@ -38,7 +38,7 @@ fn conflict() {
 fn rational_rename() {
     symbol!("x");
 
-    let a = parse!("x^2*coeff(x)").unwrap();
+    let a = parse!("x^2*coeff(x)");
 
     let mut a_export = vec![];
     a.as_view().write(&mut a_export).unwrap();
@@ -55,7 +55,7 @@ fn rational_rename() {
 
     let a_rec = Atom::import_with_map(Cursor::new(&a_export), &state_map).unwrap();
 
-    let r = parse!("x^2*coeff(x)").unwrap();
+    let r = parse!("x^2*coeff(x)");
     assert_eq!(a_rec, r);
 
     unsafe { State::reset() };

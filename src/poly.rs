@@ -1766,7 +1766,7 @@ impl Token {
             field: &R,
         ) -> Result<(), Cow<'static, str>> {
             match factor {
-                Token::Number(n) => match n.parse::<Integer>() {
+                Token::Number(n, false) => match n.parse::<Integer>() {
                     Ok(x) => {
                         field.mul_assign(coefficient, &field.element_from_integer(x));
                     }
@@ -1800,7 +1800,7 @@ impl Token {
                     };
 
                     match &args[1] {
-                        Token::Number(n) => {
+                        Token::Number(n, false) => {
                             if let Ok(x) = n.parse::<i32>() {
                                 exponents[var_index] += E::from_i32(x);
                             } else {
@@ -1934,7 +1934,7 @@ impl Token {
         }
 
         match self {
-            Token::Number(_) | Token::ID(_) => {
+            Token::Number(_, false) | Token::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
                 let den = num.one();
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
@@ -1948,7 +1948,7 @@ impl Token {
                 // we have a pow that could not be parsed by to_polynomial
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
-                if Token::Number("-1".into()) == args[1] {
+                if Token::Number("-1".into(), false) == args[1] {
                     let r =
                         args[0].to_rational_polynomial(field, out_field, var_map, var_name_map)?;
                     Ok(r.inv())
@@ -2074,7 +2074,7 @@ impl Token {
         }
 
         match self {
-            Token::Number(_) | Token::ID(_) => {
+            Token::Number(_, false) | Token::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
                 let den = vec![(num.one(), 1)];
                 Ok(FactorizedRationalPolynomial::from_num_den(
@@ -2095,7 +2095,7 @@ impl Token {
                 // we have a pow that could not be parsed by to_polynomial
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
-                if Token::Number("-1".into()) == args[1] {
+                if Token::Number("-1".into(), false) == args[1] {
                     let r = args[0].to_factorized_rational_polynomial(
                         field,
                         out_field,

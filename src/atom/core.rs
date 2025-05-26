@@ -796,9 +796,9 @@ pub trait AtomCore {
     ///
     /// ```
     /// use symbolica::{atom::{Atom, AtomCore}, symbol, parse};
-    /// let expr = parse!("1 + 2𝑖").unwrap() * Atom::new_var(symbol!("x")).pow(Atom::i());
+    /// let expr = parse!("1 + 2i").unwrap() * Atom::new_var(symbol!("x")).pow(Atom::i());
     /// let result = expr.conjugate();
-    /// assert_eq!(result, parse!("(1 - 2𝑖)*x^(-𝑖)").unwrap());
+    /// assert_eq!(result, parse!("(1 - 2i)*x^(-1i)").unwrap());
     /// ```
     fn conjugate(&self) -> Atom {
         self.as_atom_view().conjugate()

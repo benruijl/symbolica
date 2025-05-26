@@ -1192,7 +1192,8 @@ impl Atom {
     /// The mathematical constant `π`.
     pub const PI: Symbol = State::PI;
 
-    /// The string representation of the imaginary unit `i`.
+    /// The number suffix that represents the imaginary unit.
+    /// The suffix `i` can also be used for parsing (e.g. `2+3𝑖` or `2+3i`).
     pub const I_STR: &'static str = "𝑖";
     /// The string representation of the constant `π`.
     pub const PI_STR: &'static str = "𝜋";
@@ -1792,6 +1793,21 @@ macro_rules! symbol {
 /// use symbolica::parse;
 /// let a = parse!("test::x + y", "custom").unwrap();
 /// assert_eq!(a, parse!("test::x + custom::y").unwrap());
+/// ```
+///
+/// Parse a complex number:
+/// ```
+/// use symbolica::parse;
+/// let a = parse!("(2+3i)*x").unwrap();
+/// println!("{}", a);
+/// ```
+///
+/// Parse a floating-point number in exponential notation with
+/// a custom precision of 5 decimal digits:
+/// ```
+/// use symbolica::parse;
+/// let a = parse!("1.23456e-6`5").unwrap();
+/// println!("{}", a);
 /// ```
 #[macro_export]
 macro_rules! parse {

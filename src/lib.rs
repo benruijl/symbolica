@@ -10,7 +10,7 @@
 //! use symbolica::{atom::AtomCore, parse, symbol};
 //!
 //! fn main() {
-//!     let input = parse!("x^2*log(2*x + y) + exp(3*x)").unwrap();
+//!     let input = parse!("x^2*log(2*x + y) + exp(3*x)");
 //!     let a = input.derivative(symbol!("x"));
 //!     println!("d/dx {} = {}:", input, a);
 //! }

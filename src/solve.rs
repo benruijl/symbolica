@@ -27,7 +27,7 @@ impl AtomView<'_> {
             return Err("Complex coefficients are not supported".to_owned());
         }
 
-        let v = Atom::new_var(x);
+        let v = Atom::var(x);
         let f = self
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))
             .unwrap()
@@ -109,7 +109,7 @@ impl AtomView<'_> {
             )?]);
         }
 
-        let avars = vars.iter().map(|v| Atom::new_var(*v)).collect::<Vec<_>>();
+        let avars = vars.iter().map(|v| Atom::var(*v)).collect::<Vec<_>>();
 
         let mut fs = system
             .iter()
@@ -328,7 +328,7 @@ mod test {
             "(v4-1)v1 + v4*v3",
         ];
 
-        let system: Vec<_> = eqs.iter().map(|e| parse!(e).unwrap()).collect();
+        let system: Vec<_> = eqs.iter().map(|e| parse!(e)).collect();
 
         let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
@@ -337,7 +337,7 @@ mod test {
             "(v4^2-f1(v4))^-1*(2*v4-1)",
             "(v4^2-v4^3-2*v4*f1(v4)+2*v4^2*f1(v4))*(v4^2-v4^3+v4^4-f1(v4)+v4*f1(v4)-v4^2*f1(v4))^-1",
         ];
-        let res = res.iter().map(|x| parse!(x).unwrap()).collect::<Vec<_>>();
+        let res = res.iter().map(|x| parse!(x)).collect::<Vec<_>>();
 
         assert_eq!(sol, res);
     }
@@ -356,20 +356,12 @@ mod test {
         let system_rat: Vec<RationalPolynomial<_, u8>> = system
             .iter()
             .flatten()
-            .map(|s| {
-                parse!(s)
-                    .unwrap()
-                    .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
-            })
+            .map(|s| parse!(s).to_rational_polynomial(&Q, &Z, Some(var_map.clone())))
             .collect();
 
         let rhs_rat: Vec<RationalPolynomial<_, u8>> = rhs
             .iter()
-            .map(|s| {
-                parse!(s)
-                    .unwrap()
-                    .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
-            })
+            .map(|s| parse!(s).to_rational_polynomial(&Q, &Z, Some(var_map.clone())))
             .collect();
 
         let field = RationalPolynomialField::from_poly(&rhs_rat[0].numerator);
@@ -392,11 +384,7 @@ mod test {
 
         let res = res
             .iter()
-            .map(|x| {
-                parse!(x)
-                    .unwrap()
-                    .to_rational_polynomial(&Z, &Z, m.data[0].get_variables().clone())
-            })
+            .map(|x| parse!(x).to_rational_polynomial(&Z, &Z, m.data[0].get_variables().clone()))
             .collect::<Vec<_>>();
 
         assert_eq!(sol.data, res);
@@ -405,7 +393,7 @@ mod test {
     #[test]
     fn find_root() {
         let x = symbol!("x");
-        let a = parse!("x^2 - 2").unwrap();
+        let a = parse!("x^2 - 2");
         let a = a.as_view();
 
         let root = a.nsolve(x, 1.0, 1e-10, 1000).unwrap();
@@ -414,8 +402,8 @@ mod test {
 
     #[test]
     fn solve_system_newton() {
-        let a = parse!("5x^2+x*y^2+sin(2y)^2 - 2").unwrap();
-        let b = parse!("exp(2x-y)+4y - 3").unwrap();
+        let a = parse!("5x^2+x*y^2+sin(2y)^2 - 2");
+        let b = parse!("exp(2x-y)+4y - 3");
 
         let r = AtomView::nsolve_system(
             &[a.as_view(), b.as_view()],

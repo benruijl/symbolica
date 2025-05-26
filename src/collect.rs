@@ -116,11 +116,11 @@ impl<'a> AtomView<'a> {
 
         let mut coeffs = vec![];
         for t in p.into_iter() {
-            let mut key = Atom::new_num(1);
+            let mut key = Atom::num(1);
 
             for (p, v) in t.exponents.iter().zip(xs) {
                 let mut pow = Atom::new();
-                pow.to_pow(v.as_atom_view(), Atom::new_num(p.to_i32() as i64).as_view());
+                pow.to_pow(v.as_atom_view(), Atom::num(p.to_i32() as i64).as_view());
                 key = key * pow;
             }
 
@@ -428,7 +428,7 @@ impl<'a> AtomView<'a> {
         let f_d = r.denominator.factor();
 
         if f_n.is_empty() {
-            return Atom::new_num(0);
+            return Atom::num(0);
         }
 
         let mut out = Atom::new();
@@ -437,7 +437,7 @@ impl<'a> AtomView<'a> {
         let mut pow = Atom::new();
         for (k, v) in f_n {
             if v > 1 {
-                let exp = Atom::new_num(v as i64);
+                let exp = Atom::num(v as i64);
                 pow.to_pow(k.to_expression().as_view(), exp.as_view());
                 mul.extend(pow.as_view());
             } else {
@@ -446,7 +446,7 @@ impl<'a> AtomView<'a> {
         }
 
         for (k, v) in f_d {
-            let exp = Atom::new_num(-(v as i64));
+            let exp = Atom::num(-(v as i64));
             pow.to_pow(k.to_expression().as_view(), exp.as_view());
             mul.extend(pow.as_view());
         }
@@ -782,52 +782,52 @@ mod test {
 
     #[test]
     fn collect_factors() {
-        let input = parse!("v1*(v1+v2*v1+v1^2+v2*(v1+v1^2))").unwrap();
+        let input = parse!("v1*(v1+v2*v1+v1^2+v2*(v1+v1^2))");
         let r = input.collect_factors();
-        let res = parse!("v1^2*(1+v1+v2+v2*(1+v1))").unwrap();
+        let res = parse!("v1^2*(1+v1+v2+v2*(1+v1))");
         assert_eq!(r, res);
     }
 
     #[test]
     fn collect_symbol() {
-        let input = parse!("f1 + v1*f1 + f1(5,3)*v1 + f1(5,3)*v2 + f1(5,3)*f1(7,5)").unwrap();
+        let input = parse!("f1 + v1*f1 + f1(5,3)*v1 + f1(5,3)*v2 + f1(5,3)*f1(7,5)");
         let x = symbol!("f1");
 
         let r = input.collect_symbol::<i8>(x, None, None);
-        let res = parse!("f1*(v1+1)+(v1+v2)*f1(5,3)+f1(5,3)*f1(7,5)").unwrap();
+        let res = parse!("f1*(v1+1)+(v1+v2)*f1(5,3)+f1(5,3)*f1(7,5)");
         assert_eq!(r, res);
     }
 
     #[test]
     fn collect_num() {
-        let input = parse!("2*v1+4*v1^2+6*v1^3").unwrap();
+        let input = parse!("2*v1+4*v1^2+6*v1^3");
         let out = input.collect_num();
-        let ref_out = parse!("2*(v1+2v1^2+3v1^3)").unwrap();
+        let ref_out = parse!("2*(v1+2v1^2+3v1^3)");
         assert_eq!(out, ref_out);
 
-        let input = parse!("(-3*v1+3*v2)(2*v3+2*v4)").unwrap();
+        let input = parse!("(-3*v1+3*v2)(2*v3+2*v4)");
         let out = input.collect_num();
-        let ref_out = parse!("-6*(v4+v3)*(v1-v2)").unwrap();
+        let ref_out = parse!("-6*(v4+v3)*(v1-v2)");
         assert_eq!(out, ref_out);
 
-        let input = parse!("v1+v2+2*(v1+v2)").unwrap();
+        let input = parse!("v1+v2+2*(v1+v2)");
         let out = input.expand_num().collect_num();
-        let ref_out = parse!("3*(v1+v2)").unwrap();
+        let ref_out = parse!("3*(v1+v2)");
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn coefficient_list() {
-        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3");
         let x = symbol!("v1");
 
         let r = input.coefficient_list::<i8>(&[InlineVar::new(x)]);
 
         let res = vec![
-            (parse!("1").unwrap(), parse!("v2^2+f1(5,v1)+2").unwrap()),
-            (parse!("v1").unwrap(), parse!("v3+5*v2+1").unwrap()),
-            (parse!("v1^2").unwrap(), parse!("1").unwrap()),
-            (parse!("v1^3").unwrap(), parse!("1").unwrap()),
+            (parse!("1"), parse!("v2^2+f1(5,v1)+2")),
+            (parse!("v1"), parse!("v3+5*v2+1")),
+            (parse!("v1^2"), parse!("1")),
+            (parse!("v1^3"), parse!("1")),
         ];
 
         assert_eq!(r, res);
@@ -835,29 +835,29 @@ mod test {
 
     #[test]
     fn collect() {
-        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3");
         let x = symbol!("v1");
 
         let out = input.collect::<i8>(InlineVar::new(x), None, None);
 
-        let ref_out = parse!("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
+        let ref_out = parse!("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2");
         assert_eq!(out, ref_out)
     }
 
     #[test]
     fn collect_nested() {
-        let input = parse!("(1+v1)^2*v1+(1+v2)^100").unwrap();
+        let input = parse!("(1+v1)^2*v1+(1+v2)^100");
         let x = symbol!("v1");
 
         let out = input.collect::<i8>(InlineVar::new(x), None, None);
 
-        let ref_out = parse!("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
+        let ref_out = parse!("v1+2*v1^2+v1^3+(v2+1)^100");
         assert_eq!(out, ref_out)
     }
 
     #[test]
     fn collect_wrap() {
-        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3");
         let x = symbol!("v1");
         let key = symbol!("f3");
         let coeff = symbol!("f4");
@@ -875,52 +875,47 @@ mod test {
         );
 
         let ref_out =
-            parse!("f3(1)*f4(v2^2+f1(5,v1)+2)+f3(v1)*f4(5*v2+v3+1)+f3(v1^2)*f4(1)+f3(v1^3)*f4(1)")
-                .unwrap();
+            parse!("f3(1)*f4(v2^2+f1(5,v1)+2)+f3(v1)*f4(5*v2+v3+1)+f3(v1^2)*f4(1)+f3(v1^3)*f4(1)");
 
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn together() {
-        let input = parse!("v1^2/2+v1^3/v4*v2+v3/(1+v4)").unwrap();
+        let input = parse!("v1^2/2+v1^3/v4*v2+v3/(1+v4)");
         let out = input.together();
 
-        let ref_out =
-            parse!("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)").unwrap();
+        let ref_out = parse!("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)");
 
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn apart() {
-        let input =
-            parse!("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)").unwrap();
+        let input = parse!("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)");
         let out = input.apart(symbol!("v4"));
 
-        let ref_out = parse!("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1").unwrap();
+        let ref_out = parse!("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1");
 
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn cancel() {
-        let input =
-            parse!("1/(v1+1)^2 + (v1^2 - 1)*(v2+1)^10/(v1 - 1)+ 5 + (v1+1)/(v1^2+2v1+1)").unwrap();
+        let input = parse!("1/(v1+1)^2 + (v1^2 - 1)*(v2+1)^10/(v1 - 1)+ 5 + (v1+1)/(v1^2+2v1+1)");
         let out = input.cancel();
 
-        let ref_out = parse!("(v1+1)^-2+(v1+1)^-1+(v1+1)*(v2+1)^10+5").unwrap();
+        let ref_out = parse!("(v1+1)^-2+(v1+1)^-1+(v1+1)*(v2+1)^10+5");
 
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn factor() {
-        let input =
-            parse!("(6 + v1)/(7776 + 6480*v1 + 2160*v1^2 + 360*v1^3 + 30*v1^4 + v1^5)").unwrap();
+        let input = parse!("(6 + v1)/(7776 + 6480*v1 + 2160*v1^2 + 360*v1^3 + 30*v1^4 + v1^5)");
         let out = input.factor();
 
-        let ref_out = parse!("(v1+6)^-4").unwrap();
+        let ref_out = parse!("(v1+6)^-4");
 
         assert_eq!(out, ref_out);
     }
@@ -929,13 +924,12 @@ mod test {
     fn coefficient_list_multiple() {
         let input = parse!(
             "(v1+v2+v3)^2+v1+v1^2+ v2 + 5*v1*v2^2 + v3 + v2*(v4+1)^10 + v1*v5(1,2,3)^2 + v5(1,2)"
-        )
-        .unwrap();
+        );
 
         let out = input.as_view().coefficient_list::<i16, _>(&[
-            Atom::new_var(symbol!("v1")),
-            Atom::new_var(symbol!("v2")),
-            parse!("v5(1,2,3)").unwrap(),
+            Atom::var(symbol!("v1")),
+            Atom::var(symbol!("v2")),
+            parse!("v5(1,2,3)"),
         ]);
 
         assert_eq!(out.len(), 8);

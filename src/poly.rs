@@ -708,7 +708,7 @@ impl Variable {
 
     pub fn to_atom(&self) -> Atom {
         match self {
-            Variable::Symbol(s) => Atom::new_var(*s),
+            Variable::Symbol(s) => Atom::var(*s),
             Variable::Function(_, a) | Variable::Other(a) => a.as_ref().clone(),
             Variable::Temporary(_) => panic!("Cannot convert a temporary variable to an atom"),
         }

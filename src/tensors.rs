@@ -581,14 +581,12 @@ mod test {
 
         let a1 = parse!(
             "(f(mu1,mu4)*(f(mu2,mu2,mu1) + f2(mu3,mu2,mu3,mu2,mu1)) + f4(mu3,mu3,mu4))*g(mu4)"
-        )
-        .unwrap();
+        );
         let r1 = a1.canonize_tensors(&mus).unwrap();
 
         let a2 = parse!(
             "(f(mu1,mu4)*(f(mu2,mu2,mu1) + f2(mu2,mu3,mu2,mu3,mu1)) + f4(mu1,mu1,mu4))*g(mu4)"
-        )
-        .unwrap();
+        );
         let r2 = a2.canonize_tensors(&mus).unwrap();
 
         assert_eq!(r1, r2);
@@ -600,11 +598,11 @@ mod test {
             .map(|i| (InlineVar::new(symbol!(format!("mu{}", i + 1))), i % 2))
             .collect();
 
-        let a1 = parse!("fc1(mu1,mu2,mu1,mu3,mu4)*fs1(mu2,mu3,mu4)").unwrap();
+        let a1 = parse!("fc1(mu1,mu2,mu1,mu3,mu4)*fs1(mu2,mu3,mu4)");
 
         let r1 = a1.canonize_tensors(&mus).unwrap();
 
-        let a2 = parse!("fc1(mu4,mu3,mu1,mu2,mu3)*fs1(mu2,mu1,mu4)").unwrap();
+        let a2 = parse!("fc1(mu4,mu3,mu1,mu2,mu3)*fs1(mu2,mu1,mu4)");
 
         let r2 = a2.canonize_tensors(&mus).unwrap();
 
@@ -627,16 +625,14 @@ mod test {
 
         // fs1 is symmetric and fc1 is cyclesymmetric
         let a1 = parse!(
-                "fs1(k2,mu1,mu2)*fs1(mu1,mu3)*fc1(mu4,mu2,k1,mu4,k1,mu3)*(1+x)*f(k)*fs1(mu5,mu6)^2*f(mu7,mu9,k3,mu9,mu7)*h(mu8)*i(mu8)+fc1(mu4,mu5,mu6)*fc1(mu5,mu4,mu6)"
-            )
-            .unwrap();
+            "fs1(k2,mu1,mu2)*fs1(mu1,mu3)*fc1(mu4,mu2,k1,mu4,k1,mu3)*(1+x)*f(k)*fs1(mu5,mu6)^2*f(mu7,mu9,k3,mu9,mu7)*h(mu8)*i(mu8)+fc1(mu4,mu5,mu6)*fc1(mu5,mu4,mu6)"
+        );
 
         let r1 = a1.canonize_tensors(&mus).unwrap();
 
         let a2 = parse!(
-                "fs1(k2,mu2,mu9)*fs1(mu2,mu5)*fc1(k1,mu8,k1,mu5,mu8,mu9)*(1+x)*f(k)*fs1(mu3,mu6)^2*f(mu7,mu1,k3,mu1,mu7)*h(mu4)*i(mu4)+fc1(mu1,mu4,mu6)*fc1(mu4,mu1,mu6)"
-            )
-            .unwrap();
+            "fs1(k2,mu2,mu9)*fs1(mu2,mu5)*fc1(k1,mu8,k1,mu5,mu8,mu9)*(1+x)*f(k)*fs1(mu3,mu6)^2*f(mu7,mu1,k3,mu1,mu7)*h(mu4)*i(mu4)+fc1(mu1,mu4,mu6)*fc1(mu4,mu1,mu6)"
+        );
 
         let r2 = a2.canonize_tensors(&mus).unwrap();
 
@@ -649,11 +645,11 @@ mod test {
             .map(|i| (InlineVar::new(symbol!(format!("mu{}", i + 1))), 0))
             .collect();
 
-        let a1 = parse!("f1(mu3,mu2,mu3,mu1)*fa1(mu1,mu2)").unwrap();
+        let a1 = parse!("f1(mu3,mu2,mu3,mu1)*fa1(mu1,mu2)");
 
         let r1 = a1.canonize_tensors(&mus).unwrap();
 
-        let a2 = parse!("-f1(mu1,mu2,mu1,mu3)*fa1(mu2,mu3)").unwrap();
+        let a2 = parse!("-f1(mu1,mu2,mu1,mu3)*fa1(mu2,mu3)");
 
         let r2 = a2.canonize_tensors(&mus).unwrap();
 
@@ -662,7 +658,7 @@ mod test {
 
     #[test]
     fn canonize_constant() {
-        let a1 = parse!("x+5").unwrap();
+        let a1 = parse!("x+5");
         let r1 = a1.canonize_tensors::<Atom, usize>(&[]).unwrap();
         assert_eq!(a1, r1);
     }

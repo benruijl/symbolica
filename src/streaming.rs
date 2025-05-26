@@ -126,7 +126,7 @@ impl<R: ReadableNamedStream> Iterator for TermInputStream<'_, R> {
 /// # use std::fs::File;
 /// use symbolica::{atom::AtomCore, parse};
 /// use symbolica::streaming::TermStreamer;
-/// let input = parse!("(x+1)*y + (y+1)^2*z").unwrap();
+/// let input = parse!("(x+1)*y + (y+1)^2*z");
 ///
 /// let mut stream = TermStreamer::<BufWriter<File>>::new(Default::default());
 /// stream.push(input);
@@ -136,7 +136,7 @@ impl<R: ReadableNamedStream> Iterator for TermInputStream<'_, R> {
 ///
 /// let r = stream.to_expression();
 ///
-/// let res = parse!("y+z+x*y+2*y*z+y^2*z").unwrap();
+/// let res = parse!("y+z+x*y+2*y*z+y^2*z");
 /// assert_eq!(r, res);
 /// ```
 pub struct TermStreamer<W: WriteableNamedStream> {
@@ -752,17 +752,17 @@ mod test {
                 max_mem_bytes: 20,
             });
 
-        let input = parse!("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3) + v2 + v3 + v4").unwrap();
+        let input = parse!("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3) + v2 + v3 + v4");
         streamer.push(input);
 
         let _ = streamer.reader();
 
-        streamer = streamer + parse!("f1(v1)").unwrap();
+        streamer = streamer + parse!("f1(v1)");
 
         streamer = streamer.map(|f| f);
 
-        let pattern = parse!("f1(x_)").unwrap().to_pattern();
-        let rhs = parse!("f1(v1) + v1").unwrap().to_pattern();
+        let pattern = parse!("f1(x_)").to_pattern();
+        let rhs = parse!("f1(v1) + v1").to_pattern();
 
         streamer = streamer.map(|x| x.replace(&pattern).with(&rhs).expand());
 
@@ -770,7 +770,7 @@ mod test {
 
         let r = streamer.to_expression();
 
-        let res = parse!("12*v1+v2+v3+v4+11*f1(v1)").unwrap();
+        let res = parse!("12*v1+v2+v3+v4+11*f1(v1)");
         assert_eq!(r, res);
     }
 
@@ -783,11 +783,11 @@ mod test {
                 max_mem_bytes: 20,
             });
 
-        let input = parse!("v1*coeff(v2/v3+1)+v2*coeff(v3+1)+v3*coeff(1/v2)").unwrap();
+        let input = parse!("v1*coeff(v2/v3+1)+v2*coeff(v3+1)+v3*coeff(1/v2)");
         streamer.push(input);
 
-        let pattern = parse!("v1_").unwrap().to_pattern();
-        let rhs = parse!("v1").unwrap().to_pattern();
+        let pattern = parse!("v1_").to_pattern();
+        let rhs = parse!("v1").to_pattern();
 
         streamer = streamer.map(|x| {
             x.replace(&pattern)
@@ -800,15 +800,15 @@ mod test {
 
         let r = streamer.to_expression();
 
-        let res = parse!("coeff((v3+2*v2*v3+v2*v3^2+v2^2)/(v2*v3))*v1").unwrap();
+        let res = parse!("coeff((v3+2*v2*v3+v2*v3^2+v2^2)/(v2*v3))*v1");
         assert_eq!(r - res, Atom::Zero);
     }
 
     #[test]
     fn memory_stream() {
-        let input = parse!("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
-        let pattern = parse!("f1(x_)").unwrap().to_pattern();
-        let rhs = parse!("f1(v1) + v1").unwrap().to_pattern();
+        let input = parse!("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)");
+        let pattern = parse!("f1(x_)").to_pattern();
+        let rhs = parse!("f1(v1) + v1").to_pattern();
 
         let mut stream = TermStreamer::<BufWriter<File>>::new(TermStreamerConfig::default());
         stream.push(input);
@@ -818,24 +818,24 @@ mod test {
 
         let r = stream.to_expression();
 
-        let res = parse!("11*v1+10*f1(v1)").unwrap();
+        let res = parse!("11*v1+10*f1(v1)");
         assert_eq!(r, res);
     }
 
     #[test]
     fn term_map() {
-        let input = parse!("v1 + v2 + v3 + v4").unwrap();
+        let input = parse!("v1 + v2 + v3 + v4");
 
         let r = input
             .as_view()
-            .map_terms(|x| Atom::new_num(1) + &x.to_owned(), 4);
+            .map_terms(|x| Atom::num(1) + &x.to_owned(), 4);
 
         let r2 = input
             .as_view()
-            .map_terms(|x| Atom::new_num(1) + &x.to_owned(), 1);
+            .map_terms(|x| Atom::num(1) + &x.to_owned(), 1);
         assert_eq!(r, r2);
 
-        let res = parse!("v1 + v2 + v3 + v4 + 4").unwrap();
+        let res = parse!("v1 + v2 + v3 + v4 + 4");
         assert_eq!(r, res);
     }
 }

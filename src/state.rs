@@ -126,7 +126,7 @@ impl State {
         };
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol(wrap_symbol!(x));
+            state.get_symbol(wrap_symbol!(x)).unwrap();
         }
 
         #[cfg(test)]
@@ -205,9 +205,9 @@ impl State {
     /// ```
     /// # use symbolica::symbol;
     /// # use symbolica::state::State;
-    /// symbol!("f"; Symmetric).unwrap();
+    /// symbol!("f"; Symmetric);
     /// unsafe { State::reset(); }
-    /// symbol!("f"; Antisymmetric).unwrap();
+    /// symbol!("f"; Antisymmetric);
     /// ```
     pub unsafe fn reset() {
         let mut state = STATE.write().unwrap();
@@ -216,7 +216,7 @@ impl State {
         SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol(wrap_symbol!(x));
+            state.get_symbol(wrap_symbol!(x)).unwrap();
         }
 
         #[cfg(test)]
@@ -252,12 +252,37 @@ impl State {
         id.get_id() < Self::BUILTIN_SYMBOL_NAMES.len() as u32
     }
 
+    pub(crate) fn check_symbol_name(name: &str) -> Result<(), String> {
+        if name.is_empty() {
+            return Err("Identifier cannot be empty.".into());
+        }
+
+        let illegal_chars = [
+            '\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']', ' ', '\t', '\n', '\r', '\\',
+            ';', '&', '!', '%', '.',
+        ];
+
+        for c in illegal_chars {
+            if name.contains(c) {
+                return Err(format!("Illegal character '{}' in identifier.", c).into());
+            }
+        }
+
+        if name.chars().next().unwrap().is_numeric() {
+            return Err("Identifier cannot start with a number.".into());
+        }
+
+        Ok(())
+    }
+
     /// Get the symbol for a certain name if the name is already registered,
     /// else register it and return a new symbol without attributes.
-    pub(crate) fn get_symbol(&mut self, name: NamespacedSymbol) -> Symbol {
+    pub(crate) fn get_symbol(&mut self, name: NamespacedSymbol) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.symbol.into()) {
-            Entry::Occupied(o) => *o.get(),
+            Entry::Occupied(o) => Ok(*o.get()),
             Entry::Vacant(v) => {
+                State::check_symbol_name(&v.key())?;
+
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
                 if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
@@ -289,7 +314,7 @@ impl State {
                 assert_eq!(id, id_ret);
 
                 v.insert(new_symbol);
-                new_symbol
+                Ok(new_symbol)
             }
         }
     }
@@ -336,6 +361,8 @@ impl State {
                 }
             }
             Entry::Vacant(v) => {
+                State::check_symbol_name(&v.key())?;
+
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
                 if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
@@ -915,10 +942,9 @@ mod tests {
 
                 false
             }
-        )
-        .unwrap();
+        );
 
-        let e = parse!("custom_normalization_real_log(exp(x))").unwrap();
-        assert_eq!(e, parse!("x").unwrap());
+        let e = parse!("custom_normalization_real_log(exp(x))");
+        assert_eq!(e, parse!("x"));
     }
 }

@@ -1,8 +1,8 @@
 use symbolica::{atom::AtomCore, id::Match, parse, symbol};
 
 fn main() {
-    let expr = parse!("f(z)*f(f(x))*f(y)").unwrap();
-    let pat_expr = parse!("f(x_)").unwrap();
+    let expr = parse!("f(z)*f(f(x))*f(y)");
+    let pat_expr = parse!("f(x_)");
 
     let pattern = pat_expr.to_pattern();
 

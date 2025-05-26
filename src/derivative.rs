@@ -428,7 +428,7 @@ impl AtomView<'_> {
                                 *x = &*x - &x.constant(c.clone());
                                 constants.push(c);
                             } else {
-                                constants.push(Atom::new_num(0));
+                                constants.push(Atom::num(0));
                             }
                         }
 
@@ -450,7 +450,7 @@ impl AtomView<'_> {
                                     if *pow > 0 {
                                         term = &term * &args_series[arg].npow(*pow as usize);
                                     }
-                                    f_der = f_der.add_arg(Atom::new_num(*pow as i64));
+                                    f_der = f_der.add_arg(Atom::num(*pow as i64));
                                 }
 
                                 f_der = f_der.add_arg(&constant);
@@ -458,8 +458,8 @@ impl AtomView<'_> {
                                 result = &result
                                     + &term
                                         .mul_coeff(&f_der.finish())
-                                        .mul_coeff(&Atom::new_num(Integer::multinom(x)))
-                                        .div_coeff(&Atom::new_num(Integer::factorial(i)));
+                                        .mul_coeff(&Atom::num(Integer::multinom(x)))
+                                        .div_coeff(&Atom::num(Integer::factorial(i)));
                             }
                         }
 
@@ -763,7 +763,7 @@ mod test {
             "f(v1^2,v1)",
             "der(0,1,f(v1,v1^3))",
         ];
-        let r = inputs.map(|input| parse!(input).unwrap().derivative(v1));
+        let r = inputs.map(|input| parse!(input).derivative(v1));
 
         let res = [
             "(2*v1+1)^(v1+5)*log(2*v1+1)+2*(v1+5)*(2*v1+1)^(v1+4)",
@@ -771,7 +771,7 @@ mod test {
             "der(0,1,f(v1^2,v1))+2*v1*der(1,0,f(v1^2,v1))",
             "der(1,1,f(v1,v1^3))+3*v1^2*der(0,2,f(v1,v1^3))",
         ];
-        let res = res.map(|input| parse!(input).unwrap());
+        let res = res.map(|input| parse!(input));
 
         assert_eq!(r, res);
     }
@@ -780,78 +780,77 @@ mod test {
     fn series() {
         let v1 = symbol!("v1");
 
-        let input = parse!("exp(v1^2+1)*log(v1+3)/v1/(v1+1)").unwrap();
+        let input = parse!("exp(v1^2+1)*log(v1+3)/v1/(v1+1)");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 2.into(), true)
+            .series(v1, Atom::num(0).as_view(), 2.into(), true)
             .unwrap()
             .to_atom();
 
         let res = parse!(
             "1/3*exp(1)+v1*(-7/18*exp(1)+2*exp(1)*log(3))+v1^2*(119/162*exp(1)-2*exp(1)*log(3))-exp(1)*log(3)+v1^-1*exp(1)*log(3)"
-        )
-        .unwrap();
+        );
         assert_eq!(t, res);
     }
 
     #[test]
     fn series_shift() {
         let v1 = symbol!("v1");
-        let input = parse!("1/(v1+1)").unwrap();
+        let input = parse!("1/(v1+1)");
         let t = input
-            .series(v1, Atom::new_num(-1).as_view(), 5.into(), true)
+            .series(v1, Atom::num(-1).as_view(), 5.into(), true)
             .unwrap()
             .to_atom();
 
-        let res = parse!("1/(v1+1)").unwrap();
+        let res = parse!("1/(v1+1)");
         assert_eq!(t, res);
     }
 
     #[test]
     fn series_spurious_pole() {
         let v1 = symbol!("v1");
-        let input = parse!("(1-cos(v1))/sin(v1)").unwrap();
+        let input = parse!("(1-cos(v1))/sin(v1)");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 5.into(), true)
+            .series(v1, Atom::num(0).as_view(), 5.into(), true)
             .unwrap()
             .to_atom();
 
-        let res = parse!("1/2*v1+1/24*v1^3+1/240*v1^5").unwrap();
+        let res = parse!("1/2*v1+1/24*v1^3+1/240*v1^5");
         assert_eq!(t, res);
     }
 
     #[test]
     fn series_logx() {
         let v1 = symbol!("v1");
-        let input = parse!("log(v1)*(1+v1)").unwrap();
+        let input = parse!("log(v1)*(1+v1)");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap()
             .to_atom();
 
-        let res = parse!("log(v1)+v1*log(v1)").unwrap();
+        let res = parse!("log(v1)+v1*log(v1)");
         assert_eq!(t, res);
     }
 
     #[test]
     fn series_sqrt() {
         let v1 = symbol!("v1");
-        let input = parse!("(v1^3+v1+1)^(1/2)").unwrap();
+        let input = parse!("(v1^3+v1+1)^(1/2)");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap()
             .to_atom();
 
-        let res = parse!("1+1/2*v1-1/8*v1^2+9/16*v1^3-37/128*v1^4").unwrap();
+        let res = parse!("1+1/2*v1-1/8*v1^2+9/16*v1^3-37/128*v1^4");
         assert_eq!(t, res);
     }
 
     #[test]
     fn series_fractions() {
         let v1 = symbol!("v1");
-        let input = parse!("1/v1^5").unwrap();
+        let input = parse!("1/v1^5");
 
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 3.into(), true)
+            .series(v1, Atom::num(0).as_view(), 3.into(), true)
             .unwrap();
 
         let t2 = t.rpow((1, 3).into()).unwrap();
@@ -863,42 +862,41 @@ mod test {
     fn series_zero() {
         let v1 = symbol!("v1");
 
-        let input = parse!("1/v1^2+1/v1+v1").unwrap();
+        let input = parse!("1/v1^2+1/v1+v1");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 0.into(), true)
+            .series(v1, Atom::num(0).as_view(), 0.into(), true)
             .unwrap();
 
-        assert_eq!(t.to_atom().expand(), parse!("v1^-2+v1^-1").unwrap());
+        assert_eq!(t.to_atom().expand(), parse!("v1^-2+v1^-1"));
     }
 
     #[test]
     fn series_poles() {
         let v1 = symbol!("v1");
-        let input = parse!("1/(v1^10+v1^20)").unwrap();
+        let input = parse!("1/(v1^10+v1^20)");
 
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), (-1).into(), true)
+            .series(v1, Atom::num(0).as_view(), (-1).into(), true)
             .unwrap()
             .to_atom();
 
-        assert_eq!(t, parse!("v1^-10").unwrap())
+        assert_eq!(t, parse!("v1^-10"))
     }
 
     #[test]
     fn series_user_function() {
         let v1 = symbol!("v1");
 
-        let input = parse!("f(exp(v1),sin(v1))").unwrap();
+        let input = parse!("f(exp(v1),sin(v1))");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 2.into(), true)
+            .series(v1, Atom::num(0).as_view(), 2.into(), true)
             .unwrap()
             .to_atom();
 
         let res = parse!(
             "f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
             +v1^2*(1/2*der(0,2,f(1,0))+1/2*der(1,0,f(1,0))+der(1,1,f(1,0))+1/2*der(2,0,f(1,0)))"
-        )
-        .unwrap();
+        );
         assert_eq!(t, res);
     }
 
@@ -906,70 +904,70 @@ mod test {
     fn series_exp_log() {
         let v1 = symbol!("v1");
 
-        let input = parse!("1+2*log(v1^4)").unwrap();
+        let input = parse!("1+2*log(v1^4)");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap()
             .exp()
             .unwrap();
 
-        assert_eq!(t.to_atom().expand(), parse!("v1^8*exp(1)").unwrap());
+        assert_eq!(t.to_atom().expand(), parse!("v1^8*exp(1)"));
     }
 
     #[test]
     fn series_sub_atom() {
         let v1 = symbol!("v1");
 
-        let input = parse!("1/(1-v1)").unwrap();
+        let input = parse!("1/(1-v1)");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap();
 
-        let r = (t - &parse!("1/v1+1").unwrap()).unwrap();
+        let r = (t - &parse!("1/v1+1")).unwrap();
 
         assert_eq!(r.absolute_order(), (5, 1).into());
-        assert_eq!(r.to_atom(), parse!("-1*v1^-1+v1+v1^2+v1^3+v1^4").unwrap());
+        assert_eq!(r.to_atom(), parse!("-1*v1^-1+v1+v1^2+v1^3+v1^4"));
     }
 
     #[test]
     fn series_div_atom() {
         let v1 = symbol!("v1");
 
-        let input = parse!("v1").unwrap();
+        let input = parse!("v1");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap();
 
-        let r = ((t / &parse!("exp(v1)-1").unwrap()).unwrap() * &parse!("v1").unwrap()).unwrap();
+        let r = ((t / &parse!("exp(v1)-1")).unwrap() * &parse!("v1")).unwrap();
 
         assert_eq!(r.relative_order(), (4, 1).into());
-        assert_eq!(r.to_atom(), parse!("v1+-1/2*v1^2+1/12*v1^3").unwrap());
+        assert_eq!(r.to_atom(), parse!("v1+-1/2*v1^2+1/12*v1^3"));
     }
 
     #[test]
     fn series_relative_order() {
         let v1 = symbol!("v1");
 
-        let input = parse!("exp(v1)/v1-1/6*v1^2").unwrap();
+        let input = parse!("exp(v1)/v1-1/6*v1^2");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), false)
+            .series(v1, Atom::num(0).as_view(), 4.into(), false)
             .unwrap();
 
         assert_eq!(t.relative_order(), (4, 1).into());
-        assert_eq!(t.to_atom(), parse!("v1^-1+1+1/2*v1").unwrap());
+        assert_eq!(t.to_atom(), parse!("v1^-1+1+1/2*v1"));
     }
 
     #[test]
     fn series_truncate() {
         let v1 = symbol!("v1");
 
-        let input = parse!("v1^10").unwrap();
+        let input = parse!("v1^10");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap();
         assert_eq!(t.absolute_order(), (10, 1).into());
         assert_eq!(t.relative_order(), (0, 1).into());
-        assert_eq!(t.to_atom(), parse!("0").unwrap());
+        assert_eq!(t.to_atom(), parse!("0"));
 
         let r = (&t * &input).unwrap();
         assert_eq!(r.absolute_order(), (20, 1).into());
@@ -979,19 +977,18 @@ mod test {
     fn series_empty() {
         let v1 = symbol!("v1");
 
-        let input = parse!("v1").unwrap();
+        let input = parse!("v1");
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap();
 
         let r = &t - &t;
 
         let t2 = parse!("v1^6")
-            .unwrap()
-            .series(v1, Atom::new_num(0).as_view(), 4.into(), false)
+            .series(v1, Atom::num(0).as_view(), 4.into(), false)
             .unwrap();
 
-        let x = (&r + &parse!("v1^6").unwrap()).unwrap();
+        let x = (&r + &parse!("v1^6")).unwrap();
         assert_eq!(r.absolute_order(), (5, 1).into());
 
         let c = x.cos().unwrap();

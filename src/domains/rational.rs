@@ -1260,7 +1260,6 @@ mod test {
     #[test]
     fn fraction_poly() {
         let poly = parse!("-3/2*x^2+1/5x+4")
-            .unwrap()
             .to_polynomial::<_, u8>(&Q, None);
 
         let f = FractionField::new(Z);
@@ -1278,10 +1277,8 @@ mod test {
         let d = f.div(&c, &rat);
 
         let num = parse!("-10-2*x+15*x^2")
-            .unwrap()
             .to_polynomial::<_, u8>(&Z, None);
         let den = parse!("-40-2*x+15*x^2")
-            .unwrap()
             .to_polynomial::<_, u8>(&Z, None);
 
         assert_eq!(d, f.to_element(num, den, false));

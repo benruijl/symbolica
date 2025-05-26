@@ -167,7 +167,7 @@ impl bincode::Encode for Symbol {
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
-        Atom::new_var(*self).encode(encoder)
+        Atom::var(*self).encode(encoder)
     }
 }
 

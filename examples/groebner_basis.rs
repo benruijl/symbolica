@@ -22,7 +22,7 @@ fn main() {
     let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
         .iter()
         .map(|x| {
-            let a = parse!(x).unwrap().expand();
+            let a = parse!(x).expand();
             a.to_polynomial(&Zp::new(13), None)
         })
         .collect();

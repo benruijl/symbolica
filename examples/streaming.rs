@@ -6,9 +6,9 @@ use symbolica::{
 };
 
 fn main() {
-    let input = parse!("x+ f(x) + 2*f(y) + 7*f(z)").unwrap();
-    let pattern = parse!("f(x_)").unwrap().to_pattern();
-    let rhs = parse!("f(x) + x").unwrap().to_pattern();
+    let input = parse!("x+ f(x) + 2*f(y) + 7*f(z)");
+    let pattern = parse!("f(x_)").to_pattern();
+    let rhs = parse!("f(x) + x").to_pattern();
 
     let mut stream = TermStreamer::<CompressorWriter<_>>::new(TermStreamerConfig {
         n_cores: 4,

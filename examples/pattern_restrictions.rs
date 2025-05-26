@@ -6,8 +6,8 @@ use symbolica::{
     parse, symbol,
 };
 fn main() {
-    let expr = parse!("f(1,2,3,4,5,6,7)").unwrap();
-    let pat_expr = parse!("f(x__,y__,z__,w__)").unwrap();
+    let expr = parse!("f(1,2,3,4,5,6,7)");
+    let pat_expr = parse!("f(x__,y__,z__,w__)");
 
     let pattern = pat_expr.to_pattern();
 

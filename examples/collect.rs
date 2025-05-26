@@ -4,8 +4,8 @@ use symbolica::{
 };
 
 fn main() {
-    let input = parse!("x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3").unwrap();
-    let x = Atom::new_var(symbol!("x"));
+    let input = parse!("x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3");
+    let x = Atom::var(symbol!("x"));
     let key = symbol!("key");
     let coeff = symbol!("val");
 

@@ -56,10 +56,12 @@ impl<A, T> EvaluationFn<A, T> {
 
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode::Encode, bincode::Decode),
-    bincode(decode_context = "crate::state::StateMap")
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
 )]
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct FunctionMap<T = Rational> {
     map: HashMap<Atom, ConstOrExpr<T>>,
     tagged_fn_map: HashMap<(Symbol, Vec<Atom>), ConstOrExpr<T>>,
@@ -169,66 +171,25 @@ impl<T> FunctionMap<T> {
     }
 }
 
-#[cfg_attr(feature = "bincode", derive(bincode::Encode))]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
 #[derive(Clone, Debug)]
 enum ConstOrExpr<T> {
     Const(T),
     Expr(Expr),
 }
 
-#[cfg(feature = "bincode")]
-impl<'de, T: bincode::BorrowDecode<'de, crate::state::StateMap>>
-    bincode::BorrowDecode<'de, crate::state::StateMap> for ConstOrExpr<T>
-{
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = crate::state::StateMap>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let variant_index = <u32 as bincode::Decode<D::Context>>::decode(decoder)?;
-        match variant_index {
-            0u32 => core::result::Result::Ok(Self::Const(<T as bincode::de::BorrowDecode<
-                'de,
-                crate::state::StateMap,
-            >>::borrow_decode(decoder)?)),
-            1u32 => core::result::Result::Ok(Self::Expr(Expr::borrow_decode(decoder)?)),
-            variant => {
-                core::result::Result::Err(::bincode::error::DecodeError::UnexpectedVariant {
-                    found: variant,
-                    type_name: "ConstOrExpr",
-                    allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 1 },
-                })
-            }
-        }
-    }
-}
-
-#[cfg(feature = "bincode")]
-impl<T: bincode::Decode<crate::state::StateMap>> bincode::Decode<crate::state::StateMap>
-    for ConstOrExpr<T>
-{
-    fn decode<D: bincode::de::Decoder<Context = crate::state::StateMap>>(
-        decoder: &mut D,
-    ) -> core::result::Result<Self, bincode::error::DecodeError> {
-        let variant_index = <u32 as bincode::Decode<D::Context>>::decode(decoder)?;
-        match variant_index {
-            0u32 => core::result::Result::Ok(Self::Const(<T as bincode::Decode<
-                crate::state::StateMap,
-            >>::decode(decoder)?)),
-            1u32 => core::result::Result::Ok(Self::Expr(Expr::decode(decoder)?)),
-            variant => {
-                core::result::Result::Err(::bincode::error::DecodeError::UnexpectedVariant {
-                    found: variant,
-                    type_name: "ConstOrExpr",
-                    allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 1 },
-                })
-            }
-        }
-    }
-}
-
 #[cfg_attr(
     feature = "bincode",
-    derive(bincode::Encode, bincode::Decode),
-    bincode(decode_context = "crate::state::StateMap")
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
 )]
 #[derive(Clone, Debug)]
 struct Expr {

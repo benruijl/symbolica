@@ -172,10 +172,8 @@ impl bincode::Encode for Symbol {
 }
 
 #[cfg(feature = "bincode")]
-bincode::impl_borrow_decode_with_context!(Symbol, StateMap);
-#[cfg(feature = "bincode")]
-impl bincode::Decode<StateMap> for Symbol {
-    fn decode<D: bincode::de::Decoder<Context = StateMap>>(
+impl<C: crate::state::HasStateMap> bincode::Decode<C> for Symbol {
+    fn decode<D: bincode::de::Decoder<Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let atom = Atom::decode(decoder)?;
@@ -204,10 +202,8 @@ impl bincode::Encode for Atom {
 }
 
 #[cfg(feature = "bincode")]
-bincode::impl_borrow_decode_with_context!(Atom, StateMap);
-#[cfg(feature = "bincode")]
-impl bincode::Decode<StateMap> for Atom {
-    fn decode<D: bincode::de::Decoder<Context = StateMap>>(
+impl<C: crate::state::HasStateMap> bincode::Decode<C> for Atom {
+    fn decode<D: bincode::de::Decoder<Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         use bincode::de::read::Reader;
@@ -243,7 +239,7 @@ impl bincode::Decode<StateMap> for Atom {
             }
         };
 
-        let state_map = decoder.context();
+        let state_map = decoder.context().get_state_map();
         Ok(atom.as_view().rename(state_map))
     }
 }

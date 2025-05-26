@@ -37,6 +37,8 @@ use crate::state::Workspace;
 use self::factor::Factorize;
 use self::gcd::PolynomialGCD;
 use self::polynomial::MultivariatePolynomial;
+#[cfg(feature = "python_api")]
+use pyo3_stub_gen::derive::*;
 
 pub(crate) const INLINED_EXPONENTS: usize = 6;
 
@@ -650,6 +652,13 @@ impl MonomialOrder for LexOrder {
 /// symbols and atoms. Variables can be
 /// converted into an atom using `to_atom`.
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
 pub enum Variable {
     Symbol(Symbol),
     Temporary(usize), // a temporary variable, for internal use

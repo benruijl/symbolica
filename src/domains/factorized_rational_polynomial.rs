@@ -230,7 +230,8 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
         }
 
         if self.denominators.is_empty() && !has_denom_coeff {
-            let write_par = has_numer_coeff && !self.numerator.is_one() && state.in_exp;
+            let write_par =
+                has_numer_coeff && !self.numerator.is_one() && (state.in_exp || state.in_exp_base);
             if write_par {
                 if state.in_sum {
                     state.in_sum = false;
@@ -239,6 +240,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
 
                 f.write_char('(')?;
                 state.in_exp = false;
+                state.in_exp_base = false;
             }
 
             if has_numer_coeff {
@@ -265,7 +267,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
 
         state.suppress_one = false;
 
-        let write_par = state.in_exp;
+        let write_par = state.in_exp || state.in_exp_base;
         if write_par {
             if state.in_sum {
                 state.in_sum = false;
@@ -274,6 +276,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
 
             f.write_char('(')?;
             state.in_exp = false;
+            state.in_exp_base = false;
         }
 
         if opts.mode.is_latex() {
@@ -294,13 +297,13 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
                 self.numerator.ring.format(
                     &self.denom_coeff,
                     opts,
-                    state.step(false, !self.denominators.is_empty(), false),
+                    state.step(false, !self.denominators.is_empty(), false, false),
                     f,
                 )?;
             }
 
             for (d, p) in &self.denominators {
-                d.format(opts, state.step(false, true, *p != 1), f)?;
+                d.format(opts, state.step(false, true, false, *p != 1), f)?;
 
                 if *p != 1 {
                     f.write_fmt(format_args!("^{}", p))?;
@@ -338,7 +341,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
             return self.numerator.ring.format(
                 &self.denom_coeff,
                 opts,
-                state.step(false, true, false),
+                state.step(false, true, false, false),
                 f,
             );
         }
@@ -353,7 +356,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
             self.numerator.ring.format(
                 &self.denom_coeff,
                 opts,
-                state.step(false, true, false),
+                state.step(false, true, false, false),
                 f,
             )?;
         }
@@ -363,7 +366,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
                 f.write_char(opts.multiplication_operator)?;
             }
 
-            d.format(opts, state.step(false, true, *p != 1), f)?;
+            d.format(opts, state.step(false, true, false, *p != 1), f)?;
 
             if *p != 1 {
                 f.write_fmt(format_args!(

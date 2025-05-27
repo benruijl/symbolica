@@ -237,7 +237,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for RationalPolynomial<R, E> {
         if self.denominator.is_one() {
             self.numerator.format(opts, state, f)
         } else {
-            let write_par = state.in_exp;
+            let write_par = state.in_exp || state.in_exp_base;
             if write_par {
                 if state.in_sum {
                     state.in_sum = false;
@@ -246,6 +246,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for RationalPolynomial<R, E> {
 
                 f.write_char('(')?;
                 state.in_exp = false;
+                state.in_exp_base = false;
             }
 
             if opts.mode.is_latex() {
@@ -260,10 +261,10 @@ impl<R: Ring, E: PositiveExponent> SelfRing for RationalPolynomial<R, E> {
             } else {
                 state.suppress_one = false;
                 self.numerator
-                    .format(opts, state.step(state.in_sum, true, false), f)?;
+                    .format(opts, state.step(state.in_sum, true, false, false), f)?;
                 f.write_char('/')?;
                 self.denominator
-                    .format(opts, state.step(false, false, true), f)?;
+                    .format(opts, state.step(false, false, false, true), f)?;
             }
 
             if write_par {

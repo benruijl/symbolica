@@ -556,13 +556,13 @@ impl<F: Ring> SelfRing for Series<F> {
                 write!(f, "\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
             } else {
                 write!(f, "𝒪({}^", v)?;
-                Q.format(&o, opts, state.step(false, false, true), f)?;
+                Q.format(&o, opts, state.step(false, false, true, false), f)?;
                 f.write_char(')')?;
             }
             return Ok(false);
         }
 
-        let add_paren = state.in_product || state.in_exp;
+        let add_paren = state.in_product || state.in_exp || state.in_exp_base;
         if add_paren {
             if state.in_sum {
                 f.write_str("+")?;
@@ -571,6 +571,7 @@ impl<F: Ring> SelfRing for Series<F> {
 
             state.in_product = false;
             state.in_exp = false;
+            state.in_exp_base = false;
             f.write_str("(")?;
         }
         let in_product = state.in_product;
@@ -587,7 +588,7 @@ impl<F: Ring> SelfRing for Series<F> {
             let suppressed_one = self.field.format(
                 c,
                 opts,
-                state.step(state.in_sum, state.in_product, false),
+                state.step(state.in_sum, state.in_product, false, false),
                 f,
             )?;
 
@@ -605,7 +606,7 @@ impl<F: Ring> SelfRing for Series<F> {
                     f.write_char('{')?;
                 }
 
-                Q.format(&e, opts, state.step(false, false, true), f)?;
+                Q.format(&e, opts, state.step(false, false, true, false), f)?;
 
                 if opts.mode.is_latex() {
                     f.write_char('}')?;
@@ -621,7 +622,7 @@ impl<F: Ring> SelfRing for Series<F> {
             write!(f, "+\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
         } else {
             write!(f, "+𝒪({}^", v)?;
-            Q.format(&o, opts, state.step(false, false, true), f)?;
+            Q.format(&o, opts, state.step(false, false, true, false), f)?;
             f.write_char(')')?;
         }
 

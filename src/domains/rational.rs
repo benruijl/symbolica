@@ -385,7 +385,7 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
     ) -> Result<bool, Error> {
         let has_denom = !self.ring.is_one(&element.denominator);
 
-        let write_par = has_denom && state.in_exp;
+        let write_par = has_denom && (state.in_exp || state.in_exp_base);
         if write_par {
             if state.in_sum {
                 state.in_sum = false;
@@ -394,6 +394,7 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
 
             f.write_char('(')?;
             state.in_exp = false;
+            state.in_exp_base = false;
         }
 
         if self.ring.format(
@@ -412,8 +413,12 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
 
         if has_denom {
             f.write_char('/')?;
-            self.ring
-                .format(&element.denominator, opts, state.step(false, true, true), f)?;
+            self.ring.format(
+                &element.denominator,
+                opts,
+                state.step(false, true, false, true),
+                f,
+            )?;
         }
 
         if write_par {
@@ -444,7 +449,7 @@ where
     ) -> Result<bool, Error> {
         let has_denom = !self.denominator.is_one();
 
-        let write_par = has_denom && state.in_exp;
+        let write_par = has_denom && (state.in_exp || state.in_exp_base);
         if write_par {
             if state.in_sum {
                 state.in_sum = false;
@@ -453,6 +458,7 @@ where
 
             f.write_char('(')?;
             state.in_exp = false;
+            state.in_exp_base = false;
         }
 
         if self.numerator.format(
@@ -471,7 +477,7 @@ where
         if has_denom {
             f.write_char('/')?;
             self.denominator
-                .format(opts, state.step(false, true, true), f)?;
+                .format(opts, state.step(false, true, false, true), f)?;
         }
 
         if write_par {
@@ -1259,8 +1265,7 @@ mod test {
 
     #[test]
     fn fraction_poly() {
-        let poly = parse!("-3/2*x^2+1/5x+4")
-            .to_polynomial::<_, u8>(&Q, None);
+        let poly = parse!("-3/2*x^2+1/5x+4").to_polynomial::<_, u8>(&Q, None);
 
         let f = FractionField::new(Z);
         let poly2 = poly.map_coeff(
@@ -1276,10 +1281,8 @@ mod test {
         let c = f.add(&rat, &b);
         let d = f.div(&c, &rat);
 
-        let num = parse!("-10-2*x+15*x^2")
-            .to_polynomial::<_, u8>(&Z, None);
-        let den = parse!("-40-2*x+15*x^2")
-            .to_polynomial::<_, u8>(&Z, None);
+        let num = parse!("-10-2*x+15*x^2").to_polynomial::<_, u8>(&Z, None);
+        let den = parse!("-40-2*x+15*x^2").to_polynomial::<_, u8>(&Z, None);
 
         assert_eq!(d, f.to_element(num, den, false));
     }

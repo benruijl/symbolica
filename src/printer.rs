@@ -239,6 +239,7 @@ pub struct PrintState {
     pub in_product: bool,
     pub suppress_one: bool,
     pub in_exp: bool,
+    pub in_exp_base: bool,
     pub top_level_add_child: bool,
     pub superscript: bool,
     pub level: u16,
@@ -256,6 +257,7 @@ impl PrintState {
             in_sum: false,
             in_product: false,
             in_exp: false,
+            in_exp_base: false,
             suppress_one: false,
             top_level_add_child: true,
             superscript: false,
@@ -275,11 +277,12 @@ impl PrintState {
         self
     }
 
-    pub fn step(self, in_sum: bool, in_product: bool, in_exp: bool) -> Self {
+    pub fn step(self, in_sum: bool, in_product: bool, in_exp: bool, in_exp_base: bool) -> Self {
         Self {
             in_sum,
             in_product,
             in_exp,
+            in_exp_base,
             level: self.level + 1,
             ..self
         }
@@ -613,6 +616,12 @@ impl FormattedPrintNum for NumView<'_> {
             _ => false,
         } && print_state.in_sum;
 
+        print_state.superscript &= match d {
+            CoefficientView::Natural(_, d, ni, _) => d == 1 && ni == 0,
+            CoefficientView::Large(r, ri) => r.to_rat().is_integer() && ri.is_zero(),
+            _ => false,
+        };
+
         if global_negative {
             if print_state.top_level_add_child
                 && opts.mode.is_symbolica()
@@ -648,15 +657,17 @@ impl FormattedPrintNum for NumView<'_> {
                     return Ok(true);
                 }
 
-                let need_paren = (print_state.in_product || print_state.in_exp)
+                let need_paren = (print_state.in_product
+                    || print_state.in_exp
+                    || print_state.in_exp_base)
                     && (num != 0 && num_i != 0)
-                    || print_state.in_exp && (num < 0 || num_i < 0 || den != 1 || den_i != 1);
+                    || print_state.in_exp_base && (num < 0 || num_i < 0 || den != 1 || den_i != 1)
+                    || print_state.in_exp && (den != 1 || den_i != 1);
 
                 if need_paren {
                     f.write_char('(')?;
                 }
 
-                // FIXME: no complex in exponent
                 if !opts.mode.is_latex()
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
@@ -751,19 +762,20 @@ impl FormattedPrintNum for NumView<'_> {
                 let real = r.to_rat();
                 let imag = i.to_rat();
 
-                let need_paren = (print_state.in_product || print_state.in_exp)
-                    && (!real.is_zero() && !imag.is_zero())
-                    || print_state.in_exp
-                        && (real.is_negative()
-                            || imag.is_negative()
-                            || !real.is_integer()
-                            || !imag.is_integer());
+                let need_paren =
+                    (print_state.in_product || print_state.in_exp || print_state.in_exp_base)
+                        && (!real.is_zero() && !imag.is_zero())
+                        || print_state.in_exp_base
+                            && (real.is_negative()
+                                || imag.is_negative()
+                                || !real.is_integer()
+                                || !imag.is_integer())
+                        || print_state.in_exp && (!real.is_integer() || !imag.is_integer());
 
                 if need_paren {
                     f.write_char('(')?;
                 }
 
-                // FIXME: no complex in exponent
                 if !opts.mode.is_latex()
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
@@ -892,7 +904,7 @@ impl FormattedPrintMul for MulView<'_> {
         opts: &PrintOptions,
         mut print_state: PrintState,
     ) -> Result<bool, Error> {
-        let add_paren = print_state.in_exp;
+        let add_paren = print_state.in_exp || print_state.in_exp_base;
         if add_paren {
             if print_state.in_sum {
                 print_state.in_sum = false;
@@ -901,6 +913,7 @@ impl FormattedPrintMul for MulView<'_> {
 
             f.write_char('(')?;
             print_state.in_exp = false;
+            print_state.in_exp_base = false;
         }
 
         print_state.in_product = true;
@@ -993,6 +1006,7 @@ impl FormattedPrintFn for FunView<'_> {
         print_state.in_sum = false;
         print_state.in_product = false;
         print_state.in_exp = false;
+        print_state.in_exp_base = false;
         print_state.suppress_one = false;
         let mut first = true;
         for x in self.iter() {
@@ -1038,10 +1052,11 @@ impl FormattedPrintPow for PowView<'_> {
             }
         }
 
-        let add_paren = print_state.in_exp;
+        let add_paren = print_state.in_exp_base; // right associative
         if add_paren {
             f.write_char('(')?;
             print_state.in_exp = false;
+            print_state.in_exp_base = false;
         }
 
         let b = self.get_base();
@@ -1070,9 +1085,12 @@ impl FormattedPrintPow for PowView<'_> {
             }
         }
 
-        print_state.in_exp = true;
+        print_state.in_exp_base = true;
 
         b.format(f, opts, print_state)?;
+
+        print_state.in_exp_base = false;
+        print_state.in_exp = true;
 
         if !superscript_exponent {
             if opts.mode.is_sympy()
@@ -1093,13 +1111,9 @@ impl FormattedPrintPow for PowView<'_> {
             if superscript_exponent {
                 print_state.in_exp = false;
                 print_state.superscript = true;
-                e.format(f, opts, print_state)?;
-            } else {
-                if let AtomView::Pow(_) = e {
-                    print_state.in_exp = false; // right associative
-                }
-                e.format(f, opts, print_state)?;
             }
+
+            e.format(f, opts, print_state)?;
         }
 
         if add_paren {
@@ -1126,7 +1140,7 @@ impl FormattedPrintAdd for AddView<'_> {
         print_state.level += 1;
         print_state.suppress_one = false;
 
-        let add_paren = print_state.in_product || print_state.in_exp;
+        let add_paren = print_state.in_product || print_state.in_exp || print_state.in_exp_base;
         if add_paren {
             if print_state.in_sum {
                 if opts.mode.is_symbolica()
@@ -1142,6 +1156,7 @@ impl FormattedPrintAdd for AddView<'_> {
             print_state.in_sum = false;
             print_state.in_product = false;
             print_state.in_exp = false;
+            print_state.in_exp_base = false;
 
             if opts.mode.is_latex() {
                 f.write_str("\\left(")?;

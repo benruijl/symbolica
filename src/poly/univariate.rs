@@ -637,7 +637,7 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
             .count();
 
         let add_paren = non_zero > 1 && state.in_product
-            || (state.in_exp
+            || ((state.in_exp || state.in_exp_base)
                 && (non_zero > 1
                     || self
                         .coefficients
@@ -654,6 +654,7 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
 
             state.in_product = false;
             state.in_exp = false;
+            state.in_exp_base = false;
             f.write_str("(")?;
         }
 
@@ -675,7 +676,7 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
             let suppressed_one = self.ring.format(
                 c,
                 opts,
-                state.step(state.in_sum, state.in_product, false),
+                state.step(state.in_sum, state.in_product, false, false),
                 f,
             )?;
 

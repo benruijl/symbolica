@@ -779,7 +779,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
         }
 
         let add_paren = self.nterms() > 1 && state.in_product
-            || (state.in_exp
+            || ((state.in_exp || state.in_exp_base)
                 && (self.nterms() > 1
                     || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1
                     || !self.ring.is_one(&self.coefficients[0])));
@@ -792,6 +792,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
 
             state.in_product = false;
             state.in_exp = false;
+            state.in_exp_base = false;
             f.write_str("(")?;
         }
         let in_product = state.in_product;

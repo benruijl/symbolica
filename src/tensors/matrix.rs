@@ -180,6 +180,7 @@ impl<F: Ring> SelfRing for Vector<F> {
         state.in_sum = false;
         state.in_product = false;
         state.in_exp = false;
+        state.in_exp_base = false;
 
         if opts.mode.is_latex() {
             f.write_str("\\begin{pvector}")?;

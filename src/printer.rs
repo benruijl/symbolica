@@ -613,6 +613,12 @@ impl FormattedPrintNum for NumView<'_> {
             _ => false,
         } && print_state.in_sum;
 
+        print_state.superscript &= match d {
+            CoefficientView::Natural(_, d, ni, _) => d == 1 && ni == 0,
+            CoefficientView::Large(r, ri) => r.to_rat().is_integer() && ri.is_zero(),
+            _ => false,
+        };
+
         if global_negative {
             if print_state.top_level_add_child
                 && opts.mode.is_symbolica()
@@ -650,13 +656,12 @@ impl FormattedPrintNum for NumView<'_> {
 
                 let need_paren = (print_state.in_product || print_state.in_exp)
                     && (num != 0 && num_i != 0)
-                    || print_state.in_exp && (num < 0 || num_i < 0 || den != 1 || den_i != 1);
+                    || print_state.in_exp && (den != 1 || den_i != 1);
 
                 if need_paren {
                     f.write_char('(')?;
                 }
 
-                // FIXME: no complex in exponent
                 if !opts.mode.is_latex()
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
@@ -763,7 +768,6 @@ impl FormattedPrintNum for NumView<'_> {
                     f.write_char('(')?;
                 }
 
-                // FIXME: no complex in exponent
                 if !opts.mode.is_latex()
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {

@@ -1310,7 +1310,7 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::Large(r1, d1), CoefficientView::Large(r2, d2)) => {
                 Coefficient::Complex(
-                    Complex::new(r1.to_rat(), d1.to_rat()) + Complex::new(r2.to_rat(), d2.to_rat()),
+                    Complex::new(r1.to_rat(), d1.to_rat()) * Complex::new(r2.to_rat(), d2.to_rat()),
                 )
             }
             (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
@@ -1406,11 +1406,7 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Float(r1, i1), CoefficientView::Float(r2, i2)) => {
                 let c1 = Complex::new(r1.to_float(), i1.to_float());
                 let c2 = Complex::new(r2.to_float(), i2.to_float());
-                Complex::new(
-                    c1.re.clone() * c2.re.clone() - c1.im.clone() * c2.im.clone(),
-                    c1.re * c2.im + c1.im * c2.re,
-                )
-                .into()
+                (c1 * c2).into()
             }
             (CoefficientView::Float(_, _), CoefficientView::RationalPolynomial(_)) => {
                 panic!("Cannot multiply float to rational polynomial");

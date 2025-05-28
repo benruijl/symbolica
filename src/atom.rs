@@ -1336,7 +1336,7 @@ impl Atom {
     /// assert!(x != x_2);
     /// ```
     pub fn parse(input: DefaultNamespace) -> Result<Atom, String> {
-        Workspace::get_local().with(|ws| Token::parse(input.data)?.to_atom(&input, ws))
+        Workspace::get_local().with(|ws| Token::parse(input.data, false)?.to_atom(&input, ws))
     }
 
     /// Create a new atom that represents a variable.

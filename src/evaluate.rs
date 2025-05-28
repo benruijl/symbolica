@@ -1421,26 +1421,18 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             function_name
         );
 
-        res += &format!(
-            "\tT {};\n",
-            (0..self.stack.len())
-                .map(|x| format!("Z{}", x))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-
         for i in 0..self.param_count {
-            res += &format!("\tZ{} = params[{}];\n", i, i);
+            res += &format!("\tZ[{}] = params[{}];\n", i, i);
         }
 
         for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ{} = {};\n", i, self.stack[i].export_wrapped());
+            res += &format!("\tZ[{}] = {};\n", i, self.stack[i].export_wrapped());
         }
 
         Self::export_cpp_impl(&self.instructions, &mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
-            res += &format!("\tout[{}] = Z{};\n", i, r);
+            res += &format!("\tout[{}] = Z[{}];\n", i, r);
         }
 
         res += "\treturn;\n}\n";
@@ -1471,50 +1463,54 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                 Instr::Add(o, a) => {
                     let args = a
                         .iter()
-                        .map(|x| format!("Z{}", x))
+                        .map(|x| format!("Z[{}]", x))
                         .collect::<Vec<_>>()
                         .join("+");
 
-                    *out += format!("\tZ{} = {};\n", o, args).as_str();
+                    *out += format!("\tZ[{}] = {};\n", o, args).as_str();
                 }
                 Instr::Mul(o, a) => {
                     let args = a
                         .iter()
-                        .map(|x| format!("Z{}", x))
+                        .map(|x| format!("Z[{}]", x))
                         .collect::<Vec<_>>()
                         .join("*");
 
-                    *out += format!("\tZ{} = {};\n", o, args).as_str();
+                    *out += format!("\tZ[{}] = {};\n", o, args).as_str();
                 }
                 Instr::Pow(o, b, e) => {
-                    let base = format!("Z{}", b);
-                    *out += format!("\tZ{} = pow({}, {});\n", o, base, e).as_str();
+                    let base = format!("Z[{}]", b);
+                    if *e == -1 {
+                        *out += format!("\tZ[{}] = T(1) / {};\n", o, base).as_str();
+                    } else {
+                        *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                    }
                 }
                 Instr::Powf(o, b, e) => {
-                    let base = format!("Z{}", b);
-                    let exp = format!("Z{}", e);
-                    *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
+                    let base = format!("Z[{}]", b);
+                    let exp = format!("Z[{}]", e);
+                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => match s.0 {
                     Atom::EXP => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
+                        let arg = format!("Z[{}]", a);
+                        *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                     }
                     Atom::LOG => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = log({});\n", o, arg).as_str();
+                        let arg = format!("Z[{}]", a);
+                        *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                     }
                     Atom::SIN => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = sin({});\n", o, arg).as_str();
+                        let arg = format!("Z[{}]", a);
+                        *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                     }
                     Atom::COS => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = cos({});\n", o, arg).as_str();
+                        let arg = format!("Z[{}]", a);
+                        *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                     }
                     Atom::SQRT => {
-                        let arg = format!("Z{}", a);
-                        *out += format!("\tZ{} = sqrt({});\n", o, arg).as_str();
+                        let arg = format!("Z[{}]", a);
+                        *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                     }
                     _ => unreachable!(),
                 },

@@ -159,7 +159,7 @@ unsafe extern "C" fn simplify(
         LicenseManager::check();
     }
 
-    let token = Token::parse(cstr).unwrap();
+    let token = Token::parse(cstr, true).unwrap();
 
     let opts = PrintOptions {
         explicit_rational_polynomial,
@@ -265,7 +265,7 @@ unsafe extern "C" fn simplify_factorized(
 
     let symbolica = unsafe { &mut *symbolica };
 
-    let token = Token::parse(cstr).unwrap();
+    let token = Token::parse(cstr, true).unwrap();
 
     let opts = PrintOptions {
         explicit_rational_polynomial,

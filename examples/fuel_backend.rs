@@ -46,7 +46,7 @@ fn main() {
             break;
         }
 
-        let r: RationalPolynomial<_, u16> = Token::parse(&buffer)
+        let r: RationalPolynomial<_, u16> = Token::parse(&buffer, true)
             .unwrap()
             .to_rational_polynomial(&Q, &Z, &vars, &var_names)
             .unwrap();

@@ -308,18 +308,35 @@ impl Token {
         }
     }
 
-    fn distribute_neg(&mut self) {
+    fn distribute_neg(&mut self, distribute_neg: bool) {
         match self {
-            Token::Op(_, _, Operator::Neg, args3) => {
-                debug_assert!(args3.len() == 1);
-                *self = args3.pop().unwrap();
+            Token::Op(_, _, Operator::Neg, args) => {
+                debug_assert!(args.len() == 1);
+                *self = args.pop().unwrap();
             }
-            Token::Op(_, _, Operator::Mul, args2) => {
-                args2[0].distribute_neg();
+            Token::Op(_, _, Operator::Mul, args) => {
+                if distribute_neg {
+                    args[0].distribute_neg(distribute_neg);
+                } else {
+                    if let Token::Number(n, _) = &mut args[0] {
+                        if n.starts_with('-') {
+                            n.remove(0);
+                        } else {
+                            n.insert(0, '-');
+                        }
+                    } else {
+                        args.push(Token::Number("-1".into(), false));
+                    }
+                }
             }
-            Token::Op(_, _, Operator::Add, args2) => {
-                for a in args2 {
-                    a.distribute_neg();
+            Token::Op(_, _, Operator::Add, args) => {
+                if distribute_neg {
+                    for a in args {
+                        a.distribute_neg(true);
+                    }
+                } else {
+                    let t = std::mem::replace(self, Token::EOF);
+                    *self = Token::Op(false, false, Operator::Neg, vec![t]);
                 }
             }
             Token::Number(n, _) => {
@@ -338,7 +355,7 @@ impl Token {
 
     /// Add `other` to right side of `self`, where `self` is a binary operation.
     #[inline]
-    fn add_right(&mut self, mut other: Token) -> Result<(), String> {
+    fn add_right(&mut self, mut other: Token, distribute_neg: bool) -> Result<(), String> {
         if let Token::Op(_, mr, o1, args) = self {
             debug_assert!(*mr);
             *mr = false;
@@ -351,7 +368,7 @@ impl Token {
                         n.insert(0, '-');
                     }
                 } else {
-                    other.distribute_neg();
+                    other.distribute_neg(distribute_neg);
                 }
                 *self = other;
                 return Ok(());
@@ -686,8 +703,11 @@ impl Token {
         Ok(())
     }
 
-    /// Parse a Symbolica expression.
-    pub fn parse(input: &str) -> Result<Token, String> {
+    /// Parse a Symbolica expression, generating a token tree. For most users,
+    /// it is recommended to use [crate::parse] instead, which returns an atom.
+    ///
+    /// Optionally, distribute distribute unary minus operators into sums.
+    pub fn parse(input: &str, distribute_neg: bool) -> Result<Token, String> {
         LicenseManager::check();
 
         let mut stack: Vec<_> = Vec::with_capacity(20);
@@ -1016,7 +1036,7 @@ impl Token {
 
                 match first.get_precedence().cmp(&last.get_precedence()) {
                     std::cmp::Ordering::Greater => {
-                        first.add_right(middle).map_err(|e| {
+                        first.add_right(middle, distribute_neg).map_err(|e| {
                             format!(
                                 "Error at line {} and position {}: ",
                                 line_counter, column_counter

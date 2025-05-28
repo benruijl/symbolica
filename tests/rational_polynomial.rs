@@ -57,7 +57,7 @@ fn factorized_rational_poly_large() {
     let var_names = ["d".into(), "y".into()];
     let vars = Arc::new(vec![symbol!("d").into(), symbol!("y").into()]);
 
-    let p = Token::parse(input)
+    let p = Token::parse(input, true)
         .unwrap()
         .to_factorized_rational_polynomial::<_, _, u16>(&Z, &Z, &vars, &var_names)
         .unwrap();

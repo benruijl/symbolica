@@ -7216,7 +7216,7 @@ impl PythonPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let e = Token::parse(arg)
+        let e = Token::parse(arg, true)
             .map_err(exceptions::PyValueError::new_err)?
             .to_polynomial(&Q, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
@@ -8241,7 +8241,7 @@ impl PythonFiniteFieldPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let e = Token::parse(arg)
+        let e = Token::parse(arg, true)
             .map_err(exceptions::PyValueError::new_err)?
             .to_polynomial(&Zp::new(prime), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
@@ -11255,7 +11255,7 @@ impl PythonRationalPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let e = Token::parse(arg)
+        let e = Token::parse(arg, true)
             .map_err(exceptions::PyValueError::new_err)?
             .to_rational_polynomial(&Q, &Z, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
@@ -11558,7 +11558,7 @@ impl PythonFiniteFieldRationalPolynomial {
         }
 
         let field = Zp::new(prime);
-        let e = Token::parse(arg)
+        let e = Token::parse(arg, true)
             .map_err(exceptions::PyValueError::new_err)?
             .to_rational_polynomial(&field, &field, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;

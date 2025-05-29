@@ -696,7 +696,6 @@ impl FormattedPrintNum for NumView<'_> {
                             f.write_char('/')?;
                             format_num(den_i.to_string(), opts, &print_state, f)?;
                         }
-                        f.write_char('𝑖')?;
                     }
                 } else {
                     if num != 0 || num_i == 0 {
@@ -729,17 +728,16 @@ impl FormattedPrintNum for NumView<'_> {
                         if den_i != 1 {
                             if opts.mode.is_latex() {
                                 f.write_fmt(format_args!(
-                                    "\\frac{{{}}}{{{}}}",
+                                    "\\frac{{{}}}{{{}}}𝑖",
                                     num_i.unsigned_abs(),
                                     den_i
                                 ))?;
                             } else {
-                                f.write_fmt(format_args!("{}/{}", num_i.unsigned_abs(), den_i))?;
+                                f.write_fmt(format_args!("{}𝑖/{}", num_i.unsigned_abs(), den_i))?;
                             }
-                        } else if num_i != 1 && num_i != -1 {
-                            f.write_fmt(format_args!("{}", num_i.unsigned_abs()))?;
+                        } else {
+                            f.write_fmt(format_args!("{}𝑖", num_i.unsigned_abs()))?;
                         }
-                        f.write_char('𝑖')?;
                     }
                 }
 
@@ -810,11 +808,11 @@ impl FormattedPrintNum for NumView<'_> {
                             &print_state,
                             f,
                         )?;
+                        f.write_char('𝑖')?;
                         if !imag.is_integer() {
                             f.write_char('/')?;
                             format_num(imag.denominator_ref().to_string(), opts, &print_state, f)?;
                         }
-                        f.write_char('𝑖')?;
                     }
                 } else {
                     if !real.is_zero() || imag.is_zero() {
@@ -851,21 +849,20 @@ impl FormattedPrintNum for NumView<'_> {
                         if !imag.is_integer() {
                             if opts.mode.is_latex() {
                                 f.write_fmt(format_args!(
-                                    "\\frac{{{}}}{{{}}}",
+                                    "\\frac{{{}}}{{{}}}𝑖",
                                     imag.numerator_ref().abs(),
                                     imag.denominator_ref()
                                 ))?;
                             } else {
                                 f.write_fmt(format_args!(
-                                    "{}/{}",
+                                    "{}𝑖/{}",
                                     imag.numerator_ref().abs(),
                                     imag.denominator_ref()
                                 ))?;
                             }
-                        } else if !imag.is_one() && imag != (-1).into() {
-                            f.write_fmt(format_args!("{}", imag.numerator_ref().abs()))?;
+                        } else {
+                            f.write_fmt(format_args!("{}𝑖", imag.numerator_ref().abs()))?;
                         }
-                        f.write_char('𝑖')?;
                     }
                 }
 

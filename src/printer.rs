@@ -648,6 +648,12 @@ impl FormattedPrintNum for NumView<'_> {
             print_state.in_sum = false;
         }
 
+        let i_str = if opts.color_builtin_symbols {
+            "\u{1b}\u{5b}\u{33}\u{35}\u{6d}\u{1d456}\u{1b}\u{5b}\u{30}\u{6d}"
+        } else {
+            "𝑖"
+        };
+
         match d {
             CoefficientView::Natural(num, den, num_i, den_i) => {
                 if num_i == 0 && den == 1 && print_state.suppress_one && (num == 1 || num == -1) {
@@ -692,6 +698,7 @@ impl FormattedPrintNum for NumView<'_> {
                             f.write_char('-')?;
                         }
                         format_num(num_i.unsigned_abs().to_string(), opts, &print_state, f)?;
+                        f.write_str(i_str)?;
                         if den_i != 1 {
                             f.write_char('/')?;
                             format_num(den_i.to_string(), opts, &print_state, f)?;
@@ -730,13 +737,18 @@ impl FormattedPrintNum for NumView<'_> {
                                 f.write_fmt(format_args!(
                                     "\\frac{{{}}}{{{}}}𝑖",
                                     num_i.unsigned_abs(),
-                                    den_i
+                                    den_i,
                                 ))?;
                             } else {
-                                f.write_fmt(format_args!("{}𝑖/{}", num_i.unsigned_abs(), den_i))?;
+                                f.write_fmt(format_args!(
+                                    "{}{}/{}",
+                                    num_i.unsigned_abs(),
+                                    i_str,
+                                    den_i
+                                ))?;
                             }
                         } else {
-                            f.write_fmt(format_args!("{}𝑖", num_i.unsigned_abs()))?;
+                            f.write_fmt(format_args!("{}{}", num_i.unsigned_abs(), i_str))?;
                         }
                     }
                 }
@@ -808,7 +820,7 @@ impl FormattedPrintNum for NumView<'_> {
                             &print_state,
                             f,
                         )?;
-                        f.write_char('𝑖')?;
+                        f.write_str(i_str)?;
                         if !imag.is_integer() {
                             f.write_char('/')?;
                             format_num(imag.denominator_ref().to_string(), opts, &print_state, f)?;
@@ -846,22 +858,24 @@ impl FormattedPrintNum for NumView<'_> {
                         if !global_negative && imag.is_negative() {
                             f.write_char('-')?;
                         }
+
                         if !imag.is_integer() {
                             if opts.mode.is_latex() {
                                 f.write_fmt(format_args!(
                                     "\\frac{{{}}}{{{}}}𝑖",
                                     imag.numerator_ref().abs(),
-                                    imag.denominator_ref()
+                                    imag.denominator_ref(),
                                 ))?;
                             } else {
                                 f.write_fmt(format_args!(
-                                    "{}𝑖/{}",
+                                    "{}{}/{}",
                                     imag.numerator_ref().abs(),
+                                    i_str,
                                     imag.denominator_ref()
                                 ))?;
                             }
                         } else {
-                            f.write_fmt(format_args!("{}𝑖", imag.numerator_ref().abs()))?;
+                            f.write_fmt(format_args!("{}{}", imag.numerator_ref().abs(), i_str))?;
                         }
                     }
                 }

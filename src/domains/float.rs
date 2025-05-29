@@ -3994,8 +3994,12 @@ impl<T: Real> Real for Complex<T> {
         if e.re == self.re.zero() && e.im == self.im.zero() {
             self.one()
         } else if e.im == self.im.zero() {
-            let (r, phi) = self.clone().to_polar_coordinates();
-            Self::from_polar_coordinates(r.powf(&e.re), phi * e.re.clone())
+            if self.im == self.im.zero() {
+                self.re.powf(&e.re).into()
+            } else {
+                let (r, phi) = self.clone().to_polar_coordinates();
+                Self::from_polar_coordinates(r.powf(&e.re), phi * e.re.clone())
+            }
         } else {
             (e * self.log()).exp()
         }

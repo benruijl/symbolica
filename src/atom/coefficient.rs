@@ -5,7 +5,7 @@ use rug::{Integer as MultiPrecisionInteger, integer::Order};
 
 use crate::{
     coefficient::{
-        Coefficient, CoefficientView, SerializedFloat, SerializedRational,
+        Coefficient, CoefficientView, SerializedFloat, SerializedLargeRational, SerializedRational,
         SerializedRationalPolynomial,
     },
     domains::{
@@ -364,11 +364,21 @@ impl PackedRationalNumberReader for [u8] {
             if let CoefficientView::Natural(n, d, _, _) = num {
                 if let CoefficientView::Natural(ni, di, _, _) = den {
                     (CoefficientView::Natural(n, d, ni, di), r)
+                } else if let CoefficientView::Large(ri, _) = den {
+                    (
+                        CoefficientView::Large(SerializedRational::Natural(n, d), ri),
+                        r,
+                    )
                 } else {
                     unreachable!()
                 }
             } else if let CoefficientView::Large(rn, _) = num {
-                if let CoefficientView::Large(ri, _) = den {
+                if let CoefficientView::Natural(ni, di, _, _) = den {
+                    (
+                        CoefficientView::Large(rn, SerializedRational::Natural(ni, di)),
+                        r,
+                    )
+                } else if let CoefficientView::Large(ri, _) = den {
                     (CoefficientView::Large(rn, ri), r)
                 } else {
                     unreachable!()
@@ -386,16 +396,16 @@ impl PackedRationalNumberReader for [u8] {
 
             (
                 CoefficientView::Large(
-                    SerializedRational {
+                    SerializedRational::Large(SerializedLargeRational {
                         is_negative: num < 0,
                         num_digits: num_limbs,
                         den_digits: den_limbs,
-                    },
-                    SerializedRational {
+                    }),
+                    SerializedRational::Large(SerializedLargeRational {
                         is_negative: false,
                         num_digits: &[],
                         den_digits: &[],
-                    },
+                    }),
                 ),
                 &source[num_len + den_len..],
             )

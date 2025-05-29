@@ -683,7 +683,7 @@ impl FormattedPrintNum for NumView<'_> {
                         }
                     }
 
-                    if num != 0 && num_i != 0 {
+                    if num != 0 && num_i > 0 {
                         f.write_char('+')?;
                     }
 
@@ -840,7 +840,7 @@ impl FormattedPrintNum for NumView<'_> {
                         }
                     }
 
-                    if !real.is_zero() && !imag.is_zero() {
+                    if !real.is_zero() && !imag.is_zero() && !imag.is_negative() {
                         f.write_char('+')?;
                     }
 
@@ -862,7 +862,7 @@ impl FormattedPrintNum for NumView<'_> {
                                     imag.denominator_ref()
                                 ))?;
                             }
-                        } else {
+                        } else if !imag.is_one() && imag != (-1).into() {
                             f.write_fmt(format_args!("{}", imag.numerator_ref().abs()))?;
                         }
                         f.write_char('𝑖')?;

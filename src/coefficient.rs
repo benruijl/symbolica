@@ -31,7 +31,7 @@ use crate::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
             Zp64,
         },
-        float::{Complex, Float, Real, SingleFloat},
+        float::{Complex, Float, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Fraction, Q, Rational},
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
@@ -504,13 +504,42 @@ impl Mul for Coefficient {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SerializedRational<'a> {
+pub enum SerializedRational<'a> {
+    Natural(i64, i64),
+    Large(SerializedLargeRational<'a>),
+}
+
+impl SerializedRational<'_> {
+    pub fn is_zero(&self) -> bool {
+        match self {
+            SerializedRational::Natural(n, _) => *n == 0,
+            SerializedRational::Large(r) => r.is_zero(),
+        }
+    }
+
+    pub fn is_negative(&self) -> bool {
+        match self {
+            SerializedRational::Natural(n, _) => *n < 0,
+            SerializedRational::Large(r) => r.is_negative(),
+        }
+    }
+
+    pub fn to_rat(&self) -> Rational {
+        match self {
+            SerializedRational::Natural(n, d) => Rational::from_unchecked(*n, *d),
+            SerializedRational::Large(r) => r.to_rat(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SerializedLargeRational<'a> {
     pub(crate) is_negative: bool,
     pub(crate) num_digits: &'a [u8],
     pub(crate) den_digits: &'a [u8],
 }
 
-impl SerializedRational<'_> {
+impl SerializedLargeRational<'_> {
     pub fn is_zero(&self) -> bool {
         self.num_digits.is_empty()
     }
@@ -950,10 +979,26 @@ impl CoefficientView<'_> {
                         Rational::from_unchecked(n2, d2),
                     );
                     (coeff.into(), base.into(), exp.into())
+                } else if d2 == 1 {
+                    let r = Complex::new(
+                        Rational::from_unchecked(n1, d1),
+                        Rational::from_unchecked(ni1, di1),
+                    )
+                    .pow(n2.unsigned_abs());
+
+                    (
+                        Coefficient::one(),
+                        if n2 < 0 { r.inv().into() } else { r.into() },
+                        Rational::one().into(),
+                    )
                 } else {
                     (
                         Coefficient::one(),
-                        Rational::from_unchecked(ni1, di1).into(),
+                        Complex::new(
+                            Rational::from_unchecked(n1, d1),
+                            Rational::from_unchecked(ni1, di1),
+                        )
+                        .into(),
                         Rational::from_unchecked(n2, d2).into(),
                     )
                 }
@@ -965,7 +1010,11 @@ impl CoefficientView<'_> {
                 } else {
                     (
                         Coefficient::one(),
-                        Rational::from_unchecked(ni1, di1).into(),
+                        Complex::new(
+                            Rational::from_unchecked(n1, d1),
+                            Rational::from_unchecked(ni1, di1),
+                        )
+                        .into(),
                         n2.to_rat().into(),
                     )
                 }
@@ -994,28 +1043,45 @@ impl CoefficientView<'_> {
                 if i.is_zero() {
                     let (coeff, base, exp) = rat_pow(r.to_rat(), Rational::from_unchecked(n2, d2));
                     (coeff.into(), base.into(), exp.into())
+                } else if d2 == 1 {
+                    let r = Complex::new(r.to_rat(), i.to_rat()).pow(n2.unsigned_abs());
+
+                    (
+                        Coefficient::one(),
+                        if n2 < 0 { r.inv().into() } else { r.into() },
+                        Rational::one().into(),
+                    )
                 } else {
                     (
                         Coefficient::one(),
-                        r.to_rat().into(),
+                        Complex::new(r.to_rat(), i.to_rat()).into(),
                         Rational::from_unchecked(n2, d2).into(),
                     )
                 }
             }
             (&CoefficientView::Float(fr, fi), &CoefficientView::Natural(n2, d2, ni2, di2)) => {
-                // FIXME: what precision should be used?
-                let f = fr.to_float();
-                let p = f.prec();
-                (
-                    Coefficient::one(),
-                    Complex::new(f, fi.to_float())
-                        .powf(&Complex::new(
-                            Rational::from_unchecked(n2, d2).to_multi_prec_float(p),
-                            Rational::from_unchecked(ni2, di2).to_multi_prec_float(p),
-                        ))
-                        .into(),
-                    Coefficient::one(),
-                )
+                if d2 == 1 && ni2 == 0 {
+                    let r = Complex::new(fr.to_float(), fi.to_float()).pow(n2.unsigned_abs());
+                    (
+                        Coefficient::one(),
+                        if n2 < 0 { r.inv().into() } else { r.into() },
+                        Coefficient::one(),
+                    )
+                } else {
+                    // FIXME: what precision should be used?
+                    let f = fr.to_float();
+                    let p = f.prec();
+                    (
+                        Coefficient::one(),
+                        Complex::new(f, fi.to_float())
+                            .powf(&Complex::new(
+                                Rational::from_unchecked(n2, d2).to_multi_prec_float(p),
+                                Rational::from_unchecked(ni2, di2).to_multi_prec_float(p),
+                            ))
+                            .into(),
+                        Coefficient::one(),
+                    )
+                }
             }
             (&CoefficientView::Float(fr, fi), &CoefficientView::Large(r, d)) => {
                 let f = fr.to_float();
@@ -1075,7 +1141,11 @@ impl CoefficientView<'_> {
                     let (coeff, base, exp) = rat_pow(r.to_rat(), er.to_rat());
                     (coeff.into(), base.into(), exp.into())
                 } else {
-                    (Coefficient::one(), r.to_rat().into(), er.to_rat().into())
+                    (
+                        Coefficient::one(),
+                        Complex::new(r.to_rat(), i.to_rat()).into(),
+                        er.to_rat().into(),
+                    )
                 }
             }
             _ => {

@@ -295,7 +295,12 @@ impl SelfRing for Complex<Float> {
 
         if !im_zero {
             self.im.format(opts, state, f)?;
-            f.write_char('𝑖')?;
+
+            if opts.color_builtin_symbols {
+                f.write_str("\u{1b}\u{5b}\u{33}\u{35}\u{6d}\u{1d456}\u{1b}\u{5b}\u{30}\u{6d}")?;
+            } else {
+                f.write_char('𝑖')?;
+            }
         }
 
         if add_paren {

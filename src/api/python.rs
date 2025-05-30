@@ -11710,7 +11710,7 @@ impl PythonExpressionEvaluator {
         };
 
         if formatcpp == FormatCPP::CUDA {
-            options.compiler = "/opt/cuda/bin/nvcc".to_string();        
+            options.compiler = "nvcc".to_string();
             // Add -x cu, so that nvcc accepts a .cpp file like a .cu file
             options.custom.push("-x".to_string());
             options.custom.push("cu".to_string());

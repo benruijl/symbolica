@@ -54,7 +54,7 @@ use crate::{
     },
     evaluate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
-        InlineASM, Instruction, OptimizationSettings, Slot,
+        InlineASM, FormatCPP, Instruction, OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -11764,6 +11764,7 @@ impl PythonExpressionEvaluator {
         (function_name,
         filename,
         library_name,
+        formatcpp = "cpp",
         inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
@@ -11773,6 +11774,7 @@ impl PythonExpressionEvaluator {
         function_name: &str,
         filename: &str,
         library_name: &str,
+        formatcpp: &str,
         inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
@@ -11781,6 +11783,24 @@ impl PythonExpressionEvaluator {
         options.optimization_level = optimization_level as usize;
         if let Some(compiler_path) = compiler_path {
             options.compiler = compiler_path.to_string();
+        }
+
+        let formatcpp = match formatcpp.to_lowercase().as_str() {
+            "cpp" => FormatCPP::CPP,
+            "cuda" => FormatCPP::CUDA,
+            "asm" => FormatCPP::ASM,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid format specified.",
+                ))
+            }
+        };
+
+        if formatcpp == FormatCPP::CUDA {
+            options.compiler = "nvcc".to_string();
+            // Add -x cu, so that nvcc accepts a .cpp file like a .cu file
+            options.custom.push("-x".to_string());
+            options.custom.push("cu".to_string());
         }
 
         let inline_asm = match inline_asm.to_lowercase().as_str() {
@@ -11798,7 +11818,7 @@ impl PythonExpressionEvaluator {
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
                 .eval
-                .export_cpp(filename, function_name, true, inline_asm)
+                .export_cpp(filename, function_name, true, formatcpp, inline_asm)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
                 .map_err(|e| {
@@ -11891,6 +11911,15 @@ impl PythonCompiledExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
+    fn vec_evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        let n : usize = inputs.len();
+        let mut res = vec![0.; self.output_len * n];
+        let flat_input: Vec<f64> = inputs.iter().flat_map(|row| row.iter().cloned()).collect();
+        self.eval.vec_evaluate(&flat_input, &mut res, n);
+        return res.chunks(n).map(|chunk| chunk.to_vec()).collect();
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
     fn evaluate_complex<'py>(
         &mut self,
         python: Python<'py>,
@@ -11906,6 +11935,18 @@ impl PythonCompiledExpressionEvaluator {
                     .collect()
             })
             .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn vec_evaluate_complex<'py>(&mut self, 
+        python: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>
+    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
+        let n : usize = inputs.len();
+        let mut res : Vec<Complex<f64>> = vec![Complex::<f64>::default(); self.output_len * n];
+        let flat_input: Vec<Complex<f64>> = inputs.iter().flat_map(|row| row.iter().cloned()).collect();
+        self.eval.vec_evaluate(&flat_input, &mut res, n);
+        return res.chunks(n).map(|chunk| chunk.into_iter().map(|x| PyComplex::from_doubles(python, x.re, x.im)).collect()).collect();
     }
 }
 

@@ -3,14 +3,14 @@ build-backend = "maturin"
 requires = ["maturin>=1.0,<2.0"]
 
 [project]
-authors = [{ email = "benruyl@gmail.com" }, { name = "Ben Ruijl" }]
+authors = [{ email = "ben@symbolica.io" }, { name = "Ben Ruijl" }]
 summary = "Symbolica is a blazing fast computer algebra system"
 description = "Symbolica is a blazing fast computer algebra system"
 keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
 license = { file = "License.md" }
 name = "symbolica"
 readme = "Readme.md"
-version = "0.16.0"
+version = "0.17.0"
 
 classifiers = [
     "Development Status :: 4 - Beta",

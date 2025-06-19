@@ -935,30 +935,40 @@ impl CoefficientView<'_> {
             mut base: Rational,
             mut exp: Rational,
         ) -> (Complex<Rational>, Rational, Rational) {
-            if exp < 0.into() {
-                base = base.inv();
-                exp = -exp;
-            }
-
             if base.is_negative() && !exp.is_integer() {
                 let pow = exp.numerator() / exp.denominator();
                 let rest = exp.numerator() - &pow * exp.denominator();
 
-                if rest == 1 && exp.denominator_ref() == &2 {
+                let base_integer_pow = if pow.is_negative() {
+                    base.inv().pow(pow.to_i64().unwrap().unsigned_abs())
+                } else {
+                    base.pow(pow.to_i64().unwrap().unsigned_abs())
+                };
+
+                if exp.denominator_ref() == &2 {
                     (
-                        Complex::new(Rational::zero(), base.pow(pow.to_i64().unwrap() as u64)),
+                        if rest.is_negative() {
+                            Complex::new(Rational::zero(), -base_integer_pow)
+                        } else {
+                            Complex::new(Rational::zero(), base_integer_pow)
+                        },
                         base.abs().into(),
                         Rational::from_unchecked(rest, exp.denominator()).into(),
                     )
                 } else {
                     (
-                        base.pow(pow.to_i64().unwrap() as u64).into(),
+                        base_integer_pow.into(),
                         base.into(),
                         Rational::from_unchecked(rest, exp.denominator()).into(),
                     )
                 }
             } else {
-                base = base.pow(exp.numerator().to_i64().unwrap() as u64);
+                if exp < 0.into() {
+                    base = base.inv();
+                    exp = -exp;
+                }
+
+                base = base.pow(exp.numerator().to_i64().unwrap().unsigned_abs());
                 (
                     Rational::one().into(),
                     base.into(),
@@ -2154,6 +2164,15 @@ mod test {
     };
 
     use super::Coefficient;
+
+    #[test]
+    fn rat_pow() {
+        assert_eq!(parse!("(-2)^(-1/2)"), parse!("-1i*(1/2)^(1/2)"));
+        assert_eq!(parse!("(-2)^(1/2)"), parse!("1i*2^(1/2)"));
+        assert_eq!(parse!("(-2)^(-5/3)"), parse!("-1/2*(-2)^(-2/3)"));
+        assert_eq!(parse!("(-2)^(-5/2)"), parse!("-1i/4*(1/2)^(1/2)"));
+        assert_eq!(parse!("(2)^(-5/2)"), parse!("(1/32)^(1/2)"));
+    }
 
     #[test]
     fn coeff_conversion() {

@@ -563,7 +563,6 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         }
 
         if sub_expr.contains_key(self) {
-            //println!("SUB {:?}", self);
             return (0, 0);
         }
 
@@ -748,12 +747,27 @@ impl<T: SingleFloat> ExpressionEvaluator<Complex<T>> {
 
 impl<T: Real> ExpressionEvaluator<T> {
     pub fn evaluate_single(&mut self, params: &[T]) -> T {
+        if self.result_indices.len() != 1 {
+            panic!(
+                "Evaluator does not return a single result but {} results",
+                self.result_indices.len()
+            );
+        }
+
         let mut res = T::new_zero();
         self.evaluate(params, std::slice::from_mut(&mut res));
         res
     }
 
     pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
+        if self.param_count != params.len() {
+            panic!(
+                "Parameter count mismatch: expected {}, got {}",
+                self.param_count,
+                params.len()
+            );
+        }
+
         for (t, p) in self.stack.iter_mut().zip(params) {
             *t = p.clone();
         }
@@ -991,7 +1005,8 @@ impl<T: Default> ExpressionEvaluator<T> {
 
                 let is_add = matches!(&first_use[j].1, Instr::Add(_, _));
 
-                let new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
+                let mut new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
+                new_a.sort();
 
                 if is_add {
                     new_instr.push(Instr::Add(new_pos, new_a));
@@ -1010,6 +1025,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                         for x in &mut *a {
                             *x = rename!(*x);
                         }
+                        a.sort();
 
                         // remove assignments
                         if a.len() == 1 {
@@ -1044,6 +1060,108 @@ impl<T: Default> ExpressionEvaluator<T> {
         assert!(j == first_use.len());
 
         self.instructions = new_instr;
+
+        total_remove + self.remove_common_function_calls()
+    }
+
+    fn remove_common_function_calls(&mut self) -> usize {
+        let mut calls: HashMap<_, Vec<_>> = HashMap::default();
+
+        for (p, i) in self.instructions.iter().enumerate() {
+            if let Instr::BuiltinFun(r, f, a) = i {
+                calls.entry((*f, *a)).or_default().push((p, *r));
+            }
+        }
+
+        // rewrite every occurrence to the first
+        let mut removed_lines = vec![];
+        let mut total_remove = 0;
+        for x in calls.values() {
+            for (p, l) in &x[1..] {
+                for i in self.instructions.iter_mut() {
+                    match i {
+                        Instr::Add(_, a) | Instr::Mul(_, a) => {
+                            for v in a {
+                                if *v == *l {
+                                    *v = x[0].1;
+                                }
+                            }
+                        }
+                        Instr::Pow(_, b, _) => {
+                            if *b == *l {
+                                *b = x[0].1;
+                            }
+                        }
+
+                        Instr::Powf(_, b, e) => {
+                            if *b == *l {
+                                *b = x[0].1;
+                            }
+                            if *e == *l {
+                                *e = x[0].1;
+                            }
+                        }
+                        Instr::BuiltinFun(_, _, arg) => {
+                            if *arg == *l {
+                                *arg = x[0].1;
+                            }
+                        }
+                    }
+                }
+
+                for r in &mut self.result_indices {
+                    if *r == *l {
+                        *r = x[0].1;
+                    }
+                }
+
+                removed_lines.push((*p, *l));
+                total_remove += 1;
+            }
+        }
+
+        removed_lines.sort_unstable();
+
+        while let Some(l) = removed_lines.pop() {
+            self.instructions.remove(l.0);
+
+            for x in &mut self.instructions[l.0..] {
+                match x {
+                    Instr::Add(r, a) | Instr::Mul(r, a) => {
+                        *r -= 1;
+                        for aa in a {
+                            if *aa >= l.1 {
+                                *aa -= 1;
+                            }
+                        }
+                    }
+                    Instr::Pow(r, b, _) | Instr::BuiltinFun(r, _, b) => {
+                        *r -= 1;
+                        if *b >= l.1 {
+                            *b -= 1;
+                        }
+                    }
+                    Instr::Powf(r, b, e) => {
+                        *r -= 1;
+                        if *b >= l.1 {
+                            *b -= 1;
+                        }
+                        if *e >= l.1 {
+                            *e -= 1;
+                        }
+                    }
+                }
+            }
+
+            for x in &mut self.result_indices {
+                if *x >= l.1 {
+                    *x -= 1;
+                }
+            }
+        }
+
+        self.stack.truncate(self.stack.len() - total_remove);
+
         total_remove
     }
 }
@@ -3270,12 +3388,13 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 )
             }
             Expression::Add(a) => {
-                let args = a
+                let mut args: Vec<_> = a
                     .iter()
                     .map(|x| {
                         self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
                     })
                     .collect();
+                args.sort();
 
                 stack.push(T::default());
                 let res = stack.len() - 1;
@@ -3286,12 +3405,13 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             Expression::Mul(m) => {
-                let args = m
+                let mut args: Vec<_> = m
                     .iter()
                     .map(|x| {
                         self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
                     })
                     .collect();
+                args.sort();
 
                 stack.push(T::default());
                 let res = stack.len() - 1;
@@ -3304,10 +3424,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             Expression::Pow(p) => {
                 let b = self.linearize_impl(&p.0, subexpressions, stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
-                let res = stack.len() - 1;
+                let mut res = stack.len() - 1;
 
                 if p.1 > 1 {
                     instr.push(Instr::Mul(res, vec![b; p.1 as usize]));
+                } else if p.1 < -1 {
+                    instr.push(Instr::Mul(res, vec![b; -p.1 as usize]));
+                    stack.push(T::default());
+                    res += 1;
+                    instr.push(Instr::Pow(res, res - 1, -1));
                 } else {
                     instr.push(Instr::Pow(res, b, p.1));
                 }
@@ -3510,7 +3635,7 @@ impl Expression<Complex<Rational>> {
                 let mut pow_counter = 0;
                 for y in m {
                     if let Expression::Pow(p) = y {
-                        if p.0 == scheme[0] {
+                        if p.0 == scheme[0] && p.1 > 0 {
                             pow_counter += p.1;
                         }
                     } else if y == &scheme[0] {
@@ -3520,6 +3645,12 @@ impl Expression<Complex<Rational>> {
 
                 if pow_counter > 0 && (max_pow.is_none() || pow_counter < max_pow.unwrap()) {
                     max_pow = Some(pow_counter);
+                }
+            } else if let Expression::Pow(p) = x {
+                if p.0 == scheme[0] && p.1 > 0 {
+                    if max_pow.is_none() || p.1 < max_pow.unwrap() {
+                        max_pow = Some(p.1);
+                    }
                 }
             } else if x == &scheme[0] {
                 max_pow = Some(1);
@@ -3543,7 +3674,7 @@ impl Expression<Complex<Rational>> {
 
                 m.retain(|y| {
                     if let Expression::Pow(p) = y {
-                        if p.0 == scheme[0] {
+                        if p.0 == scheme[0] && p.1 > 0 {
                             pow_counter += p.1;
                             false
                         } else {
@@ -3577,6 +3708,17 @@ impl Expression<Complex<Rational>> {
                 }
 
                 found = pow_counter > 0;
+            } else if let Expression::Pow(p) = &mut x {
+                if p.0 == scheme[0] && p.1 > 0 {
+                    if p.1 > max_pow + 1 {
+                        p.1 = p.1 - max_pow;
+                    } else if p.1 - max_pow == 1 {
+                        x = scheme[0].clone();
+                    } else {
+                        x = Expression::Const(Complex::new_one());
+                    }
+                    found = true;
+                }
             } else if x == scheme[0] {
                 found = true;
                 x = Expression::Const(Complex::new_one());
@@ -4196,7 +4338,6 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
         }
 
         if sub_expr.contains_key(self) {
-            //println!("SUB {:?}", self);
             return (0, 0);
         }
 
@@ -4915,17 +5056,7 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view() {
                         if den == 1 && num_i == 0 {
-                            if num > 1 {
-                                return Ok(Expression::Mul(vec![b_eval.clone(); num as usize]));
-                            } else {
-                                return Ok(Expression::Pow(Box::new((
-                                    Expression::Mul(vec![
-                                        b_eval.clone();
-                                        num.unsigned_abs() as usize
-                                    ]),
-                                    -1,
-                                ))));
-                            }
+                            return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
                         }
                     }
                 }
@@ -5386,8 +5517,9 @@ mod test {
                 .unwrap();
 
         let mut e_f64 = evaluator.map_coeff(&|x| x.clone().to_real().unwrap().into());
-        let r = e_f64.evaluate_single(&[1.1]);
-        assert!((r - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
+        let mut res = [0., 0.];
+        e_f64.evaluate(&[1.1], &mut res);
+        assert!((res[0] - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
     }
 
     #[test]

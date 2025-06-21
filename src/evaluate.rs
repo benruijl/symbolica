@@ -1101,7 +1101,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                     }
                 }
 
-                removed_lines.push(*p);
+                removed_lines.push((*p, *l));
                 total_remove += 1;
             }
         }
@@ -1109,30 +1109,30 @@ impl<T: Default> ExpressionEvaluator<T> {
         removed_lines.sort_unstable();
 
         while let Some(l) = removed_lines.pop() {
-            self.instructions.remove(l);
+            self.instructions.remove(l.0);
 
-            for x in &mut self.instructions[l..] {
+            for x in &mut self.instructions[l.0..] {
                 match x {
                     Instr::Add(r, a) | Instr::Mul(r, a) => {
                         *r -= 1;
                         for aa in a {
-                            if *aa >= l {
+                            if *aa >= l.1 {
                                 *aa -= 1;
                             }
                         }
                     }
                     Instr::Pow(r, b, _) | Instr::BuiltinFun(r, _, b) => {
                         *r -= 1;
-                        if *b >= l {
+                        if *b >= l.1 {
                             *b -= 1;
                         }
                     }
                     Instr::Powf(r, b, e) => {
                         *r -= 1;
-                        if *b >= l {
+                        if *b >= l.1 {
                             *b -= 1;
                         }
-                        if *e >= l {
+                        if *e >= l.1 {
                             *e -= 1;
                         }
                     }
@@ -1140,7 +1140,7 @@ impl<T: Default> ExpressionEvaluator<T> {
             }
 
             for x in &mut self.result_indices {
-                if *x >= l {
+                if *x >= l.1 {
                     *x -= 1;
                 }
             }

@@ -991,7 +991,8 @@ impl<T: Default> ExpressionEvaluator<T> {
 
                 let is_add = matches!(&first_use[j].1, Instr::Add(_, _));
 
-                let new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
+                let mut new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
+                new_a.sort();
 
                 if is_add {
                     new_instr.push(Instr::Add(new_pos, new_a));
@@ -1010,6 +1011,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                         for x in &mut *a {
                             *x = rename!(*x);
                         }
+                        a.sort();
 
                         // remove assignments
                         if a.len() == 1 {
@@ -1044,6 +1046,106 @@ impl<T: Default> ExpressionEvaluator<T> {
         assert!(j == first_use.len());
 
         self.instructions = new_instr;
+
+        total_remove + self.remove_common_function_calls()
+    }
+
+    fn remove_common_function_calls(&mut self) -> usize {
+        let mut calls: HashMap<_, Vec<_>> = HashMap::default();
+
+        for (p, i) in self.instructions.iter().enumerate() {
+            if let Instr::BuiltinFun(r, f, a) = i {
+                calls.entry((*f, *a)).or_default().push((p, *r));
+            }
+        }
+
+        // rewrite every occurrence to the first
+        let mut removed_lines = vec![];
+        let mut total_remove = 0;
+        for x in calls.values() {
+            for (p, l) in &x[1..] {
+                for i in self.instructions.iter_mut() {
+                    match i {
+                        Instr::Add(_, a) | Instr::Mul(_, a) => {
+                            for v in a {
+                                if *v == *l {
+                                    *v = x[0].1;
+                                }
+                            }
+                        }
+                        Instr::Pow(_, b, _) => {
+                            if *b == *l {
+                                *b = x[0].1;
+                            }
+                        }
+
+                        Instr::Powf(_, b, e) => {
+                            if *b == *l {
+                                *b = x[0].1;
+                            }
+                            if *e == *l {
+                                *e = x[0].1;
+                            }
+                        }
+                        Instr::BuiltinFun(_, _, arg) => {
+                            if *arg == *l {
+                                *arg = x[0].1;
+                            }
+                        }
+                    }
+                }
+
+                for r in &mut self.result_indices {
+                    if *r == *l {
+                        *r = x[0].1;
+                    }
+                }
+
+                removed_lines.push(*p);
+                total_remove += 1;
+            }
+        }
+
+        removed_lines.sort_unstable();
+
+        while let Some(l) = removed_lines.pop() {
+            self.instructions.remove(l);
+
+            for x in &mut self.instructions[l..] {
+                match x {
+                    Instr::Add(r, a) | Instr::Mul(r, a) => {
+                        *r -= 1;
+                        for aa in a {
+                            if *aa >= l {
+                                *aa -= 1;
+                            }
+                        }
+                    }
+                    Instr::Pow(r, b, _) | Instr::BuiltinFun(r, _, b) => {
+                        *r -= 1;
+                        if *b >= l {
+                            *b -= 1;
+                        }
+                    }
+                    Instr::Powf(r, b, e) => {
+                        *r -= 1;
+                        if *b >= l {
+                            *b -= 1;
+                        }
+                        if *e >= l {
+                            *e -= 1;
+                        }
+                    }
+                }
+            }
+
+            for x in &mut self.result_indices {
+                if *x >= l {
+                    *x -= 1;
+                }
+            }
+        }
+
         total_remove
     }
 }
@@ -3270,12 +3372,13 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 )
             }
             Expression::Add(a) => {
-                let args = a
+                let mut args: Vec<_> = a
                     .iter()
                     .map(|x| {
                         self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
                     })
                     .collect();
+                args.sort();
 
                 stack.push(T::default());
                 let res = stack.len() - 1;
@@ -3286,12 +3389,13 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             Expression::Mul(m) => {
-                let args = m
+                let mut args: Vec<_> = m
                     .iter()
                     .map(|x| {
                         self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
                     })
                     .collect();
+                args.sort();
 
                 stack.push(T::default());
                 let res = stack.len() - 1;

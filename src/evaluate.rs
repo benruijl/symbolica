@@ -1146,6 +1146,8 @@ impl<T: Default> ExpressionEvaluator<T> {
             }
         }
 
+        self.stack.truncate(self.stack.len() - total_remove);
+
         total_remove
     }
 }
@@ -3466,7 +3468,9 @@ impl EvalTree<Complex<Rational>> {
         verbose: bool,
     ) -> ExpressionEvaluator<Complex<Rational>> {
         let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme, verbose);
+        println!("{:?}", self);
         self.common_subexpression_elimination();
+        println!("{:?}", self);
         self.clone().linearize(None)
     }
 
@@ -3704,6 +3708,8 @@ impl Expression<Complex<Rational>> {
         } else {
             Expression::Add(contains)
         };
+
+        println!("{extracted:?} extracted from {contains:?} and {rest:?}");
 
         contains.apply_horner_scheme(scheme); // keep trying with same variable
 

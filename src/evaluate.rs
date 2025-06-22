@@ -3413,6 +3413,11 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
                 if p.1 > 1 {
                     instr.push(Instr::Mul(res, vec![b; p.1 as usize]));
+                } else if p.1 < -1 {
+                    instr.push(Instr::Mul(res, vec![b; -p.1 as usize]));
+                    stack.push(T::default());
+                    let res = stack.len() - 1;
+                    instr.push(Instr::Pow(res, b, -1));
                 } else {
                     instr.push(Instr::Pow(res, b, p.1));
                 }

@@ -563,7 +563,6 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         }
 
         if sub_expr.contains_key(self) {
-            //println!("SUB {:?}", self);
             return (0, 0);
         }
 
@@ -3468,9 +3467,7 @@ impl EvalTree<Complex<Rational>> {
         verbose: bool,
     ) -> ExpressionEvaluator<Complex<Rational>> {
         let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme, verbose);
-        println!("{:?}", self);
         self.common_subexpression_elimination();
-        println!("{:?}", self);
         self.clone().linearize(None)
     }
 
@@ -3708,8 +3705,6 @@ impl Expression<Complex<Rational>> {
         } else {
             Expression::Add(contains)
         };
-
-        println!("{extracted:?} extracted from {contains:?} and {rest:?}");
 
         contains.apply_horner_scheme(scheme); // keep trying with same variable
 
@@ -4306,7 +4301,6 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
         }
 
         if sub_expr.contains_key(self) {
-            //println!("SUB {:?}", self);
             return (0, 0);
         }
 
@@ -5025,17 +5019,7 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view() {
                         if den == 1 && num_i == 0 {
-                            if num > 1 {
-                                return Ok(Expression::Mul(vec![b_eval.clone(); num as usize]));
-                            } else {
-                                return Ok(Expression::Pow(Box::new((
-                                    Expression::Mul(vec![
-                                        b_eval.clone();
-                                        num.unsigned_abs() as usize
-                                    ]),
-                                    -1,
-                                ))));
-                            }
+                            return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
                         }
                     }
                 }

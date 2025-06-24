@@ -3417,7 +3417,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                     instr.push(Instr::Mul(res, vec![b; -p.1 as usize]));
                     stack.push(T::default());
                     let res = stack.len() - 1;
-                    instr.push(Instr::Pow(res, b, -1));
+                    instr.push(Instr::Pow(res, res - 1, -1));
                 } else {
                     instr.push(Instr::Pow(res, b, p.1));
                 }

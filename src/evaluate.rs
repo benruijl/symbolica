@@ -3409,14 +3409,14 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             Expression::Pow(p) => {
                 let b = self.linearize_impl(&p.0, subexpressions, stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
-                let res = stack.len() - 1;
+                let mut res = stack.len() - 1;
 
                 if p.1 > 1 {
                     instr.push(Instr::Mul(res, vec![b; p.1 as usize]));
                 } else if p.1 < -1 {
                     instr.push(Instr::Mul(res, vec![b; -p.1 as usize]));
                     stack.push(T::default());
-                    let res = stack.len() - 1;
+                    res += 1;
                     instr.push(Instr::Pow(res, res - 1, -1));
                 } else {
                     instr.push(Instr::Pow(res, b, p.1));

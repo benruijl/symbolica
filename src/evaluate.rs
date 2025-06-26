@@ -747,12 +747,27 @@ impl<T: SingleFloat> ExpressionEvaluator<Complex<T>> {
 
 impl<T: Real> ExpressionEvaluator<T> {
     pub fn evaluate_single(&mut self, params: &[T]) -> T {
+        if self.result_indices.len() != 1 {
+            panic!(
+                "Evaluator does not return a single result but {} results",
+                self.result_indices.len()
+            );
+        }
+
         let mut res = T::new_zero();
         self.evaluate(params, std::slice::from_mut(&mut res));
         res
     }
 
     pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
+        if self.param_count != params.len() {
+            panic!(
+                "Parameter count mismatch: expected {}, got {}",
+                self.param_count,
+                params.len()
+            );
+        }
+
         for (t, p) in self.stack.iter_mut().zip(params) {
             *t = p.clone();
         }

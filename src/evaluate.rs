@@ -3635,7 +3635,7 @@ impl Expression<Complex<Rational>> {
                 let mut pow_counter = 0;
                 for y in m {
                     if let Expression::Pow(p) = y {
-                        if p.0 == scheme[0] {
+                        if p.0 == scheme[0] && p.1 > 0 {
                             pow_counter += p.1;
                         }
                     } else if y == &scheme[0] {
@@ -3645,6 +3645,12 @@ impl Expression<Complex<Rational>> {
 
                 if pow_counter > 0 && (max_pow.is_none() || pow_counter < max_pow.unwrap()) {
                     max_pow = Some(pow_counter);
+                }
+            } else if let Expression::Pow(p) = x {
+                if p.0 == scheme[0] && p.1 > 0 {
+                    if max_pow.is_none() || p.1 < max_pow.unwrap() {
+                        max_pow = Some(p.1);
+                    }
                 }
             } else if x == &scheme[0] {
                 max_pow = Some(1);
@@ -3668,7 +3674,7 @@ impl Expression<Complex<Rational>> {
 
                 m.retain(|y| {
                     if let Expression::Pow(p) = y {
-                        if p.0 == scheme[0] {
+                        if p.0 == scheme[0] && p.1 > 0 {
                             pow_counter += p.1;
                             false
                         } else {
@@ -3702,6 +3708,17 @@ impl Expression<Complex<Rational>> {
                 }
 
                 found = pow_counter > 0;
+            } else if let Expression::Pow(p) = &mut x {
+                if p.0 == scheme[0] && p.1 > 0 {
+                    if p.1 > max_pow + 1 {
+                        p.1 = p.1 - max_pow;
+                    } else if p.1 - max_pow == 1 {
+                        x = scheme[0].clone();
+                    } else {
+                        x = Expression::Const(Complex::new_one());
+                    }
+                    found = true;
+                }
             } else if x == scheme[0] {
                 found = true;
                 x = Expression::Const(Complex::new_one());
@@ -5500,8 +5517,9 @@ mod test {
                 .unwrap();
 
         let mut e_f64 = evaluator.map_coeff(&|x| x.clone().to_real().unwrap().into());
-        let r = e_f64.evaluate_single(&[1.1]);
-        assert!((r - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
+        let mut res = [0., 0.];
+        e_f64.evaluate(&[1.1], &mut res);
+        assert!((res[0] - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
     }
 
     #[test]

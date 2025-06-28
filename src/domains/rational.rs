@@ -54,6 +54,10 @@ impl<R: EuclideanDomain + FractionNormalization> FractionField<R> {
         mut denominator: R::Element,
         do_gcd: bool,
     ) -> <Self as Ring>::Element {
+        if self.ring.is_zero(&denominator) {
+            panic!("Cannot create a fraction with zero denominator");
+        }
+
         if do_gcd {
             let g = self.ring.gcd(&numerator, &denominator);
             if !self.ring.is_one(&g) {
@@ -690,7 +694,12 @@ impl ToFiniteField<Two> for Rational {
 
 impl Rational {
     pub fn new<T: Into<Integer>>(num: T, den: T) -> Rational {
-        Q.to_element(num.into(), den.into(), true)
+        let d = den.into();
+        if d.is_zero() {
+            panic!("Cannot create a rational number with zero denominator");
+        }
+
+        Q.to_element(num.into(), d, true)
     }
 
     pub fn from_unchecked<T: Into<Integer>>(num: T, den: T) -> Rational {

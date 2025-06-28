@@ -525,6 +525,22 @@ impl<F: Ring> Series<F> {
             .enumerate()
             .map(|(i, c)| (self.get_exponent(i), c))
     }
+
+    /// Map the coefficients of the series using a function `f`.
+    pub fn map_coeff<M: Fn(&F::Element) -> F::Element>(&self, f: M) -> Series<F> {
+        let mut s = Series {
+            coefficients: self.coefficients.iter().map(f).collect(),
+            variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
+            shift: self.shift,
+            ramification: self.ramification,
+            field: self.field.clone(),
+            order: self.order,
+        };
+
+        s.truncate();
+        s
+    }
 }
 
 impl<F: Ring> SelfRing for Series<F> {
@@ -1231,5 +1247,24 @@ impl Series<AtomField> {
                 *out = &*out + &(v.npow(p) * c);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        atom::{Atom, AtomCore},
+        parse, symbol,
+    };
+
+    #[test]
+    fn map_coeff() {
+        let a = parse!("((v1+1)^2 - (v1^2 + 2v1 + 1))/v2")
+            .series(symbol!("v2"), Atom::Zero, 0.into(), true)
+            .unwrap();
+        assert_eq!(a.get_trailing_exponent(), (-1).into());
+
+        let b = a.map_coeff(|x| x.expand());
+        assert_eq!(b.get_trailing_exponent(), 1.into());
     }
 }

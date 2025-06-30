@@ -648,22 +648,54 @@ pub trait AtomCore {
     /// and user functions in the expression must occur in the function map.
     /// The function map may have nested expressions.
     ///
-    /// # Example
+    /// # Examples
+    ///
+    /// A simple evaluation without nested expressions:
     ///
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
     /// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
-    /// let expr = parse!("x + y");
-    /// let x = parse!("x");
-    /// let y = parse!("y");
     /// let fn_map = FunctionMap::new();
-    /// let params = vec![x.clone(), y.clone()];
+    /// let params = vec![parse!("x"), parse!("y")];
     /// let optimization_settings = OptimizationSettings::default();
-    /// let mut evaluator = expr
+    /// let mut evaluator = parse!("x + y")
     ///     .evaluator(&fn_map, &params, optimization_settings)
     ///     .unwrap()
     ///     .map_coeff(&|x| x.to_real().unwrap().to_f64());
     /// assert_eq!(evaluator.evaluate_single(&[1.0, 2.0]), 3.0);
+    /// ```
+    ///
+    /// An evaluation with a nested function `f(x) = x^2 + 1`:
+    /// ```rust
+    /// use symbolica::{atom::AtomCore, parse, symbol};
+    /// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
+    /// let mut fn_map = FunctionMap::new();
+    /// fn_map.add_function(symbol!("f"), "f".to_string(), vec![symbol!("x")], parse!("x^2 + 1")).unwrap();
+    ///
+    /// let optimization_settings = OptimizationSettings::default();
+    /// let mut evaluator = parse!("f(x)")
+    ///     .evaluator(&fn_map, &vec![parse!("x")], optimization_settings)
+    ///     .unwrap().map_coeff(&|x| x.re.to_f64());
+    /// assert_eq!(evaluator.evaluate_single(&[2.0]), 5.0);
+    /// ```
+    ///
+    /// An evaluation with externally defined functions:
+    /// ```rust
+    /// use ahash::HashMap;
+    /// use symbolica::{atom::AtomCore, evaluate::{FunctionMap, OptimizationSettings}, parse, symbol};
+    ///
+    /// let mut ext: HashMap<String, Box<dyn Fn(&[f64]) -> f64 + Send + Sync>> = HashMap::default();
+    /// ext.insert("f".to_string(), Box::new(|a| a[0] * a[0] + a[1]));
+    ///
+    /// let mut f = FunctionMap::new();
+    /// f.add_external_function(symbol!("f"), "f".to_string()).unwrap();
+    ///
+    /// let params = vec![parse!("x"), parse!("y")];
+    /// let optimization_settings = OptimizationSettings::default();
+    /// let evaluator = parse!("f(x,y)").evaluator(&f, &params, optimization_settings).unwrap().map_coeff(&|x| x.re.to_f64());
+    ///
+    /// let mut ev = evaluator.with_external_functions(ext).unwrap();
+    /// assert_eq!(ev.evaluate_single(&[2.0, 3.0]), 7.0);
     /// ```
     fn evaluator(
         &self,

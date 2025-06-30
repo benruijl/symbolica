@@ -54,8 +54,9 @@ use crate::{
         },
     },
     evaluate::{
-        CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
-        InlineASM, Instruction, OptimizationSettings, Slot,
+        CompileOptions, CompiledEvaluator, EvaluationFn, ExportSettings, ExpressionEvaluator,
+        ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM, Instruction,
+        OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -5544,7 +5545,8 @@ impl PythonExpression {
         params,
         iterations = 100,
         n_cores = 4,
-        verbose = false),
+        verbose = false,
+        external_functions = None),
         )]
     pub fn evaluator(
         &self,
@@ -5554,6 +5556,7 @@ impl PythonExpression {
         iterations: usize,
         n_cores: usize,
         verbose: bool,
+        external_functions: Option<HashMap<(Variable, String), PyObject>>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
@@ -5584,9 +5587,22 @@ impl PythonExpression {
 
             fn_map
                 .add_function(symbol, rename.clone(), args, body.expr)
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Could not add function: {}", e))
-                })?;
+                .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+        }
+
+        if let Some(ef) = &external_functions {
+            for (symbol, name) in ef.keys() {
+                let symbol = symbol
+                    .to_id()
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Bad function name {}",
+                        symbol
+                    )))?;
+
+                fn_map
+                    .add_external_function(symbol, name.clone())
+                    .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+            }
         }
 
         let settings = OptimizationSettings {
@@ -5606,7 +5622,35 @@ impl PythonExpression {
             })?;
 
         let eval_f64 = if eval.is_real() {
-            Some(eval.clone().map_coeff(&|x| x.to_real().unwrap().to_f64()))
+            let external_functions_f64 = if let Some(ef) = external_functions.as_ref() {
+                ef.clone()
+                    .into_iter()
+                    .map(move |((_, name), f)| {
+                        let ff: Box<dyn Fn(&[f64]) -> f64 + Send + Sync> = Box::new(move |args| {
+                            Python::with_gil(|py| {
+                                f.call1(py, (args,)).unwrap().extract::<f64>(py).unwrap()
+                            })
+                            .into()
+                        });
+
+                        (name.clone(), ff)
+                    })
+                    .collect()
+            } else {
+                HashMap::default()
+            };
+
+            Some(
+                eval.clone()
+                    .map_coeff(&|x| x.to_real().unwrap().to_f64())
+                    .with_external_functions(external_functions_f64)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Could not create complex evaluator: {}",
+                            e
+                        ))
+                    })?,
+            )
         } else {
             None
         };
@@ -5614,10 +5658,47 @@ impl PythonExpression {
             .clone()
             .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
+        let external_functions_complex = if let Some(ef) = external_functions {
+            ef.clone()
+                .into_iter()
+                .map(move |((_, name), f)| {
+                    let ff: Box<dyn Fn(&[Complex<f64>]) -> Complex<f64> + Send + Sync> =
+                        Box::new(move |args| {
+                            Python::with_gil(|py| {
+                                let arg_map: Vec<_> = args
+                                    .into_iter()
+                                    .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+                                    .collect();
+
+                                f.call1(py, (arg_map,))
+                                    .unwrap()
+                                    .extract::<Complex<f64>>(py)
+                                    .unwrap()
+                            })
+                            .into()
+                        });
+
+                    (name.clone(), ff)
+                })
+                .collect()
+        } else {
+            HashMap::default()
+        };
+
+        let eval_complex_ext = eval_complex
+            .with_external_functions(external_functions_complex)
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not create complex evaluator: {}",
+                    e
+                ))
+            })?;
+
         Ok(PythonExpressionEvaluator {
             eval_rat: eval,
             eval: eval_f64,
             eval_complex,
+            eval_complex_ext,
         })
     }
 
@@ -5641,7 +5722,8 @@ impl PythonExpression {
         params,
         iterations = 100,
         n_cores = 4,
-        verbose = false),
+        verbose = false,
+        external_functions = None),
         )]
     pub fn evaluator_multiple(
         _cls: &Bound<'_, PyType>,
@@ -5652,6 +5734,7 @@ impl PythonExpression {
         iterations: usize,
         n_cores: usize,
         verbose: bool,
+        external_functions: Option<HashMap<(Variable, String), PyObject>>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
@@ -5682,9 +5765,22 @@ impl PythonExpression {
 
             fn_map
                 .add_function(symbol, rename.clone(), args, body.expr)
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Could not add function: {}", e))
-                })?;
+                .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+        }
+
+        if let Some(ef) = &external_functions {
+            for (symbol, name) in ef.keys() {
+                let symbol = symbol
+                    .to_id()
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Bad function name {}",
+                        symbol
+                    )))?;
+
+                fn_map
+                    .add_external_function(symbol, name.clone())
+                    .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+            }
         }
 
         let settings = OptimizationSettings {
@@ -5703,7 +5799,35 @@ impl PythonExpression {
         })?;
 
         let eval_f64 = if eval.is_real() {
-            Some(eval.clone().map_coeff(&|x| x.to_real().unwrap().to_f64()))
+            let external_functions_f64 = if let Some(ef) = external_functions.as_ref() {
+                ef.clone()
+                    .into_iter()
+                    .map(move |((_, name), f)| {
+                        let ff: Box<dyn Fn(&[f64]) -> f64 + Send + Sync> = Box::new(move |args| {
+                            Python::with_gil(|py| {
+                                f.call1(py, (args,)).unwrap().extract::<f64>(py).unwrap()
+                            })
+                            .into()
+                        });
+
+                        (name.clone(), ff)
+                    })
+                    .collect()
+            } else {
+                HashMap::default()
+            };
+
+            Some(
+                eval.clone()
+                    .map_coeff(&|x| x.to_real().unwrap().to_f64())
+                    .with_external_functions(external_functions_f64)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Could not create complex evaluator: {}",
+                            e
+                        ))
+                    })?,
+            )
         } else {
             None
         };
@@ -5711,10 +5835,47 @@ impl PythonExpression {
             .clone()
             .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
 
+        let external_functions_complex = if let Some(ef) = external_functions {
+            ef.clone()
+                .into_iter()
+                .map(move |((_, name), f)| {
+                    let ff: Box<dyn Fn(&[Complex<f64>]) -> Complex<f64> + Send + Sync> =
+                        Box::new(move |args| {
+                            Python::with_gil(|py| {
+                                let arg_map: Vec<_> = args
+                                    .into_iter()
+                                    .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+                                    .collect();
+
+                                f.call1(py, (arg_map,))
+                                    .unwrap()
+                                    .extract::<Complex<f64>>(py)
+                                    .unwrap()
+                            })
+                            .into()
+                        });
+
+                    (name.clone(), ff)
+                })
+                .collect()
+        } else {
+            HashMap::default()
+        };
+
+        let eval_complex_ext = eval_complex
+            .with_external_functions(external_functions_complex)
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not create complex evaluator: {}",
+                    e
+                ))
+            })?;
+
         Ok(PythonExpressionEvaluator {
             eval_rat: eval,
             eval: eval_f64,
             eval_complex,
+            eval_complex_ext,
         })
     }
 
@@ -11470,11 +11631,11 @@ impl ConvertibleToRationalPolynomial {
 
 /// An optimized evaluator for expressions.
 #[pyclass(name = "Evaluator", module = "symbolica")]
-#[derive(Clone)]
 pub struct PythonExpressionEvaluator {
     pub eval_rat: ExpressionEvaluator<Complex<Rational>>,
-    pub eval: Option<ExpressionEvaluator<f64>>,
+    pub eval: Option<ExpressionEvaluatorWithExternalFunctions<f64>>,
     pub eval_complex: ExpressionEvaluator<Complex<f64>>,
+    pub eval_complex_ext: ExpressionEvaluatorWithExternalFunctions<Complex<f64>>,
 }
 
 #[pymethods]
@@ -11589,6 +11750,21 @@ impl PythonExpressionEvaluator {
                         ],
                     )?);
                 }
+                Instruction::ExternalFun(o, f, s) => {
+                    v.push(PyTuple::new(
+                        py,
+                        [
+                            "fun".into_pyobject(py)?.as_any(),
+                            slot_to_object(o).into_pyobject(py)?.as_any(),
+                            f.into_pyobject(py)?.as_any(),
+                            s.iter()
+                                .map(slot_to_object)
+                                .collect::<Vec<_>>()
+                                .into_pyobject(py)?
+                                .as_any(),
+                        ],
+                    )?);
+                }
             }
         }
         Ok((
@@ -11605,11 +11781,11 @@ impl PythonExpressionEvaluator {
             "Evaluator contains complex coefficients. Use evaluate_complex_flat instead.",
         ))?;
 
-        let n_inputs = inputs.len() / eval.get_input_len();
-        let mut res = vec![0.; eval.get_output_len() * n_inputs];
+        let n_inputs = inputs.len() / self.eval_rat.get_input_len();
+        let mut res = vec![0.; self.eval_rat.get_output_len() * n_inputs];
         for (r, s) in res
-            .chunks_mut(eval.get_output_len())
-            .zip(inputs.chunks(eval.get_input_len()))
+            .chunks_mut(self.eval_rat.get_output_len())
+            .zip(inputs.chunks(self.eval_rat.get_input_len()))
         {
             eval.evaluate(s, r);
         }
@@ -11624,11 +11800,11 @@ impl PythonExpressionEvaluator {
         py: Python<'py>,
         inputs: Vec<Complex<f64>>,
     ) -> Vec<Bound<'py, PyComplex>> {
-        let n_inputs = inputs.len() / self.eval_complex.get_input_len();
-        let mut res = vec![Complex::new(0., 0.); self.eval_complex.get_output_len() * n_inputs];
+        let n_inputs = inputs.len() / self.eval_rat.get_input_len();
+        let mut res = vec![Complex::new(0., 0.); self.eval_rat.get_output_len() * n_inputs];
         for (r, s) in res
-            .chunks_mut(self.eval_complex.get_output_len())
-            .zip(inputs.chunks(self.eval_complex.get_output_len()))
+            .chunks_mut(self.eval_rat.get_output_len())
+            .zip(inputs.chunks(self.eval_rat.get_output_len()))
         {
             self.eval_complex.evaluate(s, r);
         }
@@ -11647,7 +11823,7 @@ impl PythonExpressionEvaluator {
         Ok(inputs
             .iter()
             .map(|s| {
-                let mut v = vec![0.; eval.get_output_len()];
+                let mut v = vec![0.; self.eval_rat.get_output_len()];
                 eval.evaluate(s, &mut v);
                 v
             })
@@ -11660,7 +11836,7 @@ impl PythonExpressionEvaluator {
         python: Python<'py>,
         inputs: Vec<Vec<Complex<f64>>>,
     ) -> Vec<Vec<Bound<'py, PyComplex>>> {
-        let mut v = vec![Complex::new_zero(); self.eval_complex.get_output_len()];
+        let mut v = vec![Complex::new_zero(); self.eval_rat.get_output_len()];
         inputs
             .iter()
             .map(|s| {
@@ -11680,6 +11856,7 @@ impl PythonExpressionEvaluator {
         inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
+        custom_header = None,
     ))]
     fn compile(
         &self,
@@ -11689,6 +11866,7 @@ impl PythonExpressionEvaluator {
         inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
+        custom_header: Option<String>,
     ) -> PyResult<PythonCompiledExpressionEvaluator> {
         let mut options = CompileOptions::default();
         options.optimization_level = optimization_level as usize;
@@ -11711,7 +11889,16 @@ impl PythonExpressionEvaluator {
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
                 .eval_complex
-                .export_cpp(filename, function_name, true, inline_asm)
+                .export_cpp(
+                    filename,
+                    function_name,
+                    ExportSettings {
+                        include_header: true,
+                        inline_asm,
+                        custom_header,
+                        ..Default::default()
+                    },
+                )
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
                 .map_err(|e| {
@@ -11721,8 +11908,8 @@ impl PythonExpressionEvaluator {
                 .map_err(|e| {
                     exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
                 })?,
-            input_len: self.eval_complex.get_input_len(),
-            output_len: self.eval_complex.get_output_len(),
+            input_len: self.eval_rat.get_input_len(),
+            output_len: self.eval_rat.get_output_len(),
         })
     }
 }

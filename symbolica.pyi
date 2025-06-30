@@ -1682,12 +1682,16 @@ class Expression:
         iterations: int = 100,
         n_cores: int = 4,
         verbose: bool = False,
+        external_functions: Optional[dict[Tuple[Expression, str], Callable[[
+            Sequence[float | complex]], float | complex]]] = None,
     ) -> Evaluator:
         """Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
         All constants and functions should be provided as dictionaries, where the function
         dictionary has a key `(name, printable name, arguments)` and the value is the function
         body. For example the function `f(x,y)=x^2+y` should be provided as
         `{(f, "f", (x, y)): x**2 + y}`. All free parameters should be provided in the `params` list.
+
+        Additionally, external functions can be registered that will call a Python function.
 
         Examples
         --------
@@ -1704,6 +1708,12 @@ class Expression:
         >>> res = ev.evaluate([[1.], [2.], [3.]])  # evaluate at x=1, x=2, x=3
         >>> print(res)
 
+
+        Define an external function:
+
+        >>> E("f(x)").evaluator({}, {}, [S("x")], 
+                    external_functions={(S("f"), "F"): lambda args: args[0]**2 + 1})
+
         Parameters
         ----------
         constants: dict[Expression, Expression]
@@ -1719,6 +1729,10 @@ class Expression:
             The number of cores to use for the optimization.
         verbose: bool, optional
             If set to `True`, print the progress of the optimization.
+        external_functions: Optional[dict[Tuple[Expression, str], Callable[[Sequence[float | complex]], float | complex]]]
+            A dictionary of external functions that can be called during evaluation.
+            The key is the function name and the value is a callable that takes a list of arguments and returns a float.
+            This is useful for functions that are not defined in Symbolica but are available in Python.
         """
 
     @classmethod
@@ -4058,6 +4072,7 @@ class Evaluator:
         inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
+        custom_header: Optional[str] = None,
     ) -> CompiledEvaluator:
         """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
         The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.

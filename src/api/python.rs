@@ -5155,6 +5155,34 @@ impl PythonExpression {
         Ok(out.into_inner().into())
     }
 
+    /// Replace all wildcards in the expression with the given replacements.
+    pub fn replace_wildcards(
+        &self,
+        replacements: HashMap<PythonExpression, PythonExpression>,
+    ) -> PyResult<PythonExpression> {
+        let mut reps = HashMap::default();
+        for (k, v) in replacements {
+            let k = k.expr.as_view();
+            let s = if let AtomView::Var(v) = k {
+                if v.get_wildcard_level() == 0 {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be replaced.",
+                    ));
+                }
+                v.get_symbol()
+            } else {
+                return Err(exceptions::PyTypeError::new_err(
+                    "Only wildcards can be replaced.",
+                ));
+            };
+            reps.insert(s, v.expr);
+        }
+
+        let res = self.expr.to_pattern().replace_wildcards(&reps);
+
+        Ok(res.into())
+    }
+
     /// Solve a linear system in the variables `variables`, where each expression
     /// in the system is understood to yield 0.
     ///

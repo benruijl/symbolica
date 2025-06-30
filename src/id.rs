@@ -2535,6 +2535,7 @@ impl Evaluate for Condition<PatternRestriction> {
                             },
                             WildcardRestriction::IsLiteralWildcard(wc) => match value {
                                 Match::Single(AtomView::Var(v)) => wc == &v.get_symbol(),
+                                Match::FunctionName(s) => wc == s,
                                 _ => false,
                             },
                             WildcardRestriction::Length(min, max) => match value {
@@ -2625,13 +2626,11 @@ impl Condition<PatternRestriction> {
 
                         (is_type == matches!(r, WildcardRestriction::IsAtomType(_))).into()
                     }
-                    WildcardRestriction::IsLiteralWildcard(wc) => {
-                        if let Match::Single(AtomView::Var(v)) = value {
-                            (wc == &v.get_symbol()).into()
-                        } else {
-                            false.into()
-                        }
-                    }
+                    WildcardRestriction::IsLiteralWildcard(wc) => match value {
+                        Match::Single(AtomView::Var(v)) => (wc == &v.get_symbol()).into(),
+                        Match::FunctionName(s) => (wc == s).into(),
+                        _ => false.into(),
+                    },
                     WildcardRestriction::Length(min, max) => match &value {
                         Match::Single(_) | Match::FunctionName(_) => {
                             (*min <= 1 && max.map(|m| m >= 1).unwrap_or(true)).into()

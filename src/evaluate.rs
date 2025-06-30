@@ -57,6 +57,22 @@ impl<A, T> EvaluationFn<A, T> {
     }
 }
 
+/// A map of functions and constants used for evaluating expressions.
+///
+/// Examples
+/// --------
+/// ```rust
+/// use symbolica::{atom::AtomCore, parse, symbol};
+/// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
+/// let mut fn_map = FunctionMap::new();
+/// fn_map.add_function(symbol!("f"), "f".to_string(), vec![symbol!("x")], parse!("x^2 + 1")).unwrap();
+///
+/// let optimization_settings = OptimizationSettings::default();
+/// let mut evaluator = parse!("f(x)")
+///     .evaluator(&fn_map, &vec![parse!("x")], optimization_settings)
+///     .unwrap().map_coeff(&|x| x.re.to_f64());
+/// assert_eq!(evaluator.evaluate_single(&[2.0]), 5.0);
+/// ```
 #[cfg_attr(
     feature = "bincode",
     derive(bincode_trait_derive::Encode),
@@ -68,6 +84,7 @@ impl<A, T> EvaluationFn<A, T> {
 pub struct FunctionMap<T = Complex<Rational>> {
     map: HashMap<Atom, ConstOrExpr<T>>,
     tagged_fn_map: HashMap<(Symbol, Vec<Atom>), ConstOrExpr<T>>,
+    external_fn: HashMap<Symbol, ConstOrExpr<T>>,
     tag: HashMap<Symbol, usize>,
 }
 
@@ -83,6 +100,7 @@ impl<T> FunctionMap<T> {
             map: HashMap::default(),
             tagged_fn_map: HashMap::default(),
             tag: HashMap::default(),
+            external_fn: HashMap::default(),
         }
     }
 
@@ -97,6 +115,10 @@ impl<T> FunctionMap<T> {
         args: Vec<Symbol>,
         body: Atom,
     ) -> Result<(), &str> {
+        if self.external_fn.contains_key(&name) {
+            return Err("Cannot add a function with the same name as an external function");
+        }
+
         if let Some(t) = self.tag.insert(name, 0) {
             if t != 0 {
                 return Err("Cannot add the same function with a different number of parameters");
@@ -124,6 +146,10 @@ impl<T> FunctionMap<T> {
         args: Vec<Symbol>,
         body: Atom,
     ) -> Result<(), &str> {
+        if self.external_fn.contains_key(&name) {
+            return Err("Cannot add a function with the same name as an external function");
+        }
+
         if let Some(t) = self.tag.insert(name, tags.len()) {
             if t != tags.len() {
                 return Err("Cannot add the same function with a different number of parameters");
@@ -140,6 +166,17 @@ impl<T> FunctionMap<T> {
                 body,
             }),
         );
+
+        Ok(())
+    }
+
+    pub fn add_external_function(&mut self, name: Symbol, rename: String) -> Result<(), &str> {
+        if self.tag.contains_key(&name) || self.external_fn.contains_key(&name) {
+            return Err("Cannot add an external function with the same name as a tagged function");
+        }
+
+        self.external_fn
+            .insert(name, ConstOrExpr::External(self.external_fn.len(), rename));
 
         Ok(())
     }
@@ -164,6 +201,10 @@ impl<T> FunctionMap<T> {
             let s = aa.get_symbol();
             let tag_len = self.get_tag_len(&s);
 
+            if let Some(s) = self.external_fn.get(&s) {
+                return Some(s);
+            }
+
             if aa.get_nargs() >= tag_len {
                 let tag = aa.iter().take(tag_len).map(|x| x.to_owned()).collect();
                 return self.tagged_fn_map.get(&(s, tag));
@@ -185,6 +226,7 @@ impl<T> FunctionMap<T> {
 enum ConstOrExpr<T> {
     Const(T),
     Expr(Expr),
+    External(usize, String),
 }
 
 #[cfg_attr(
@@ -232,6 +274,7 @@ pub struct SplitExpression<T> {
 #[derive(Debug, Clone)]
 pub struct EvalTree<T> {
     functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
+    external_functions: Vec<String>,
     expressions: SplitExpression<T>,
     param_count: usize,
 }
@@ -296,6 +339,7 @@ pub enum Expression<T> {
     Powf(Box<(Expression<T>, Expression<T>)>),
     ReadArg(usize), // read nth function argument
     BuiltinFun(BuiltinSymbol, Box<Expression<T>>),
+    ExternalFun(usize, Vec<Expression<T>>),
     SubExpression(usize),
 }
 
@@ -321,6 +365,9 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
             (Expression::BuiltinFun(a, arg1), Expression::BuiltinFun(b, arg2)) => {
                 a.cmp(b).then_with(|| arg1.cmp(arg2))
             }
+            (Expression::ExternalFun(a, arg1), Expression::ExternalFun(b, arg2)) => {
+                a.cmp(b).then_with(|| arg1.cmp(arg2))
+            }
             (Expression::SubExpression(a), Expression::SubExpression(b)) => a.cmp(b),
             (Expression::Const(_), _) => std::cmp::Ordering::Less,
             (_, Expression::Const(_)) => std::cmp::Ordering::Greater,
@@ -340,6 +387,8 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
             (_, Expression::ReadArg(_)) => std::cmp::Ordering::Greater,
             (Expression::BuiltinFun(_, _), _) => std::cmp::Ordering::Less,
             (_, Expression::BuiltinFun(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::ExternalFun(_, _), _) => std::cmp::Ordering::Less,
+            (_, Expression::ExternalFun(_, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -360,6 +409,7 @@ pub enum HashedExpression<T> {
     ),
     ReadArg(ExpressionHash, usize), // read nth function argument
     BuiltinFun(ExpressionHash, BuiltinSymbol, Box<HashedExpression<T>>),
+    ExternalFun(ExpressionHash, usize, Vec<HashedExpression<T>>),
     SubExpression(ExpressionHash, usize),
 }
 
@@ -376,6 +426,7 @@ impl<T> HashedExpression<T> {
             HashedExpression::ReadArg(h, _) => *h,
             HashedExpression::BuiltinFun(h, _, _) => *h,
             HashedExpression::SubExpression(h, _) => *h,
+            HashedExpression::ExternalFun(h, _, _) => *h,
         }
     }
 }
@@ -403,6 +454,9 @@ impl<T: Clone> HashedExpression<T> {
                 Expression::BuiltinFun(*s, Box::new(a.to_expression()))
             }
             HashedExpression::SubExpression(_, s) => Expression::SubExpression(*s),
+            HashedExpression::ExternalFun(_, s, a) => {
+                Expression::ExternalFun(*s, a.iter().map(|x| x.to_expression()).collect())
+            }
         }
     }
 }
@@ -432,6 +486,9 @@ impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
             (HashedExpression::SubExpression(_, s1), HashedExpression::SubExpression(_, s2)) => {
                 s1.cmp(s2)
             }
+            (HashedExpression::ExternalFun(_, a, b), HashedExpression::ExternalFun(_, c, d)) => {
+                a.cmp(c).then_with(|| b.cmp(d))
+            }
             (HashedExpression::Const(_, _), _) => std::cmp::Ordering::Less,
             (_, HashedExpression::Const(_, _)) => std::cmp::Ordering::Greater,
             (HashedExpression::Parameter(_, _), _) => std::cmp::Ordering::Less,
@@ -450,6 +507,8 @@ impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
             (_, HashedExpression::ReadArg(_, _)) => std::cmp::Ordering::Greater,
             (HashedExpression::BuiltinFun(_, _, _), _) => std::cmp::Ordering::Less,
             (_, HashedExpression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::ExternalFun(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::ExternalFun(_, _, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -504,6 +563,7 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
             }
             HashedExpression::BuiltinFun(_, _, _) => {}
             HashedExpression::SubExpression(_, _) => {}
+            HashedExpression::ExternalFun(_, _, _) => {}
         }
 
         false
@@ -544,6 +604,7 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
             }
             HashedExpression::BuiltinFun(_, _, _) => {}
             HashedExpression::SubExpression(_, _) => {}
+            HashedExpression::ExternalFun(_, _, _) => {}
         }
     }
 
@@ -615,6 +676,16 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 b.count_operations_with_subexpression(sub_expr)
             } // not clear how to count this, third arg?
             HashedExpression::SubExpression(_, _) => (0, 0),
+            HashedExpression::ExternalFun(_, _, a) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in a {
+                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
+                    add += a;
+                    mul += m;
+                }
+                (add + a.len() - 1, mul)
+            }
         }
     }
 }
@@ -723,10 +794,29 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
                 let h = hasher.finish();
                 (h, HashedExpression::SubExpression(h, *i))
             }
+            Expression::ExternalFun(s, a) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(10);
+                s.hash(&mut hasher);
+                let mut args = vec![];
+                for x in a {
+                    let (h, v) = x.to_hashed_expression();
+                    hasher.write_u64(h);
+                    args.push(v);
+                }
+                let h = hasher.finish();
+                (h, HashedExpression::ExternalFun(h, *s, args))
+            }
         }
     }
 }
 
+/// An optimized evaluator for expressions that can evaluate expressions with parameters.
+/// The evaluator can be called directly using [Self::evaluate] or it can be exported
+/// to high-performance C++ code using [Self::export_cpp].
+///
+/// To call the evaluator with external functions, use [Self::with_external_functions] to
+/// register implementation for them.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Clone, PartialEq, Debug)]
@@ -737,15 +827,65 @@ pub struct ExpressionEvaluator<T> {
     reserved_indices: usize,
     instructions: Vec<Instr>,
     result_indices: Vec<usize>,
+    external_fns: Vec<String>,
+}
+
+impl<T: Clone> ExpressionEvaluator<T> {
+    /// Register external functions for the evaluator.
+    ///
+    /// Examples
+    /// --------
+    /// ```rust
+    /// use ahash::HashMap;
+    /// use symbolica::{atom::AtomCore, evaluate::{FunctionMap, OptimizationSettings}, parse, symbol};
+    ///
+    /// let mut ext: HashMap<String, Box<dyn Fn(&[f64]) -> f64 + Send + Sync>> = HashMap::default();
+    /// ext.insert("f".to_string(), Box::new(|a| a[0] * a[0] + a[1]));
+    ///
+    ///
+    /// let mut f = FunctionMap::new();
+    /// f.add_external_function(symbol!("f"), "f".to_string())
+    ///     .unwrap();
+    ///
+    /// let params = vec![parse!("x"), parse!("y")];
+    /// let optimization_settings = OptimizationSettings::default();
+    /// let evaluator = parse!("f(x,y)").evaluator(&f, &params, optimization_settings).unwrap().map_coeff(&|x| x.re.to_f64());
+    ///
+    /// let mut ev = evaluator.with_external_functions(ext).unwrap();
+    /// assert_eq!(ev.evaluate_single(&[2.0, 3.0]), 7.0);
+    /// ```
+    pub fn with_external_functions(
+        &self,
+        mut external_fns: HashMap<String, Box<dyn Fn(&[T]) -> T + Send + Sync>>,
+    ) -> Result<ExpressionEvaluatorWithExternalFunctions<T>, String> {
+        let mut external = vec![];
+        for e in &self.external_fns {
+            if let Some(f) = external_fns.remove(e) {
+                external.push((vec![], f));
+            } else {
+                return Err(format!("External function '{}' not found", e));
+            }
+        }
+
+        Ok(ExpressionEvaluatorWithExternalFunctions {
+            stack: self.stack.clone(),
+            param_count: self.param_count,
+            instructions: self.instructions.clone(),
+            result_indices: self.result_indices.clone(),
+            external_fns: external,
+        })
+    }
 }
 
 impl<T: SingleFloat> ExpressionEvaluator<Complex<T>> {
+    /// Check if the expression evaluator is real, i.e., all coefficients are real.
     pub fn is_real(&self) -> bool {
         self.stack.iter().all(|x| x.is_real())
     }
 }
 
 impl<T: Real> ExpressionEvaluator<T> {
+    /// Evaluate the expression evaluator which yields a single result.
     pub fn evaluate_single(&mut self, params: &[T]) -> T {
         if self.result_indices.len() != 1 {
             panic!(
@@ -759,6 +899,7 @@ impl<T: Real> ExpressionEvaluator<T> {
         res
     }
 
+    /// Evaluate the expression evaluator and write the results in `out`.
     pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
         if self.param_count != params.len() {
             panic!(
@@ -809,6 +950,12 @@ impl<T: Real> ExpressionEvaluator<T> {
                     Atom::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
                     _ => unreachable!(),
                 },
+                Instr::ExternalFun(_, s, _) => {
+                    panic!(
+                        "External function {} is not set. Call `with_external_functions` first.",
+                        self.external_fns[*s]
+                    );
+                }
             }
         }
 
@@ -827,6 +974,7 @@ impl<T: Default> ExpressionEvaluator<T> {
             reserved_indices: self.reserved_indices,
             instructions: self.instructions,
             result_indices: self.result_indices,
+            external_fns: self.external_fns.clone(),
         }
     }
 
@@ -1045,6 +1193,12 @@ impl<T: Default> ExpressionEvaluator<T> {
                         *b = rename!(*b);
                         *p = new_pos;
                     }
+                    Instr::ExternalFun(p, _, a) => {
+                        *p = new_pos;
+                        for x in a {
+                            *x = rename!(*x);
+                        }
+                    }
                 }
 
                 new_instr.push(s);
@@ -1069,7 +1223,15 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         for (p, i) in self.instructions.iter().enumerate() {
             if let Instr::BuiltinFun(r, f, a) = i {
-                calls.entry((*f, *a)).or_default().push((p, *r));
+                calls
+                    .entry((Some(*f), None, vec![*a]))
+                    .or_default()
+                    .push((p, *r));
+            } else if let Instr::ExternalFun(r, f, a) = i {
+                calls
+                    .entry((None, Some(*f), a.clone()))
+                    .or_default()
+                    .push((p, *r));
             }
         }
 
@@ -1106,6 +1268,13 @@ impl<T: Default> ExpressionEvaluator<T> {
                                 *arg = x[0].1;
                             }
                         }
+                        Instr::ExternalFun(_, _, args) => {
+                            for v in args {
+                                if *v == *l {
+                                    *v = x[0].1;
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1127,7 +1296,7 @@ impl<T: Default> ExpressionEvaluator<T> {
 
             for x in &mut self.instructions[l.0..] {
                 match x {
-                    Instr::Add(r, a) | Instr::Mul(r, a) => {
+                    Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
                         *r -= 1;
                         for aa in a {
                             if *aa >= l.1 {
@@ -1201,7 +1370,7 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
         if delta > 0 {
             for i in &mut self.instructions {
                 match i {
-                    Instr::Add(r, a) | Instr::Mul(r, a) => {
+                    Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
                         *r += delta;
                         for aa in a {
                             if *aa >= self.reserved_indices {
@@ -1235,7 +1404,7 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
         delta = old_len + new_reserved_indices - other.reserved_indices;
         for i in &mut other.instructions {
             match i {
-                Instr::Add(r, a) | Instr::Mul(r, a) => {
+                Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
                     *r += delta;
                     for aa in a {
                         if *aa >= other.reserved_indices {
@@ -1285,7 +1454,7 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
         let mut unfold = HashMap::default();
         for (index, i) in &mut self.instructions.iter_mut().enumerate() {
             match i {
-                Instr::Add(r, a) | Instr::Mul(r, a) => {
+                Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
                     for aa in a {
                         if *aa >= self.reserved_indices {
                             *aa = unfold[aa];
@@ -1343,7 +1512,7 @@ impl<T> ExpressionEvaluator<T> {
 
         for (i, x) in self.instructions.iter().enumerate() {
             match x {
-                Instr::Add(_, a) | Instr::Mul(_, a) => {
+                Instr::Add(_, a) | Instr::Mul(_, a) | Instr::ExternalFun(_, _, a) => {
                     for v in a {
                         last_use[*v] = i;
                     }
@@ -1378,6 +1547,7 @@ impl<T> ExpressionEvaluator<T> {
                 | Instr::Pow(r, _, _)
                 | Instr::Powf(r, _, _)
                 | Instr::BuiltinFun(r, _, _) => *r,
+                Instr::ExternalFun(r, _, _) => *r,
             };
 
             let cur_last_use = last_use[cur_reg];
@@ -1399,7 +1569,7 @@ impl<T> ExpressionEvaluator<T> {
             max_reg = max_reg.max(new_reg);
 
             match x {
-                Instr::Add(r, a) | Instr::Mul(r, a) => {
+                Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
                     *r = new_reg;
                     for v in a {
                         *v = rename_map[*v];
@@ -1491,29 +1661,47 @@ impl<T: ExportNumber + SingleFloat> ExportNumber for Complex<T> {
     }
 }
 
-impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
-    /// Create a C++ code representation of the evaluation tree.
+/// Settings for exporting the evaluation tree to C++ code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportSettings {
+    /// Include required `#include` statements in the generated code.
+    pub include_header: bool,
+    /// Set the inline assembly mode.
     /// With `inline_asm` set to any value other than `None`,
     /// high-performance inline ASM code will be generated for most
     /// evaluation instructions. This often gives better performance than
     /// the `O3` optimization level and results in very fast compilation.
+    pub inline_asm: InlineASM,
+    /// Custom header to include in the generated code.
+    /// This can be used to include additional libraries or custom functions.
+    pub custom_header: Option<String>,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        ExportSettings {
+            include_header: true,
+            inline_asm: InlineASM::default(),
+            custom_header: None,
+        }
+    }
+}
+
+impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
+    /// Create a C++ code representation of the evaluation tree.
+    /// The resulting source code can be compiled and loaded.
     pub fn export_cpp(
         &self,
         filename: &str,
         function_name: &str,
-        include_header: bool,
-        inline_asm: InlineASM,
+        settings: ExportSettings,
     ) -> Result<ExportedCode, std::io::Error> {
         let mut filename = filename.to_string();
         if !filename.ends_with(".cpp") {
             filename += ".cpp";
         }
 
-        let cpp = match inline_asm {
-            InlineASM::X64 => self.export_asm_str(function_name, include_header, inline_asm),
-            InlineASM::AArch64 => self.export_asm_str(function_name, include_header, inline_asm),
-            InlineASM::None => self.export_cpp_str(function_name, include_header),
-        };
+        let cpp = &self.export_cpp_str(function_name, settings);
 
         std::fs::write(&filename, cpp)?;
         Ok(ExportedCode {
@@ -1522,11 +1710,25 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         })
     }
 
-    pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
+    /// Write the evaluation tree to a C++ source string.
+    pub fn export_cpp_str(&self, function_name: &str, settings: ExportSettings) -> String {
+        match settings.inline_asm {
+            InlineASM::X64 => self.export_asm_str(function_name, &settings),
+            InlineASM::AArch64 => self.export_asm_str(function_name, &settings),
+            InlineASM::None => self.export_standard_cpp_str(function_name, &settings),
+        }
+    }
+
+    fn export_standard_cpp_str(&self, function_name: &str, settings: &ExportSettings) -> String {
         let mut res = String::new();
-        if include_header {
+        if settings.include_header {
             res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
         };
+
+        if let Some(header) = &settings.custom_header {
+            res += header;
+            res += "\n\n";
+        }
 
         res += &format!(
             "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
@@ -1547,7 +1749,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += &format!("\tZ[{}] = {};\n", i, self.stack[i].export_wrapped());
         }
 
-        Self::export_cpp_impl(&self.instructions, &mut res);
+        self.export_cpp_impl(&mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
             res += &format!("\tout[{}] = Z[{}];\n", i, r);
@@ -1575,8 +1777,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         res
     }
 
-    fn export_cpp_impl(instr: &[Instr], out: &mut String) {
-        for ins in instr {
+    fn export_cpp_impl(&self, out: &mut String) {
+        for ins in &self.instructions {
             match ins {
                 Instr::Add(o, a) => {
                     let args = a
@@ -1632,20 +1834,25 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                     }
                     _ => unreachable!(),
                 },
+                Instr::ExternalFun(o, s, a) => {
+                    let name = &self.external_fns[*s];
+                    let args = a.iter().map(|x| format!("Z[{}]", x)).collect::<Vec<_>>();
+
+                    *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
+                }
             }
         }
     }
 
-    pub fn export_asm_str(
-        &self,
-        function_name: &str,
-        include_header: bool,
-        asm_flavour: InlineASM,
-    ) -> String {
+    fn export_asm_str(&self, function_name: &str, settings: &ExportSettings) -> String {
         let mut res = String::new();
-        if include_header {
+        if settings.include_header {
             res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
         };
+
+        if let Some(header) = &settings.custom_header {
+            res += header;
+        }
 
         res += &format!(
             "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
@@ -1671,7 +1878,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             function_name
         );
 
-        self.export_asm_complex_impl(&self.instructions, function_name, asm_flavour, &mut res);
+        self.export_asm_complex_impl(
+            &self.instructions,
+            function_name,
+            settings.inline_asm,
+            &mut res,
+        );
 
         res += "\treturn;\n}\n\n";
 
@@ -1694,7 +1906,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                 function_name
             );
 
-            self.export_asm_double_impl(&self.instructions, function_name, asm_flavour, &mut res);
+            self.export_asm_double_impl(
+                &self.instructions,
+                function_name,
+                settings.inline_asm,
+                &mut res,
+            );
 
             res += "\treturn;\n}\n";
         } else {
@@ -1830,7 +2047,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
 
         for (i, ins) in instr.iter().enumerate() {
             match ins {
-                Instr::Add(r, a) | Instr::Mul(r, a) => {
+                Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
                     for x in a {
                         if x >= &self.reserved_indices {
                             reg_last_use[stack_to_reg[x]] = i;
@@ -1882,6 +2099,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             Pow(MemOrReg, u16, MemOrReg, i64),
             Powf(usize, usize, usize),
             BuiltinFun(usize, BuiltinSymbol, usize),
+            ExternalFun(usize, usize, Vec<usize>),
         }
 
         let mut new_instr: Vec<RegInstr> = instr
@@ -1902,6 +2120,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                 }
                 Instr::Powf(r, b, e) => RegInstr::Powf(*r, *b, *e),
                 Instr::BuiltinFun(r, s, a) => RegInstr::BuiltinFun(*r, *s, *a),
+                Instr::ExternalFun(r, s, a) => RegInstr::ExternalFun(*r, *s, a.clone()),
             })
             .collect();
 
@@ -1985,6 +2204,11 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                         }
                         RegInstr::BuiltinFun(_, _, a) => {
                             if *a == old_reg {
+                                panic!("use outside of ASM block");
+                            }
+                        }
+                        RegInstr::ExternalFun(_, _, a) => {
+                            if a.contains(&old_reg) {
                                 panic!("use outside of ASM block");
                             }
                         }
@@ -2533,6 +2757,14 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                         _ => unreachable!(),
                     }
                 }
+                RegInstr::ExternalFun(o, s, a) => {
+                    end_asm_block!(in_asm_block);
+
+                    let name = &self.external_fns[*s];
+                    let args = a.iter().map(|x| get_input!(*x)).collect::<Vec<_>>();
+
+                    *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
+                }
             }
         }
 
@@ -2957,6 +3189,14 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                         _ => unreachable!(),
                     }
                 }
+                Instr::ExternalFun(o, s, a) => {
+                    end_asm_block!(in_asm_block);
+
+                    let name = &self.external_fns[*s];
+                    let args = a.iter().map(|x| get_input!(*x)).collect::<Vec<_>>();
+
+                    *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
+                }
             }
         }
 
@@ -3034,6 +3274,100 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     }
 }
 
+pub struct ExpressionEvaluatorWithExternalFunctions<T> {
+    stack: Vec<T>,
+    param_count: usize,
+    instructions: Vec<Instr>,
+    result_indices: Vec<usize>,
+    external_fns: Vec<(Vec<T>, Box<dyn Fn(&[T]) -> T + Send + Sync>)>,
+}
+
+impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
+    pub fn evaluate_single(&mut self, params: &[T]) -> T {
+        if self.result_indices.len() != 1 {
+            panic!(
+                "Evaluator does not return a single result but {} results",
+                self.result_indices.len()
+            );
+        }
+
+        let mut res = T::new_zero();
+        self.evaluate(params, std::slice::from_mut(&mut res));
+        res
+    }
+
+    pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
+        if self.param_count != params.len() {
+            panic!(
+                "Parameter count mismatch: expected {}, got {}",
+                self.param_count,
+                params.len()
+            );
+        }
+
+        for (t, p) in self.stack.iter_mut().zip(params) {
+            *t = p.clone();
+        }
+
+        let mut tmp;
+        for i in &self.instructions {
+            match i {
+                Instr::Add(r, v) => {
+                    tmp = self.stack[v[0]].clone();
+                    for x in &v[1..] {
+                        let e = self.stack[*x].clone();
+                        tmp += e;
+                    }
+                    std::mem::swap(&mut self.stack[*r], &mut tmp);
+                }
+                Instr::Mul(r, v) => {
+                    tmp = self.stack[v[0]].clone();
+                    for x in &v[1..] {
+                        let e = self.stack[*x].clone();
+                        tmp *= e;
+                    }
+                    std::mem::swap(&mut self.stack[*r], &mut tmp);
+                }
+                Instr::Pow(r, b, e) => {
+                    if *e >= 0 {
+                        self.stack[*r] = self.stack[*b].pow(*e as u64);
+                    } else {
+                        self.stack[*r] = self.stack[*b].pow(e.unsigned_abs()).inv();
+                    }
+                }
+                Instr::Powf(r, b, e) => {
+                    self.stack[*r] = self.stack[*b].powf(&self.stack[*e]);
+                }
+                Instr::BuiltinFun(r, s, arg) => match s.0 {
+                    Atom::EXP => self.stack[*r] = self.stack[*arg].exp(),
+                    Atom::LOG => self.stack[*r] = self.stack[*arg].log(),
+                    Atom::SIN => self.stack[*r] = self.stack[*arg].sin(),
+                    Atom::COS => self.stack[*r] = self.stack[*arg].cos(),
+                    Atom::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
+                    _ => unreachable!(),
+                },
+                Instr::ExternalFun(r, s, args) => {
+                    let (cache, f) = &mut self.external_fns[*s];
+
+                    if cache.len() < args.len() {
+                        cache.resize(args.len(), self.stack[0].clone());
+                    }
+
+                    for (i, v) in cache.iter_mut().zip(args) {
+                        *i = self.stack[*v].clone();
+                    }
+
+                    self.stack[*r] = (f)(&cache[..args.len()]);
+                }
+            }
+        }
+
+        for (o, i) in out.iter_mut().zip(&self.result_indices) {
+            *o = self.stack[*i].clone();
+        }
+    }
+}
+
 /// A slot in a list that contains a numerical value.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
@@ -3076,6 +3410,8 @@ pub enum Instruction {
     /// `Fun(o, s, a)` means `o = s(a)`, where `s` is assumed to
     /// be a built-in function such as `sin`.
     Fun(Slot, BuiltinSymbol, Slot),
+    /// `ExternalFun(o, s, a,...)` means `o = s(a, ...)`, where `s` is an external function.
+    ExternalFun(Slot, String, Vec<Slot>),
 }
 
 impl std::fmt::Display for Instruction {
@@ -3111,6 +3447,18 @@ impl std::fmt::Display for Instruction {
             }
             Instruction::Fun(o, s, a) => {
                 write!(f, "{} = {}({})", o, s.0, a)
+            }
+            Instruction::ExternalFun(o, s, a) => {
+                write!(
+                    f,
+                    "{} = {}({})",
+                    o,
+                    s,
+                    a.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
         }
     }
@@ -3166,6 +3514,13 @@ impl<T: Clone> ExpressionEvaluator<T> {
                 Instr::BuiltinFun(o, s, a) => {
                     instr.push(Instruction::Fun(get_slot!(*o), *s, get_slot!(*a)));
                 }
+                Instr::ExternalFun(o, f, a) => {
+                    instr.push(Instruction::ExternalFun(
+                        get_slot!(*o),
+                        self.external_fns[*f].clone(),
+                        a.iter().map(|x| get_slot!(*x)).collect(),
+                    ));
+                }
             }
         }
 
@@ -3182,6 +3537,7 @@ enum Instr {
     Pow(usize, usize, i64),
     Powf(usize, usize, usize),
     BuiltinFun(usize, BuiltinSymbol, usize),
+    ExternalFun(usize, usize, Vec<usize>),
 }
 
 impl<T: Clone + PartialEq> SplitExpression<T> {
@@ -3220,6 +3576,10 @@ impl<T: Clone + PartialEq> Expression<T> {
             Expression::ReadArg(s) => Expression::ReadArg(*s),
             Expression::BuiltinFun(s, a) => Expression::BuiltinFun(*s, Box::new(a.map_coeff(f))),
             Expression::SubExpression(i) => Expression::SubExpression(*i),
+            Expression::ExternalFun(s, a) => {
+                let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
+                Expression::ExternalFun(s.clone(), new_args)
+            }
         }
     }
 
@@ -3256,6 +3616,11 @@ impl<T: Clone + PartialEq> Expression<T> {
                 a.strip_constants(stack, param_len);
             }
             Expression::SubExpression(_) => {}
+            Expression::ExternalFun(_, a) => {
+                for arg in a {
+                    arg.strip_constants(stack, param_len);
+                }
+            }
         }
     }
 }
@@ -3282,6 +3647,7 @@ impl<T: Clone + PartialEq> EvalTree<T> {
                 .iter()
                 .map(|(s, a, e)| (s.clone(), a.clone(), e.map_coeff(f)))
                 .collect(),
+            external_functions: self.external_functions.clone(),
             param_count: self.param_count,
         }
     }
@@ -3319,6 +3685,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             reserved_indices,
             instructions,
             result_indices,
+            external_fns: self.external_functions.clone(),
         };
 
         for _ in 0..cpe_rounds.unwrap_or(usize::MAX) {
@@ -3470,6 +3837,22 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                     sub_expr_pos.insert(*id, res);
                     res
                 }
+            }
+            Expression::ExternalFun(s, v) => {
+                let args: Vec<_> = v
+                    .iter()
+                    .map(|x| {
+                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                    })
+                    .collect();
+
+                stack.push(T::default());
+                let res = stack.len() - 1;
+
+                let f = Instr::ExternalFun(res, *s, args);
+                instr.push(f);
+
+                res
             }
         }
     }
@@ -3858,6 +4241,11 @@ impl Expression<Complex<Rational>> {
                 a.occurrence_order_horner_scheme();
             }
             Expression::SubExpression(_) => {}
+            Expression::ExternalFun(_, a) => {
+                for arg in a {
+                    arg.occurrence_order_horner_scheme();
+                }
+            }
         }
     }
 
@@ -4084,6 +4472,11 @@ impl Expression<Complex<Rational>> {
                 a.find_all_variables(vars);
             }
             Expression::SubExpression(_) => {}
+            Expression::ExternalFun(_, a) => {
+                for arg in a {
+                    arg.find_all_variables(vars);
+                }
+            }
         }
     }
 }
@@ -4218,6 +4611,11 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
             Expression::SubExpression(i) => {
                 *self = Expression::SubExpression(*subexp.get(i).unwrap());
             }
+            Expression::ExternalFun(_, a) => {
+                for arg in a {
+                    arg.rename_subexpression(subexp);
+                }
+            }
         }
     }
 
@@ -4246,6 +4644,11 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
             }
             Expression::SubExpression(i) => {
                 dep.push(*i);
+            }
+            Expression::ExternalFun(_, a) => {
+                for arg in a {
+                    arg.get_dependent_subexpressions(dep);
+                }
             }
         }
     }
@@ -4321,6 +4724,16 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
             Expression::ReadArg(_) => (0, 0),
             Expression::BuiltinFun(_, b) => b.count_operations(), // not clear how to count this, third arg?
             Expression::SubExpression(_) => (0, 0),
+            Expression::ExternalFun(_, args) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in args {
+                    let (a, m) = arg.count_operations();
+                    add += a;
+                    mul += m;
+                }
+                (add, mul)
+            }
         }
     }
 
@@ -4388,6 +4801,16 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
             Expression::ReadArg(_) => (0, 0),
             Expression::BuiltinFun(_, b) => b.count_operations_with_subexpression(sub_expr), // not clear how to count this, third arg?
             Expression::SubExpression(_) => (0, 0),
+            Expression::ExternalFun(_, args) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in args {
+                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
+                    add += a;
+                    mul += m;
+                }
+                (add, mul)
+            }
         }
     }
 }
@@ -4464,6 +4887,12 @@ impl<T: Real> EvalTree<T> {
             Expression::SubExpression(s) => {
                 // TODO: cache
                 self.evaluate_impl(&subexpressions[*s], subexpressions, params, args)
+            }
+            Expression::ExternalFun(name, _args) => {
+                unimplemented!(
+                    "External function calls not implemented for EvalTree: {}",
+                    name
+                );
             }
         }
     }
@@ -4727,7 +5156,7 @@ impl ExportedCode {
 /// The inline assembly mode used to generate fast
 /// assembly instructions for mathematical operations.
 /// Set to `None` to disable inline assembly.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum InlineASM {
     /// Use instructions suitable for x86_64 machines.
     X64,
@@ -4904,6 +5333,17 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             Expression::SubExpression(id) => {
                 format!("Z{}_", id)
             }
+            Expression::ExternalFun(name, a) => {
+                let mut r = name.to_string();
+                r.push('(');
+                r += &a
+                    .iter()
+                    .map(|x| self.export_cpp_impl(x, args))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                r.push(')');
+                r
+            }
         }
     }
 }
@@ -4933,12 +5373,26 @@ impl<'a> AtomView<'a> {
             })
             .collect::<Result<_, _>>()?;
 
+        let mut external_fns: Vec<_> = fn_map
+            .external_fn
+            .values()
+            .map(|x| {
+                let ConstOrExpr::External(e, name) = x else {
+                    panic!("Expected external function");
+                };
+
+                (*e, name.clone())
+            })
+            .collect();
+        external_fns.sort_by_key(|x| x.0);
+
         Ok(EvalTree {
             expressions: SplitExpression {
                 tree,
                 subexpressions: vec![],
             },
             functions: funcs,
+            external_functions: external_fns.into_iter().map(|x| x.1).collect(),
             param_count: params.len(),
         })
     }
@@ -5009,6 +5463,13 @@ impl<'a> AtomView<'a> {
 
                 match fun {
                     ConstOrExpr::Const(t) => Ok(Expression::Const(t.clone())),
+                    ConstOrExpr::External(e, _name) => {
+                        let eval_args = f
+                            .iter()
+                            .map(|arg| arg.to_eval_tree_impl(fn_map, params, args, funcs))
+                            .collect::<Result<_, _>>()?;
+                        Ok(Expression::ExternalFun(*e, eval_args))
+                    }
                     ConstOrExpr::Expr(Expr {
                         name,
                         tag_len,

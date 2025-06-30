@@ -1530,6 +1530,28 @@ class Expression:
             If set to `True`, the entire operation will be repeated until there are no more matches.
        """
 
+    def replace_wildcards(self, replacements: dict[Expression, Expression]) -> Expression:
+        """
+        Replace all wildcards in the expression with the corresponding values in `replacements`.
+        This function can be used to substitute the result from (see :meth:`Expression.match`)
+        into its pattern.
+
+        Examples
+        --------
+
+        >>> x, x_, f= S('x', 'x_', 'f')
+        >>> e = 1 + x + f(2)
+        >>> p = f(x_)
+        >>> r = next(e.match(p))
+        >>> p.replace_wildcards(r)
+        f(2)
+
+        Parameters
+        ----------
+        replacements: dict[Expression, Expression]
+            A map of wildcards to their replacements.
+       """
+
     @classmethod
     def solve_linear_system(
         _cls,

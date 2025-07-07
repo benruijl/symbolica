@@ -317,14 +317,12 @@ impl Ring for Zp {
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let t = a.0 as u64 * b.0 as u64;
         let m = (t as u32).wrapping_mul(self.m);
-        let u = ((t.wrapping_add(m as u64 * self.p as u64)) >> 32) as u32;
+        let (t, overflow) = t.overflowing_add(m as u64 * self.p as u64);
+        let u = (t >> 32) as u32;
 
-        // correct for overflow
-        if u < (t >> 32) as u32 {
-            return FiniteFieldElement(u.wrapping_sub(self.p));
-        }
-
-        if u >= self.p {
+        if overflow {
+            FiniteFieldElement(u.wrapping_sub(self.p))
+        } else if u >= self.p {
             FiniteFieldElement(u - self.p)
         } else {
             FiniteFieldElement(u)
@@ -644,14 +642,12 @@ impl Ring for Zp64 {
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let t = a.0 as u128 * b.0 as u128;
         let m = (t as u64).wrapping_mul(self.m);
-        let u = ((t.wrapping_add(m as u128 * self.p as u128)) >> 64) as u64;
+        let (t, overflow) = t.overflowing_add(m as u128 * self.p as u128);
+        let u = (t >> 64) as u64;
 
-        // correct for overflow
-        if u < (t >> 64) as u64 {
-            return FiniteFieldElement(u.wrapping_sub(self.p));
-        }
-
-        if u >= self.p {
+        if overflow {
+            FiniteFieldElement(u.wrapping_sub(self.p))
+        } else if u >= self.p {
             FiniteFieldElement(u - self.p)
         } else {
             FiniteFieldElement(u)

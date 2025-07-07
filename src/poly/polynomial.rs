@@ -1518,20 +1518,31 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
     /// Replace the last variable `n` in the polynomial by an element from
     /// the ring `v`.
     pub fn replace_last(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E, LexOrder> {
+        const MAX_EXP_BUF: usize = 100000;
         let mut res = self.zero_with_capacity(self.nterms());
-        let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars()];
+        let mut e = vec![E::zero(); self.nvars()];
+        let mut res_cache =
+            vec![self.ring.zero(); (self.degree(n).to_i32() as usize + 1).min(MAX_EXP_BUF)];
 
-        // TODO: cache power taking?
+        let nvars = self.nvars();
+
         for t in self {
             if t.exponents[n] == E::zero() {
                 res.append_monomial(t.coefficient.clone(), t.exponents);
                 continue;
             }
 
-            let c = self.ring.mul(
-                t.coefficient,
-                &self.ring.pow(v, t.exponents[n].to_i32() as u64),
-            );
+            let ee = t.exponents[n].to_i32() as usize;
+
+            let c = if ee < MAX_EXP_BUF {
+                if self.ring.is_zero(&res_cache[ee]) {
+                    res_cache[ee] = self.ring.pow(v, ee as u64);
+                }
+
+                self.ring.mul(t.coefficient, &res_cache[ee])
+            } else {
+                self.ring.mul(t.coefficient, &self.ring.pow(v, ee as u64))
+            };
 
             if self.ring.is_zero(&c) {
                 continue;
@@ -1540,7 +1551,21 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
             e.copy_from_slice(t.exponents);
             e[n] = E::zero();
 
-            if res.is_zero() || res.last_exponents() != e.as_slice() {
+            let mut different = false;
+            if !res.is_zero() {
+                let start = (res.nterms() - 1) * nvars;
+
+                for i in (0..n).rev() {
+                    if unsafe { e.get_unchecked(i) != res.exponents.get_unchecked(start + i) } {
+                        different = true;
+                        break;
+                    }
+                }
+            } else {
+                different = true;
+            }
+
+            if different {
                 res.coefficients.push(c);
                 res.exponents.extend_from_slice(&e);
             } else {

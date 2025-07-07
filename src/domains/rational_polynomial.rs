@@ -1421,7 +1421,10 @@ mod test {
 
     use crate::{
         atom::AtomCore,
-        domains::{Ring, integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
+        domains::{
+            InternalOrdering, Ring, integer::Z, rational::Q,
+            rational_polynomial::RationalPolynomial,
+        },
         parse, symbol,
     };
 
@@ -1513,7 +1516,8 @@ mod test {
             parse!("(36v1^2+1167v1+3549/2)/(v1^3+23/30v1^2-2/15v1-2/15)")
                 .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
-        let (r, l) = p.integrate(0);
+        let (r, mut l) = p.integrate(0);
+        l.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.internal_cmp(&b.1)));
 
         let v = l[0].0.get_variables().clone();
 
@@ -1526,13 +1530,13 @@ mod test {
                     parse!("(1+2*v1)/2").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
                 ),
                 (
+                    parse!("37451/16").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
+                    parse!("(-2+5*v1)/5").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
+                ),
+                (
                     parse!("91125/16").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
                     parse!("(2+3*v1)/3").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
                 ),
-                (
-                    parse!("37451/16").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
-                    parse!("(-2+5*v1)/5").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
-                )
             ]
         );
     }
@@ -1581,7 +1585,8 @@ mod test {
         let p: RationalPolynomial<_, _> =
             parse!("1/(v1^3+v1)").to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
-        let (r, l) = p.integrate(0);
+        let (r, mut l) = p.integrate(0);
+        l.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.internal_cmp(&b.1)));
 
         let v = l[0].0.get_variables().clone();
 
@@ -1606,7 +1611,8 @@ mod test {
         let p: RationalPolynomial<_, _> = parse!("(v1^4+v2+v1*v2+2*v1)/((v1-v2)(v1-2)(v1-4))")
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
-        let (r, l) = p.integrate(0);
+        let (r, mut l) = p.integrate(0);
+        l.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.internal_cmp(&b.1)));
 
         let v = l[0].0.get_variables().clone();
 
@@ -1624,20 +1630,20 @@ mod test {
             l,
             vec![
                 (
-                    parse!("(20+3*v2)/(-4+2*v2)").to_rational_polynomial::<_, _, u8>(
-                        &Q,
-                        &Z,
-                        v.clone()
-                    ),
-                    parse!("-2+v1").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
-                ),
-                (
                     parse!("(-264-5*v2)/(-8+2*v2)").to_rational_polynomial::<_, _, u8>(
                         &Q,
                         &Z,
                         v.clone()
                     ),
                     parse!("-4+v1").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
+                ),
+                (
+                    parse!("(20+3*v2)/(-4+2*v2)").to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone()
+                    ),
+                    parse!("-2+v1").to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone()),
                 ),
                 (
                     parse!("(3*v2+v2^2+v2^4)/(8-6*v2+v2^2)").to_rational_polynomial::<_, _, u8>(

@@ -5,7 +5,7 @@ use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, Neg};
 
-use crate::domains::integer::Integer;
+use crate::domains::integer::{Integer, gcd_unsigned};
 use crate::poly::Variable::Temporary;
 use crate::poly::gcd::PolynomialGCD;
 use crate::printer::{PrintOptions, PrintState};
@@ -181,6 +181,7 @@ pub trait FiniteFieldWorkspace: Clone + Display + Eq + Hash {
 }
 
 pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
+    /// Create a new finite field with modulus prime `p`.
     fn new(p: UField) -> Self;
     fn get_prime(&self) -> UField;
     /// Convert a number to a representative in a prime field.
@@ -189,7 +190,7 @@ pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
     fn from_element(&self, a: &Self::Element) -> UField;
 }
 
-/// The modular ring `Z / mZ`, where `m` can be any positive integer. In most cases,
+/// The modular ring `Z / mZ`, where `m` can be any odd positive integer. In most cases,
 /// `m` will be a prime, and the domain will be a field.
 ///
 /// [Zp] ([`FiniteField<u32>`]) and [Zp64] ([`FiniteField<u64>`]) use Montgomery modular arithmetic
@@ -204,10 +205,25 @@ pub struct FiniteField<UField> {
     p: UField,
     m: UField,
     one: FiniteFieldElement<UField>,
+    is_prime: bool,
 }
 
 impl Zp {
-    /// Create a new finite field. `n` must be a prime larger than 2.
+    /// Create a new modular ring. `p` must be odd.
+    pub fn new_non_prime(p: u32) -> Zp {
+        if p % 2 == 0 {
+            panic!("Prime 2 is not supported: use Z2 instead.");
+        }
+
+        FiniteField {
+            p,
+            m: Self::inv_2_32(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+            is_prime: false,
+        }
+    }
+
+    /// Create a new modular field from an odd prime `p`.
     pub fn new(p: u32) -> Zp {
         if p % 2 == 0 {
             panic!("Prime 2 is not supported: use Z2 instead.");
@@ -217,6 +233,7 @@ impl Zp {
             p,
             m: Self::inv_2_32(p),
             one: FiniteFieldElement(Self::get_one(p)),
+            is_prime: true,
         }
     }
 
@@ -381,7 +398,7 @@ impl Ring for Zp {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
-        if e >= self.get_prime() as u64 - 1 {
+        if self.is_prime && e >= self.get_prime() as u64 - 1 {
             e %= self.get_prime() as u64 - 1;
         }
 
@@ -550,7 +567,21 @@ impl FiniteFieldWorkspace for u64 {
 }
 
 impl Zp64 {
-    /// Create a new finite field. `n` must be a prime larger than 2.
+    /// Create a new modular ring. `n` must be odd.
+    pub fn new_non_prime(p: u64) -> Zp64 {
+        if p % 2 == 0 {
+            panic!("Prime 2 is not supported: use Z2 instead.");
+        }
+
+        FiniteField {
+            p,
+            m: Self::inv_2_64(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+            is_prime: false,
+        }
+    }
+
+    // Create a new modular field with odd prime `p`.
     pub fn new(p: u64) -> Zp64 {
         if p % 2 == 0 {
             panic!("Prime 2 is not supported: use Z2 instead.");
@@ -560,6 +591,7 @@ impl Zp64 {
             p,
             m: Self::inv_2_64(p),
             one: FiniteFieldElement(Self::get_one(p)),
+            is_prime: true,
         }
     }
 
@@ -706,7 +738,7 @@ impl Ring for Zp64 {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
-        if e >= self.get_prime() - 1 {
+        if self.is_prime && e >= self.get_prime() - 1 {
             e %= self.get_prime() - 1;
         }
 
@@ -865,6 +897,7 @@ impl Z2 {
             p: Two(2),
             m: Two(2),
             one: FiniteFieldElement(Two(1)),
+            is_prime: true,
         }
     }
 
@@ -934,6 +967,7 @@ impl FiniteFieldCore<Two> for FiniteField<Two> {
             p,
             m: p,
             one: FiniteFieldElement(Two(1)),
+            is_prime: true,
         }
     }
 
@@ -1173,6 +1207,7 @@ impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
             p,
             m: p,
             one: FiniteFieldElement(Mersenne64(1)),
+            is_prime: true,
         }
     }
 
@@ -1430,6 +1465,7 @@ impl FiniteFieldCore<Integer> for FiniteField<Integer> {
             p: m.clone(),
             m: Integer::one(),
             one: FiniteFieldElement(Integer::one()),
+            is_prime: true,
         }
     }
 
@@ -1649,8 +1685,21 @@ impl Field for FiniteField<Integer> {
 ///
 /// Based on [Wojciech Izykowski's implementation](https://github.com/wizykowski/miller-rabin).
 pub fn is_prime_u64(n: u64) -> bool {
-    // shortest SPRP basis from Jim Sinclair for testing primality of u64
-    let witnesses: [u64; 7] = [2, 325, 9375, 28178, 450775, 9780504, 1795265022];
+    let w = if n < 341531 {
+        [9345883071009581737].as_slice()
+    } else if n < 1050535501 {
+        [336781006125, 9639812373923155].as_slice()
+    } else if n < 350269456337 {
+        [
+            4230279247111683200,
+            14694767155120705706,
+            16641139526367750375,
+        ]
+        .as_slice()
+    } else {
+        // shortest SPRP basis from Jim Sinclair for testing primality of u64
+        [2, 325, 9375, 28178, 450775, 9780504, 1795265022].as_slice()
+    };
 
     if n < 2 {
         return false;
@@ -1670,8 +1719,8 @@ pub fn is_prime_u64(n: u64) -> bool {
     let f = Zp64::new(n);
     let neg_one = FiniteFieldElement(n.wrapping_sub(f.one().0));
 
-    'test: for a in witnesses {
-        let a = f.to_element(a);
+    'test: for a in w {
+        let a = f.to_element(*a);
 
         if a.0 == 0 {
             continue;
@@ -1732,6 +1781,221 @@ impl Iterator for PrimeIteratorU64 {
     }
 }
 
+/// An iterator that generates smooth primes based on a list of small primes `primes`.
+/// A prime `p` is smooth if `p-1`'s prime factors are all in `primes`.
+///
+/// The output of the iterator is not sequential.
+///
+/// # Example
+/// ```rust
+/// use symbolica::domains::finite_field::{SmoothPrimeIterator};
+/// let mut iter = SmoothPrimeIterator::new(vec![2, 3]);
+///
+/// while let Some((p, pows)) = iter.next() {
+///     if p > 2 << 60 {
+///         assert_eq!(p, 16210220612075905069);
+///         assert_eq!(pows, [2, 39]);
+///         break;
+///     }
+/// }
+/// ```
+pub struct SmoothPrimeIterator {
+    primes: Vec<u64>,
+    pows: Vec<u64>,
+    accum: Vec<u64>,
+    first: bool,
+    done: bool,
+}
+
+impl SmoothPrimeIterator {
+    /// Create a new smooth prime iterator with the given small primes.
+    pub fn new(primes: Vec<u64>) -> Self {
+        let len = primes.len();
+        Self {
+            primes,
+            pows: vec![0; len],
+            accum: vec![0; len],
+            first: true,
+            done: false,
+        }
+    }
+
+    /// Returns the next (non-sequential) smooth prime and the powers of the small primes used to generate it.
+    pub fn next(&mut self) -> Option<(u64, &[u64])> {
+        if self.done {
+            return None;
+        }
+
+        let mut skip_first = !self.first;
+        self.next_impl(0, &mut skip_first)
+            .map(|p| (p, self.pows.as_slice()))
+    }
+
+    fn next_impl(&mut self, pos: usize, skip_first: &mut bool) -> Option<u64> {
+        if pos == self.primes.len() {
+            let n = *self.accum.last().unwrap();
+            if n < u64::MAX - 1 && is_prime_u64(n + 1) {
+                if !*skip_first {
+                    self.first = false;
+                    return Some(n + 1);
+                } else {
+                    *skip_first = false;
+                    return None;
+                }
+            }
+
+            return None;
+        }
+
+        if self.pows[pos] == 0 {
+            if pos > 0 {
+                self.accum[pos] = self.accum[pos - 1];
+            } else {
+                self.accum[0] = 1;
+            }
+        }
+
+        if let Some(p) = self.next_impl(pos + 1, skip_first) {
+            return Some(p);
+        }
+
+        for _ in self.pows[pos]..64 {
+            let (r, overflow) = self.accum[pos].overflowing_mul(self.primes[pos]);
+            if overflow {
+                break;
+            }
+
+            self.pows[pos] += 1;
+            self.accum[pos] = r;
+            if let Some(p) = self.next_impl(pos + 1, skip_first) {
+                return Some(p);
+            }
+        }
+
+        if pos > 0 {
+            self.pows[pos] = 0; // reset
+        } else {
+            self.done = true;
+        }
+
+        None
+    }
+}
+
+/// Perform Pollard's rho algorithm with Brent's cycle detection.
+fn pollard_brent_rho(n: u64) -> u64 {
+    const M: u64 = 1000;
+
+    if is_prime_u64(n) {
+        return n;
+    }
+
+    if n % 2 == 0 {
+        return 2;
+    }
+
+    let field = Zp64::new(n);
+    let mut rng = rand::rng();
+
+    let mut c = 3;
+
+    loop {
+        let cf = field.to_element(c);
+        let mut x = field.sample(&mut rng, (0, n.clamp(0, i64::MAX as u64) as i64));
+
+        let mut y = x;
+        let mut q = field.one();
+        let mut ys = field.one();
+        let mut r = 1;
+        let mut g = 1;
+
+        while g == 1 {
+            x = y;
+
+            for _ in 1..r {
+                y = field.add(&field.mul(&y, &y), &cf);
+            }
+
+            let mut k = 0;
+            while k < r && g == 1 {
+                ys = y;
+                for _ in 1..M.min(r - k) {
+                    y = field.add(&field.mul(&y, &y), &cf);
+                    field.mul_assign(&mut q, &field.sub(&x, &y));
+                }
+
+                g = gcd_unsigned(field.from_element(&q), n);
+                k += M;
+            }
+
+            r *= 2;
+        }
+
+        if g == n {
+            loop {
+                ys = field.add(&field.mul(&ys, &ys), &cf);
+                g = gcd_unsigned(field.from_element(&field.sub(&x, &ys)), n);
+                if g > 1 {
+                    if g == n {
+                        // two sequences are repeating at the same time, increase constant
+                        c = c + 1;
+                        break;
+                    }
+                    return g;
+                }
+            }
+        }
+
+        if g != n {
+            return g;
+        }
+    }
+}
+
+/// Factorize a 64-bit number into its prime factors.
+pub fn factor(mut n: u64, out: &mut Vec<u64>) {
+    if n < 2 {
+        out.push(n);
+        return;
+    }
+
+    while n % 2 == 0 {
+        out.push(2);
+        n /= 2;
+    }
+
+    while n > 1 {
+        let f = pollard_brent_rho(n);
+
+        if f == n {
+            out.push(n);
+        } else {
+            factor(f, out);
+        }
+
+        n /= f;
+    }
+}
+
+/// Compute the Euler totient function of `n`.
+pub fn totient(n: u64) -> u64 {
+    if is_prime_u64(n) {
+        return n - 1;
+    }
+
+    let mut factors = Vec::new();
+    factor(n, &mut factors);
+    factors.sort();
+    factors.dedup();
+
+    let mut t = n;
+    for f in factors {
+        t = t - t / f;
+    }
+
+    t
+}
+
 #[cfg(test)]
 mod test {
     use super::{FiniteFieldCore, Zp};
@@ -1747,6 +2011,30 @@ mod test {
             let r = field.pow(&x, i);
             assert_eq!(r, q);
             q = field.mul(&q, &x);
+        }
+    }
+
+    #[test]
+    fn non_prime() {
+        let field = Zp::new(27);
+        let x = field.to_element(13);
+        let y = field.to_element(5);
+        let r = field.mul(&x, &y);
+        assert_eq!(field.from_element(&r), 11);
+    }
+
+    #[test]
+    fn factor() {
+        let mut factors = Vec::new();
+        for i in 18446744073709541426..18446744073709551426 {
+            super::factor(i, &mut factors);
+            let mut res = 1;
+            for f in &factors {
+                res *= f;
+            }
+
+            assert_eq!(res, i);
+            factors.clear();
         }
     }
 }

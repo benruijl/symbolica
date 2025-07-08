@@ -595,6 +595,81 @@ impl Zp64 {
         }
     }
 
+    /// Compute the discrete logarithm
+    /// `x = log_base(res) mod p`, where `phi(p) = q_1^e_1 * ... * q_n^e_n`
+    /// and `base` is a primitive root of `p`, using the Pohlig–Hellman algorithm.
+    pub fn discrete_log(
+        &self,
+        base: &FiniteFieldElement<u64>,
+        res: &FiniteFieldElement<u64>,
+        totient: u64,
+        totient_primes: &[(u64, u32)],
+    ) -> FiniteFieldElement<u64> {
+        let mut crt = vec![];
+        for (p, e) in totient_primes {
+            let p_e = p.to_u64().unwrap().pow(*e);
+            let exp = totient.to_u64().unwrap() / p.to_u64().unwrap().pow(*e);
+
+            let g = self.pow(base, exp);
+            let g_inv = self.inv(&g);
+            let h = self.pow(res, exp);
+
+            let mut x = 0;
+            let gamma = self.pow(&g, p.pow(*e - 1));
+
+            'next: for k in 0..*e {
+                let hh = self.pow(&self.mul(&self.pow(&g_inv, x), &h), p.pow(*e - 1 - k));
+
+                if self.is_one(&hh) {
+                    continue;
+                }
+
+                // assume smooth prime with small factors
+                // TODO: switch to baby-step giant-step algorithm
+                let mut gamma_c = gamma.clone();
+                for d in 1..*p {
+                    if gamma_c == hh {
+                        x += p.pow(k) * d;
+                        continue 'next;
+                    }
+
+                    self.mul_assign(&mut gamma_c, &gamma);
+                }
+
+                panic!(
+                    "No discrete logarithm found for base {} and res {} in field with prime {}^{}",
+                    base.0, res.0, p, e
+                );
+            }
+
+            crt.push((x, p_e));
+        }
+
+        if crt.len() == 1 {
+            return self.to_element(crt[0].0);
+        }
+
+        let mut cur = Integer::chinese_remainder(
+            crt[0].0.into(),
+            crt[1].0.into(),
+            crt[0].1.into(),
+            crt[1].1.into(),
+        );
+        let mut prime = Integer::from(crt[0].1) * crt[1].1;
+        for x in crt.iter().skip(2) {
+            cur = Integer::chinese_remainder(cur, x.0.into(), prime.clone(), x.1.into());
+            prime *= x.1;
+        }
+
+        if cur < 0 {
+            cur += prime;
+        }
+
+        let r = self.to_element(cur.to_u64().unwrap());
+        debug_assert_eq!(res, &self.pow(base, self.from_element(&r)));
+        r
+    }
+
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^64 mod a.
     fn get_one(a: u64) -> u64 {
         if a as u128 <= 1u128 << 63 {
@@ -2051,7 +2126,10 @@ impl Iterator for PrimitiveRootIterator {
 #[cfg(test)]
 mod test {
     use super::{FiniteFieldCore, Zp};
-    use crate::domains::{Ring, finite_field::PrimitiveRootIterator};
+    use crate::domains::{
+        Ring,
+        finite_field::{PrimitiveRootIterator, Zp64},
+    };
 
     #[test]
     fn primitive_root() {
@@ -2074,7 +2152,7 @@ mod test {
 
     #[test]
     fn non_prime() {
-        let field = Zp::new(27);
+        let field = Zp::new_non_prime(27);
         let x = field.to_element(13);
         let y = field.to_element(5);
         let r = field.mul(&x, &y);
@@ -2094,5 +2172,14 @@ mod test {
             assert_eq!(res, i);
             factors.clear();
         }
+    }
+
+    #[test]
+    fn discrete_log() {
+        let field = Zp64::new(73);
+        let base = field.to_element(5);
+        let y = field.to_element(11);
+        let log = field.discrete_log(&base, &y, 72, &[(2, 3), (3, 2)]);
+        assert_eq!(field.from_element(&log), 55);
     }
 }

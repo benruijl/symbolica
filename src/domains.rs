@@ -184,6 +184,70 @@ pub trait Field: EuclideanDomain {
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn inv(&self, a: &Self::Element) -> Self::Element;
+
+    /// Find the shortest linear recurrence relation for a given series `s`,
+    /// using the Berlekamp-Massey algorithm.
+    ///
+    /// Yields a vector `c` such that `s[i] = sum(j, 0, m, c[j] * s[i-j-1])` for `i > m`.
+    ///
+    /// # Example
+    /// ```rust
+    /// use symbolica::domains::{Field, rational::Q};
+    /// let res = Q.find_linear_recurrence_relation(&[0.into(), 1.into(), 1.into(), 3.into(),
+    ///                                               5.into(), 11.into(), 21.into()]);
+    /// assert_eq!(res, [1.into(), 2.into()]); // s[i] = 1 * s[i-1] + 2 * s[i-2]
+    /// ```
+    fn find_linear_recurrence_relation(&self, series: &[Self::Element]) -> Vec<Self::Element> {
+        let mut c = vec![self.one()];
+        let mut c_old = vec![self.one()];
+        let mut tmp = vec![];
+        let mut seq_len = 0;
+        let mut m = 1;
+        let mut b_inv = self.one();
+        for (n, s) in series.iter().enumerate() {
+            let mut error = s.clone();
+            for i in 1..=seq_len {
+                self.add_mul_assign(&mut error, &c[i], &series[n - i]);
+            }
+
+            if self.is_zero(&error) {
+                m += 1;
+            } else if 2 * seq_len <= n {
+                tmp.clone_from(&c);
+
+                let factor = self.mul(&error, &b_inv);
+
+                if c.len() < m + c_old.len() {
+                    c.resize(m + c_old.len(), self.zero());
+                }
+
+                for (j, c_j) in c_old.iter().enumerate() {
+                    self.sub_mul_assign(&mut c[j + m], c_j, &factor);
+                }
+                seq_len = n + 1 - seq_len;
+                std::mem::swap(&mut c_old, &mut tmp);
+                b_inv = self.inv(&error);
+                m = 1;
+            } else {
+                let factor = self.mul(&error, &b_inv);
+
+                if c.len() < m + c_old.len() {
+                    c.resize(m + c_old.len(), self.zero());
+                }
+
+                for (j, c_j) in c_old.iter().enumerate() {
+                    self.sub_mul_assign(&mut c[j + m], c_j, &factor);
+                }
+                m += 1;
+            }
+        }
+
+        c.drain(0..c.len() - seq_len);
+        for x in &mut c {
+            *x = self.neg(x);
+        }
+        c
+    }
 }
 
 /// Rings that can be upgraded to fields, such as `IntegerRing` and `PolynomialRing`.
@@ -536,6 +600,36 @@ impl<R: Field, C: Clone + Borrow<R>> Field for WrappedRingElement<R, C> {
         WrappedRingElement {
             ring: self.ring.clone(),
             element: self.ring().inv(&a.element),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::domains::{Field, Ring, rational::Q};
+
+    #[test]
+    fn linear_recurrence() {
+        let series = [
+            2.into(),
+            2.into(),
+            1.into(),
+            2.into(),
+            1.into(),
+            191.into(),
+            393.into(),
+            132.into(),
+        ];
+
+        let res = Q.find_linear_recurrence_relation(&series);
+
+        for (i, x) in series.iter().enumerate().skip(res.len()) {
+            let mut c = Q.zero();
+            for j in 0..res.len() {
+                c += &res[j] * &series[i - j - 1];
+            }
+
+            assert_eq!(&c, x);
         }
     }
 }

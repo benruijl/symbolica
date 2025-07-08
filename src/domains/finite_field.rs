@@ -1992,10 +1992,68 @@ pub fn totient(n: u64) -> u64 {
     t
 }
 
+/// An iterator over the primitive roots of a finite field with odd (potentially composite) modulus `n`.
+pub struct PrimitiveRootIterator {
+    f: Zp64,
+    totient: u64,
+    totient_factors: Vec<u64>,
+    current: u64,
+}
+
+impl PrimitiveRootIterator {
+    pub fn new(n: u64) -> Self {
+        let totient = totient(n);
+        let mut factors = vec![];
+
+        factor(totient, &mut factors);
+        factors.sort();
+        factors.dedup();
+
+        Self::new_with_totient_factors(n, totient, factors)
+    }
+
+    pub fn new_with_totient_factors(n: u64, totient: u64, totient_factors: Vec<u64>) -> Self {
+        let field = Zp64::new(n);
+        PrimitiveRootIterator {
+            totient,
+            totient_factors,
+            f: field,
+            current: 2,
+        }
+    }
+}
+
+impl Iterator for PrimitiveRootIterator {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<u64> {
+        'next: for c in self.current..self.f.get_prime() {
+            for &f in &self.totient_factors {
+                let r = self.f.pow(&self.f.to_element(c), self.totient / f);
+                if self.f.is_one(&r) || self.f.is_zero(&r) {
+                    self.current = c + 1;
+                    continue 'next;
+                }
+            }
+
+            self.current = c + 1;
+            return Some(c);
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{FiniteFieldCore, Zp};
-    use crate::domains::Ring;
+    use crate::domains::{Ring, finite_field::PrimitiveRootIterator};
+
+    #[test]
+    fn primitive_root() {
+        let roots: Vec<_> = PrimitiveRootIterator::new(23).collect();
+        assert_eq!(roots, [5, 7, 10, 11, 14, 15, 17, 19, 20, 21]);
+    }
 
     #[test]
     fn pow() {

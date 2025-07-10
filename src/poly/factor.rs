@@ -1108,7 +1108,7 @@ where
     /// Perform Cantor-Zassenhaus's probabilistic algorithm for
     /// finding irreducible factors of degree `d`.
     pub fn equal_degree_factorization(&self, d: usize) -> Vec<Self> {
-        let mut s = self.clone().make_monic();
+        let s = self.clone().make_monic();
 
         let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
             if d == 1 {
@@ -1128,34 +1128,31 @@ where
         let mut random_poly = self.zero_with_capacity(d);
         let mut exp = vec![E::zero(); self.nvars()];
 
-        let mut try_counter = 0;
         let characteristic = self.ring.characteristic();
+
+        // compute inverse
+        let mut s_rev = s.clone();
+        s_rev.reverse();
+        let s_inv = s_rev.inverse_univariate(var, E::from_u32(n as u32 + 1));
 
         let factor = loop {
             // generate a random non-constant polynomial
             random_poly.clear();
 
-            if d == 1 && (characteristic.is_zero() || try_counter < characteristic) {
-                exp[var] = E::zero();
-                random_poly.append_monomial(self.ring.nth(try_counter.into()), &exp);
-                exp[var] = E::one();
-                random_poly.append_monomial(self.ring.one(), &exp);
-                try_counter += 1;
-            } else {
-                for i in 0..2 * d {
-                    let r = self
-                        .ring
-                        .sample(&mut rng, (0, characteristic.to_i64().unwrap_or(i64::MAX)));
-                    if !self.ring.is_zero(&r) {
-                        exp[var] = E::from_u32(i as u32);
-                        random_poly.append_monomial(r, &exp);
-                    }
-                }
-
-                if random_poly.degree(var) == E::zero() {
-                    continue;
+            for i in 0..n {
+                let r = self
+                    .ring
+                    .sample(&mut rng, (0, characteristic.to_i64().unwrap_or(i64::MAX)));
+                if !self.ring.is_zero(&r) {
+                    exp[var] = E::from_u32(i as u32);
+                    random_poly.append_monomial(r, &exp);
                 }
             }
+
+            if random_poly.degree(var) == E::zero() {
+                continue;
+            }
+            *random_poly.coefficients.last_mut().unwrap() = self.ring.one();
 
             let g = random_poly.gcd(&s);
 
@@ -1178,10 +1175,17 @@ where
             } else {
                 // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
                 let p = self.ring.size();
-                random_poly
-                    .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
-                    - self.one()
+                random_poly.exp_mod_univariate_fast(
+                    var,
+                    &(&p.pow(d as u64) - &1i64.into()) / &2i64.into(),
+                    &s,
+                    &s_inv,
+                ) - self.one()
             };
+
+            if b.is_constant() {
+                continue;
+            }
 
             let g = b.gcd(&s);
 

@@ -43,6 +43,7 @@ serde = ["dep:serde", "rug/serde"]
 # allow importing/exporting of atoms with a state map using bincode
 bincode = ["dep:bincode", "dep:bincode-trait-derive"]
 python_stubgen = ["dep:pyo3-stub-gen"]
+experimental_poly_gcd = []
 
 [dependencies.pyo3]
 features = ["extension-module", "abi3", "py-clone"]

@@ -188,21 +188,27 @@ pub trait Field: EuclideanDomain {
     /// Find the shortest linear recurrence relation for a given series `s`,
     /// using the Berlekamp-Massey algorithm.
     ///
-    /// Yields a vector `c` such that `s[i] = sum(j, 0, m, c[j] * s[i-j-1])` for `i > m`.
+    /// Yields a vector `c` such that `s[i] = sum(j, 0, m, c[j] * s[i-j-1])` for `i > m` and
+    /// the number of stable iterations.
     ///
     /// # Example
     /// ```rust
     /// use symbolica::domains::{Field, rational::Q};
-    /// let res = Q.find_linear_recurrence_relation(&[0.into(), 1.into(), 1.into(), 3.into(),
+    /// let (res, s) = Q.find_linear_recurrence_relation(&[0.into(), 1.into(), 1.into(), 3.into(),
     ///                                               5.into(), 11.into(), 21.into()]);
+    /// assert_eq!(s, 3);
     /// assert_eq!(res, [1.into(), 2.into()]); // s[i] = 1 * s[i-1] + 2 * s[i-2]
     /// ```
-    fn find_linear_recurrence_relation(&self, series: &[Self::Element]) -> Vec<Self::Element> {
+    fn find_linear_recurrence_relation(
+        &self,
+        series: &[Self::Element],
+    ) -> (Vec<Self::Element>, usize) {
         let mut c = vec![self.one()];
         let mut c_old = vec![self.one()];
         let mut tmp = vec![];
         let mut seq_len = 0;
         let mut m = 1;
+        let mut stable_count = 0;
         let mut b_inv = self.one();
         for (n, s) in series.iter().enumerate() {
             let mut error = s.clone();
@@ -212,6 +218,7 @@ pub trait Field: EuclideanDomain {
 
             if self.is_zero(&error) {
                 m += 1;
+                stable_count += 1;
             } else if 2 * seq_len <= n {
                 tmp.clone_from(&c);
 
@@ -228,6 +235,7 @@ pub trait Field: EuclideanDomain {
                 std::mem::swap(&mut c_old, &mut tmp);
                 b_inv = self.inv(&error);
                 m = 1;
+                stable_count = 0;
             } else {
                 let factor = self.mul(&error, &b_inv);
 
@@ -239,6 +247,7 @@ pub trait Field: EuclideanDomain {
                     self.sub_mul_assign(&mut c[j + m], c_j, &factor);
                 }
                 m += 1;
+                stable_count = 0;
             }
         }
 
@@ -246,7 +255,7 @@ pub trait Field: EuclideanDomain {
         for x in &mut c {
             *x = self.neg(x);
         }
-        c
+        (c, stable_count)
     }
 }
 
@@ -621,7 +630,8 @@ mod tests {
             132.into(),
         ];
 
-        let res = Q.find_linear_recurrence_relation(&series);
+        let (res, it) = Q.find_linear_recurrence_relation(&series);
+        assert_eq!(it, 0);
 
         for (i, x) in series.iter().enumerate().skip(res.len()) {
             let mut c = Q.zero();

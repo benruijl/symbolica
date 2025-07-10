@@ -1895,6 +1895,10 @@ impl SmoothPrimeIterator {
         }
     }
 
+    pub fn get_prime_list(&self) -> &[u64] {
+        &self.primes
+    }
+
     /// Returns the next (non-sequential) smooth prime and the powers of the small primes used to generate it.
     pub fn next(&mut self) -> Option<(u64, &[u64])> {
         if self.done {

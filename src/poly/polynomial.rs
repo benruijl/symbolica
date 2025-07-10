@@ -1447,6 +1447,73 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 
         res
     }
+
+    pub fn coefficient(&self, exponents: &[E]) -> Option<F::Element> {
+        if self.is_zero() {
+            return None;
+        }
+
+        let mut low = 0;
+        let mut high = self.coefficients.len() - 1;
+
+        while low <= high {
+            let mid = low + (high - low) / 2;
+
+            match O::cmp(
+                &self.exponents[mid * self.nvars()..(mid + 1) * self.nvars()],
+                exponents,
+            ) {
+                Ordering::Equal => return Some(self.coefficients[mid].clone()),
+                Ordering::Less => low = mid + 1,
+                Ordering::Greater => high = mid - 1,
+            }
+        }
+
+        None
+    }
+
+    pub fn map_exp<E2: Exponent>(&self, f: impl Fn(&E) -> E2) -> MultivariatePolynomial<F, E2, O> {
+        MultivariatePolynomial {
+            coefficients: self.coefficients.clone(),
+            exponents: self.exponents.iter().map(|e| f(e)).collect::<Vec<_>>(),
+            ring: self.ring.clone(),
+            variables: self.variables.clone(),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Kronecker map to bivariate polynomial.
+    pub fn kronecker_map(&self, powers: &[E]) -> Self {
+        let mut res = self.zero_with_capacity(self.nterms());
+        let mut new_exponents = vec![E::zero(); self.nvars()];
+        for a in self {
+            new_exponents[0] = a.exponents[0];
+            new_exponents[1] = a.exponents[1];
+            for (i, e) in a.exponents.iter().enumerate().skip(2) {
+                new_exponents[1] += powers[i - 2] * *e;
+            }
+            res.append_monomial(a.coefficient.clone(), &new_exponents);
+        }
+        res
+    }
+
+    pub fn kronecker_inv_map(&self, powers: &[E]) -> Self {
+        let mut res = self.zero_with_capacity(self.nterms());
+        let mut new_exponents = vec![E::zero(); self.nvars()];
+        for a in self {
+            let mut total = a.exponents[1];
+            new_exponents[0] = a.exponents[0];
+            new_exponents[1] = total % powers[0];
+            total = total - new_exponents[1];
+            for i in 2..self.nvars() {
+                new_exponents[i] = total % powers[i - 1];
+                total = total - new_exponents[i];
+                new_exponents[i] = new_exponents[i] / powers[i - 2];
+            }
+            res.append_monomial(a.coefficient.clone(), &new_exponents);
+        }
+        res
+    }
 }
 
 impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {

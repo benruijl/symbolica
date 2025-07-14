@@ -1108,7 +1108,7 @@ where
     /// Perform Cantor-Zassenhaus's probabilistic algorithm for
     /// finding irreducible factors of degree `d`.
     pub fn equal_degree_factorization(&self, d: usize) -> Vec<Self> {
-        let mut s = self.clone().make_monic();
+        let s = self.clone().make_monic();
 
         let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
             if d == 1 {
@@ -1130,6 +1130,11 @@ where
 
         let mut try_counter = 0;
         let characteristic = self.ring.characteristic();
+
+        // compute inverse
+        let mut s_rev = s.clone();
+        s_rev.reverse();
+        let s_inv = s_rev.inverse_univariate(var, E::from_u32(n as u32 + 1));
 
         let factor = loop {
             // generate a random non-constant polynomial
@@ -1178,10 +1183,17 @@ where
             } else {
                 // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
                 let p = self.ring.size();
-                random_poly
-                    .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
-                    - self.one()
+                random_poly.exp_mod_univariate_fast(
+                    var,
+                    &(&p.pow(d as u64) - &1i64.into()) / &2i64.into(),
+                    &s,
+                    &s_inv,
+                ) - self.one()
             };
+
+            if b.is_constant() {
+                continue;
+            }
 
             let g = b.gcd(&s);
 
@@ -3751,8 +3763,7 @@ mod test {
     #[test]
     fn factor_ff_square_free() {
         let field = Zp::new(3);
-        let poly = parse!("(1+v1)*(1+v1^2)^2*(v1^4+1)^3")
-            .to_polynomial::<_, u8>(&field, None);
+        let poly = parse!("(1+v1)*(1+v1^2)^2*(v1^4+1)^3").to_polynomial::<_, u8>(&field, None);
 
         let res = [("1+v1^4", 3), ("1+v1^2", 2), ("1+v1", 1)];
 
@@ -3802,8 +3813,8 @@ mod test {
 
     #[test]
     fn factor_square_free() {
-        let poly = parse!("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)")
-            .to_polynomial::<_, u8>(&Z, None);
+        let poly =
+            parse!("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)").to_polynomial::<_, u8>(&Z, None);
 
         let res = [
             ("3", 1),
@@ -3817,9 +3828,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3848,9 +3857,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3885,9 +3892,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3915,9 +3920,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3944,9 +3947,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3960,15 +3961,14 @@ mod test {
 
     #[test]
     fn factor_overall_minus() {
-        let poly = parse!("-v1*v3^2-v1*v2*v3^2")
-            .to_polynomial::<_, u8>(
-                &Z,
-                Some(Arc::new(vec![
-                    symbol!("v1").into(),
-                    symbol!("v2").into(),
-                    symbol!("v3").into(),
-                ])),
-            );
+        let poly = parse!("-v1*v3^2-v1*v2*v3^2").to_polynomial::<_, u8>(
+            &Z,
+            Some(Arc::new(vec![
+                symbol!("v1").into(),
+                symbol!("v2").into(),
+                symbol!("v3").into(),
+            ])),
+        );
 
         let res = [("-1", 1), ("v3", 2), ("1+v2", 1), ("v1", 1)];
 
@@ -3976,9 +3976,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4008,9 +4006,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4033,8 +4029,7 @@ mod test {
 
     #[test]
     fn algebraic_extension() {
-        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
-            .to_polynomial::<_, u8>(&Q, None);
+        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2").to_polynomial::<_, u8>(&Q, None);
         let f = parse!("a^4-3").to_polynomial::<_, u16>(&Q, None);
         let f = AlgebraicExtension::new(f);
 

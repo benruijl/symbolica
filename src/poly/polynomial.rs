@@ -582,8 +582,36 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         }
     }
 
+    /// Reverse the coefficients: `1+2x+3x^3` becomes `3+2x^2+x^3`.
+    pub fn reverse(&mut self) {
+        self.coefficients.reverse();
+        let nterms = self.nterms();
+        let nvars = self.nvars();
+        let degs = (0..nvars).map(|i| self.degree(i)).collect::<Vec<_>>();
+
+        for e in self.exponents.chunks_mut(nvars) {
+            for (ee, d) in e.iter_mut().zip(&degs) {
+                *ee = *d - *ee;
+            }
+        }
+
+        let midu = if nterms % 2 == 0 {
+            self.nvars() * (nterms / 2)
+        } else {
+            self.nvars() * (nterms / 2 + 1)
+        };
+
+        let (l, r) = self.exponents.split_at_mut(midu);
+
+        let rend = r.len();
+        for i in 0..nterms / 2 {
+            l[i * nvars..(i + 1) * nvars]
+                .swap_with_slice(&mut r[rend - (i + 1) * nvars..rend - i * nvars]);
+        }
+    }
+
     /// Reverse the monomial ordering in-place.
-    fn reverse(&mut self) {
+    fn reverse_monomials(&mut self) {
         let nterms = self.nterms();
         let nvars = self.nvars();
         if nterms < 2 {
@@ -1448,15 +1476,19 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         res
     }
 
+    /// Get the coefficient of the monomial with the given exponents if it is present.
     pub fn coefficient(&self, exponents: &[E]) -> Option<F::Element> {
         if self.is_zero() {
+            if exponents.iter().all(|e| *e == E::zero()) {
+                return Some(self.ring.zero());
+            }
             return None;
         }
 
         let mut low = 0;
-        let mut high = self.coefficients.len() - 1;
+        let mut high = self.coefficients.len();
 
-        while low <= high {
+        while low < high {
             let mid = low + (high - low) / 2;
 
             match O::cmp(
@@ -1464,8 +1496,12 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
                 exponents,
             ) {
                 Ordering::Equal => return Some(self.coefficients[mid].clone()),
-                Ordering::Less => low = mid + 1,
-                Ordering::Greater => high = mid - 1,
+                Ordering::Less => {
+                    low = mid + 1;
+                }
+                Ordering::Greater => {
+                    high = mid;
+                }
             }
         }
 
@@ -1504,10 +1540,9 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             let mut total = a.exponents[1];
             new_exponents[0] = a.exponents[0];
             new_exponents[1] = total % powers[0];
-            total = total - new_exponents[1];
             for i in 2..self.nvars() {
+                total = total - new_exponents[i - 1];
                 new_exponents[i] = total % powers[i - 1];
-                total = total - new_exponents[i];
                 new_exponents[i] = new_exponents[i] / powers[i - 2];
             }
             res.append_monomial(a.coefficient.clone(), &new_exponents);
@@ -1771,6 +1806,23 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         poly
+    }
+
+    /// Compute the inverse of the univariate polynomial in `var` up until `pow` using Newton's method.
+    pub fn inverse_univariate(&self, var: usize, pow: E) -> Self {
+        let mut g = self.constant(
+            self.ring
+                .try_div(&self.ring.one(), &self.get_constant())
+                .unwrap(),
+        );
+        let mut exp = E::one();
+        while exp < pow {
+            exp = exp * E::from_u32(2);
+            let h =
+                g.clone().mul_coeff(self.ring.nth(2.into())) - self * &(&g * &g).mod_var(var, exp);
+            g = h.mod_var(var, exp);
+        }
+        g
     }
 }
 
@@ -2363,8 +2415,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             pow = pow - E::one();
         }
 
-        q.reverse();
-        r.reverse();
+        q.reverse_monomials();
+        r.reverse_monomials();
 
         #[cfg(debug_assertions)]
         {
@@ -3561,8 +3613,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         // q and r have the highest monomials first
-        q.reverse();
-        r.reverse();
+        q.reverse_monomials();
+        r.reverse_monomials();
 
         #[cfg(debug_assertions)]
         {
@@ -3821,8 +3873,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         // q and r have the highest monomials first
-        q.reverse();
-        r.reverse();
+        q.reverse_monomials();
+        r.reverse_monomials();
 
         #[cfg(debug_assertions)]
         {
@@ -3966,6 +4018,69 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         (x * &y).quot_rem_univariate(m).1
+    }
+
+    /// Perform a fast univariate division of `self` by `div`, using a precomputed inverse of `div` reversed.
+    pub fn quot_rem_univariate_fast(&self, div: &Self, var: usize, inv_div: &Self) -> (Self, Self) {
+        if div.is_zero() {
+            panic!("Cannot divide by 0 polynomial");
+        }
+
+        if self.is_zero() {
+            return (self.clone(), self.clone());
+        }
+
+        let deg_a = *self.last_exponents().iter().max().unwrap();
+        let deg_b = *div.last_exponents().iter().max().unwrap();
+        if deg_a < deg_b {
+            return (self.zero(), self.clone());
+        }
+
+        let m = deg_a - deg_b;
+
+        let mut self_i = self.clone();
+        self_i.reverse();
+        let mut q = (&self_i * &inv_div.mod_var(var, m + E::one())).mod_var(var, m + E::one());
+
+        q.reverse();
+
+        if q.degree(var) < m {
+            let mut exp = vec![E::zero(); self.nvars()];
+            exp[var] = m - q.degree(var);
+            q = q.mul_exp(&exp);
+        }
+
+        let r = &*self - &(div * &q);
+
+        (q, r)
+    }
+
+    /// Compute `self^n % m` where `m` is a polynomial, using a precomputed inverse of `m` reversed.
+    pub fn exp_mod_univariate_fast(
+        &mut self,
+        var: usize,
+        mut n: Integer,
+        m: &Self,
+        m_inv: &Self,
+    ) -> Self {
+        if n.is_zero() {
+            return self.one();
+        }
+
+        // use binary exponentiation and mod at every stage
+        let mut x = self.quot_rem_univariate_fast(m, var, m_inv).1;
+        let mut y = self.one();
+        while !n.is_one() {
+            if (&n % &Integer::Natural(2)).is_one() {
+                y = (&y * &x).quot_rem_univariate_fast(m, var, m_inv).1;
+                n -= &Integer::one();
+            }
+
+            x = (&x * &x).quot_rem_univariate_fast(m, var, m_inv).1;
+            n /= 2;
+        }
+
+        (x * &y).quot_rem_univariate_fast(m, var, m_inv).1
     }
 
     /// Compute `(g, s, t)` where `self * s + other * t = g`
@@ -4213,7 +4328,7 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::AtomCore, domains::integer::Z, parse, symbol};
+    use crate::{atom::AtomCore, domains::integer::Z, domains::rational::Q, parse, symbol};
 
     #[test]
     fn mul_packed() {
@@ -4284,5 +4399,16 @@ mod test {
                 symbol!("v3").into()
             ]
         );
+    }
+
+    #[test]
+    fn fast_exp_mod() {
+        let mut a = parse!("x^3 + 2*x + 3").to_polynomial::<_, u8>(&Q, None);
+        let b = parse!("x^2 + x + 2").to_polynomial::<_, u8>(&Q, None);
+        let mut b_rev = b.clone();
+        b_rev.reverse();
+        let c = b_rev.inverse_univariate(0, 2.into());
+        let d = a.exp_mod_univariate_fast(0, 4.into(), &b, &c);
+        assert_eq!(d.to_expression(), parse!("367+333*x"));
     }
 }

@@ -57,7 +57,7 @@ impl AtomView<'_> {
                 // detect if the function to derive is the derivative function itself
                 // if so, derive the last argument of the derivative function and set
                 // a flag to later accumulate previous derivatives
-                let (to_derive, f, is_der) = if f_orig.get_symbol() == Atom::DERIVATIVE {
+                let (to_derive, f, is_der) = if f_orig.get_symbol() == Symbol::DERIVATIVE {
                     let to_derive = f_orig.iter().last().unwrap();
                     (
                         to_derive,
@@ -87,29 +87,30 @@ impl AtomView<'_> {
 
                 // derive special functions
                 if f.get_nargs() == 1
-                    && [Atom::EXP, Atom::LOG, Atom::SIN, Atom::COS].contains(&f.get_symbol())
+                    && [Symbol::EXP, Symbol::LOG, Symbol::SIN, Symbol::COS]
+                        .contains(&f.get_symbol())
                 {
                     let mut fn_der = workspace.new_atom();
                     match f.get_symbol() {
-                        Atom::EXP => {
+                        Symbol::EXP => {
                             fn_der.set_from_view(self);
                         }
-                        Atom::LOG => {
+                        Symbol::LOG => {
                             let mut n = workspace.new_atom();
                             n.to_num((-1).into());
 
                             fn_der.to_pow(f.iter().next().unwrap(), n.as_view());
                         }
-                        Atom::SIN => {
-                            let p = fn_der.to_fun(Atom::COS);
+                        Symbol::SIN => {
+                            let p = fn_der.to_fun(Symbol::COS);
                             p.add_arg(f.iter().next().unwrap());
                         }
-                        Atom::COS => {
+                        Symbol::COS => {
                             let mut n = workspace.new_atom();
                             n.to_num((-1).into());
 
                             let mut sin = workspace.new_atom();
-                            let sin_fun = sin.to_fun(Atom::SIN);
+                            let sin_fun = sin.to_fun(Symbol::SIN);
                             sin_fun.add_arg(f.iter().next().unwrap());
 
                             let m = fn_der.to_mul();
@@ -141,7 +142,7 @@ impl AtomView<'_> {
                 let mut n = workspace.new_atom();
                 let mut mul = workspace.new_atom();
                 for (index, arg_der) in args_der {
-                    let p = fn_der.to_fun(Atom::DERIVATIVE);
+                    let p = fn_der.to_fun(Symbol::DERIVATIVE);
 
                     if is_der {
                         for (i, x_orig) in f_orig.iter().take(f.get_nargs()).enumerate() {
@@ -194,7 +195,7 @@ impl AtomView<'_> {
                 if exp_der_non_zero {
                     // create log(base)
                     let mut log_base = workspace.new_atom();
-                    let lb = log_base.to_fun(Atom::LOG);
+                    let lb = log_base.to_fun(Symbol::LOG);
                     lb.add_arg(base);
 
                     if let Atom::Mul(m) = exp_der.deref_mut() {
@@ -401,11 +402,11 @@ impl AtomView<'_> {
                 }
 
                 match f.get_symbol() {
-                    Atom::COS => args_series[0].cos(),
-                    Atom::SIN => args_series[0].sin(),
-                    Atom::EXP => args_series[0].exp(),
-                    Atom::LOG => args_series[0].log(),
-                    Atom::SQRT => args_series[0].rpow((1, 2).into()),
+                    Symbol::COS => args_series[0].cos(),
+                    Symbol::SIN => args_series[0].sin(),
+                    Symbol::EXP => args_series[0].exp(),
+                    Symbol::LOG => args_series[0].log(),
+                    Symbol::SQRT => args_series[0].rpow((1, 2).into()),
                     _ => {
                         // TODO: also check for log(x)?
                         if args_series
@@ -444,7 +445,7 @@ impl AtomView<'_> {
                                 CombinationWithReplacementIterator::new(args_series.len(), i);
 
                             while let Some(x) = it.next() {
-                                let mut f_der = FunctionBuilder::new(Atom::DERIVATIVE);
+                                let mut f_der = FunctionBuilder::new(Symbol::DERIVATIVE);
                                 let mut term = info.one();
                                 for (arg, pow) in x.iter().enumerate() {
                                     if *pow > 0 {

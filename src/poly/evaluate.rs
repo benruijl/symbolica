@@ -1672,7 +1672,7 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                             None
                         }
                     } else if let super::Variable::Symbol(i) = x {
-                        if [Atom::E, Atom::PI].contains(i) {
+                        if [Symbol::E, Symbol::PI].contains(i) {
                             None
                         } else {
                             Some(format!("T {}", x))
@@ -1848,7 +1848,7 @@ impl ExpressionEvaluator {
                                 None
                             }
                         } else if let super::Variable::Symbol(i) = x {
-                            if [Atom::E, Atom::PI].contains(i) {
+                            if [Symbol::E, Symbol::PI].contains(i) {
                                 None
                             } else {
                                 Some(x.clone())

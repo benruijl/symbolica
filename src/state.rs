@@ -908,7 +908,7 @@ mod tests {
     use std::io::Cursor;
 
     use crate::{
-        atom::{Atom, AtomView},
+        atom::{AtomView, Symbol},
         parse, symbol,
     };
 
@@ -932,7 +932,7 @@ mod tests {
                     if f.get_nargs() == 1 {
                         let arg = f.iter().next().unwrap();
                         if let AtomView::Fun(f2) = arg {
-                            if f2.get_symbol() == Atom::EXP && f2.get_nargs() == 1 {
+                            if f2.get_symbol() == Symbol::EXP && f2.get_nargs() == 1 {
                                 out.set_from_view(&f2.iter().next().unwrap());
                                 return true;
                             }

@@ -114,14 +114,20 @@ impl<T> FunctionMap<T> {
         rename: String,
         args: Vec<Symbol>,
         body: Atom,
-    ) -> Result<(), &str> {
+    ) -> Result<(), String> {
         if self.external_fn.contains_key(&name) {
-            return Err("Cannot add a function with the same name as an external function");
+            return Err(format!(
+                "Cannot add function {}, as it is also an external function",
+                name.get_name()
+            ));
         }
 
         if let Some(t) = self.tag.insert(name, 0) {
             if t != 0 {
-                return Err("Cannot add the same function with a different number of parameters");
+                return Err(format!(
+                    "Cannot add the same function {} with a different number of parameters",
+                    name.get_name()
+                ));
             }
         }
 
@@ -145,14 +151,20 @@ impl<T> FunctionMap<T> {
         rename: String,
         args: Vec<Symbol>,
         body: Atom,
-    ) -> Result<(), &str> {
+    ) -> Result<(), String> {
         if self.external_fn.contains_key(&name) {
-            return Err("Cannot add a function with the same name as an external function");
+            return Err(format!(
+                "Cannot add function {}, as it is also an external function",
+                name.get_name()
+            ));
         }
 
         if let Some(t) = self.tag.insert(name, tags.len()) {
             if t != tags.len() {
-                return Err("Cannot add the same function with a different number of parameters");
+                return Err(format!(
+                    "Cannot add the same function {} with a different number of parameters",
+                    name.get_name()
+                ));
             }
         }
 
@@ -170,9 +182,12 @@ impl<T> FunctionMap<T> {
         Ok(())
     }
 
-    pub fn add_external_function(&mut self, name: Symbol, rename: String) -> Result<(), &str> {
+    pub fn add_external_function(&mut self, name: Symbol, rename: String) -> Result<(), String> {
         if self.tag.contains_key(&name) || self.external_fn.contains_key(&name) {
-            return Err("Cannot add an external function with the same name as a tagged function");
+            return Err(format!(
+                "Cannot add external function {}, as it is also a tagged function",
+                name.get_name()
+            ));
         }
 
         self.external_fn
@@ -943,11 +958,11 @@ impl<T: Real> ExpressionEvaluator<T> {
                     self.stack[*r] = self.stack[*b].powf(&self.stack[*e]);
                 }
                 Instr::BuiltinFun(r, s, arg) => match s.0 {
-                    Atom::EXP => self.stack[*r] = self.stack[*arg].exp(),
-                    Atom::LOG => self.stack[*r] = self.stack[*arg].log(),
-                    Atom::SIN => self.stack[*r] = self.stack[*arg].sin(),
-                    Atom::COS => self.stack[*r] = self.stack[*arg].cos(),
-                    Atom::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Symbol::EXP => self.stack[*r] = self.stack[*arg].exp(),
+                    Symbol::LOG => self.stack[*r] = self.stack[*arg].log(),
+                    Symbol::SIN => self.stack[*r] = self.stack[*arg].sin(),
+                    Symbol::COS => self.stack[*r] = self.stack[*arg].cos(),
+                    Symbol::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
                     _ => unreachable!(),
                 },
                 Instr::ExternalFun(_, s, _) => {
@@ -1339,7 +1354,10 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
     /// Merge evaluator `other` into `self`. The parameters must be the same.
     pub fn merge(&mut self, mut other: Self, cpe_rounds: Option<usize>) -> Result<(), String> {
         if self.param_count != other.param_count {
-            return Err("Parameter count is different".to_owned());
+            return Err(format!(
+                "Parameter count is different: {} vs {}",
+                self.param_count, other.param_count
+            ));
         }
 
         let mut constants = HashMap::default();
@@ -1812,23 +1830,23 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                     *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => match s.0 {
-                    Atom::EXP => {
+                    Symbol::EXP => {
                         let arg = format!("Z[{}]", a);
                         *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                     }
-                    Atom::LOG => {
+                    Symbol::LOG => {
                         let arg = format!("Z[{}]", a);
                         *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                     }
-                    Atom::SIN => {
+                    Symbol::SIN => {
                         let arg = format!("Z[{}]", a);
                         *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                     }
-                    Atom::COS => {
+                    Symbol::COS => {
                         let arg = format!("Z[{}]", a);
                         *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                     }
-                    Atom::SQRT => {
+                    Symbol::SQRT => {
                         let arg = format!("Z[{}]", a);
                         *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                     }
@@ -2739,19 +2757,19 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                     let arg = get_input!(*a);
 
                     match s.0 {
-                        Atom::EXP => {
+                        Symbol::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
-                        Atom::LOG => {
+                        Symbol::LOG => {
                             *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                         }
-                        Atom::SIN => {
+                        Symbol::SIN => {
                             *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                         }
-                        Atom::COS => {
+                        Symbol::COS => {
                             *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                         }
-                        Atom::SQRT => {
+                        Symbol::SQRT => {
                             *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                         }
                         _ => unreachable!(),
@@ -3171,19 +3189,19 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                     let arg = get_input!(*a);
 
                     match s.0 {
-                        Atom::EXP => {
+                        Symbol::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
-                        Atom::LOG => {
+                        Symbol::LOG => {
                             *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                         }
-                        Atom::SIN => {
+                        Symbol::SIN => {
                             *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                         }
-                        Atom::COS => {
+                        Symbol::COS => {
                             *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                         }
-                        Atom::SQRT => {
+                        Symbol::SQRT => {
                             *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                         }
                         _ => unreachable!(),
@@ -3339,11 +3357,11 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
                     self.stack[*r] = self.stack[*b].powf(&self.stack[*e]);
                 }
                 Instr::BuiltinFun(r, s, arg) => match s.0 {
-                    Atom::EXP => self.stack[*r] = self.stack[*arg].exp(),
-                    Atom::LOG => self.stack[*r] = self.stack[*arg].log(),
-                    Atom::SIN => self.stack[*r] = self.stack[*arg].sin(),
-                    Atom::COS => self.stack[*r] = self.stack[*arg].cos(),
-                    Atom::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Symbol::EXP => self.stack[*r] = self.stack[*arg].exp(),
+                    Symbol::LOG => self.stack[*r] = self.stack[*arg].log(),
+                    Symbol::SIN => self.stack[*r] = self.stack[*arg].sin(),
+                    Symbol::COS => self.stack[*r] = self.stack[*arg].cos(),
+                    Symbol::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
                     _ => unreachable!(),
                 },
                 Instr::ExternalFun(r, s, args) => {
@@ -4876,11 +4894,11 @@ impl<T: Real> EvalTree<T> {
             Expression::BuiltinFun(s, a) => {
                 let arg = self.evaluate_impl(a, subexpressions, params, args);
                 match s.0 {
-                    Atom::EXP => arg.exp(),
-                    Atom::LOG => arg.log(),
-                    Atom::SIN => arg.sin(),
-                    Atom::COS => arg.cos(),
-                    Atom::SQRT => arg.sqrt(),
+                    Symbol::EXP => arg.exp(),
+                    Symbol::LOG => arg.log(),
+                    Symbol::SIN => arg.sin(),
+                    Symbol::COS => arg.cos(),
+                    Symbol::SQRT => arg.sqrt(),
                     _ => unreachable!(),
                 }
             }
@@ -5298,31 +5316,31 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             }
             Expression::ReadArg(s) => args[*s].to_string(),
             Expression::BuiltinFun(s, a) => match s.0 {
-                Atom::EXP => {
+                Symbol::EXP => {
                     let mut r = "exp(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                Atom::LOG => {
+                Symbol::LOG => {
                     let mut r = "log(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                Atom::SIN => {
+                Symbol::SIN => {
                     let mut r = "sin(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                Atom::COS => {
+                Symbol::COS => {
                     let mut r = "cos(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                Atom::SQRT => {
+                Symbol::SQRT => {
                     let mut r = "sqrt(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
@@ -5442,11 +5460,19 @@ impl<'a> AtomView<'a> {
                     return Ok(Expression::ReadArg(p));
                 }
 
-                Err(format!("Variable {} not in constant map", name))
+                Err(format!("Variable {} not in constant map", name.get_name()))
             }
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
-                if [Atom::EXP, Atom::LOG, Atom::SIN, Atom::COS, Atom::SQRT].contains(&name) {
+                if [
+                    Symbol::EXP,
+                    Symbol::LOG,
+                    Symbol::SIN,
+                    Symbol::COS,
+                    Symbol::SQRT,
+                ]
+                .contains(&name)
+                {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
@@ -5458,7 +5484,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let Some(fun) = fn_map.get(*self) else {
-                    return Err(format!("Undefined function {}", self));
+                    return Err(format!("Undefined function {:#}", self));
                 };
 
                 match fun {
@@ -5479,7 +5505,7 @@ impl<'a> AtomView<'a> {
                         if f.get_nargs() != arg_spec.len() + *tag_len {
                             return Err(format!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
-                                f.get_symbol(),
+                                f.get_symbol().get_name(),
                                 f.get_nargs(),
                                 arg_spec.len() + *tag_len
                             ));
@@ -5626,23 +5652,34 @@ impl<'a> AtomView<'a> {
                 ),
             },
             AtomView::Var(v) => match v.get_symbol() {
-                Atom::E => Ok(coeff_map(&1.into()).e()),
-                Atom::PI => Ok(coeff_map(&1.into()).pi()),
-                _ => Err(format!("Variable {} not in constant map", v.get_symbol())),
+                Symbol::E => Ok(coeff_map(&1.into()).e()),
+                Symbol::PI => Ok(coeff_map(&1.into()).pi()),
+                _ => Err(format!(
+                    "Variable {} not in constant map",
+                    v.get_symbol().get_name()
+                )),
             },
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
-                if [Atom::EXP, Atom::LOG, Atom::SIN, Atom::COS, Atom::SQRT].contains(&name) {
+                if [
+                    Symbol::EXP,
+                    Symbol::LOG,
+                    Symbol::SIN,
+                    Symbol::COS,
+                    Symbol::SQRT,
+                ]
+                .contains(&name)
+                {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.evaluate_impl(coeff_map, const_map, function_map, cache)?;
 
                     return Ok(match f.get_symbol() {
-                        Atom::EXP => arg_eval.exp(),
-                        Atom::LOG => arg_eval.log(),
-                        Atom::SIN => arg_eval.sin(),
-                        Atom::COS => arg_eval.cos(),
-                        Atom::SQRT => arg_eval.sqrt(),
+                        Symbol::EXP => arg_eval.exp(),
+                        Symbol::LOG => arg_eval.log(),
+                        Symbol::SIN => arg_eval.sin(),
+                        Symbol::COS => arg_eval.cos(),
+                        Symbol::SQRT => arg_eval.sqrt(),
                         _ => unreachable!(),
                     });
                 }
@@ -5657,7 +5694,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let Some(fun) = function_map.get(&f.get_symbol()) else {
-                    Err(format!("Missing function {}", f.get_symbol()))?
+                    Err(format!("Missing function {}", f.get_symbol().get_name()))?
                 };
                 let eval = fun.get()(&args, const_map, function_map, cache);
 
@@ -5751,7 +5788,7 @@ impl<'a> AtomView<'a> {
                 .into_iter()
                 .filter_map(|x| {
                     let s = x.get_symbol().unwrap();
-                    if !State::is_builtin(s) || s == Atom::DERIVATIVE {
+                    if !State::is_builtin(s) || s == Symbol::DERIVATIVE {
                         Some((x, Complex::new(0f64.into(), 0f64.into())))
                     } else {
                         None
@@ -5807,7 +5844,7 @@ impl<'a> AtomView<'a> {
                 .into_iter()
                 .filter_map(|x| {
                     let s = x.get_symbol().unwrap();
-                    if !State::is_builtin(s) || s == Atom::DERIVATIVE {
+                    if !State::is_builtin(s) || s == Symbol::DERIVATIVE {
                         Some((x, 0f64.into()))
                     } else {
                         None

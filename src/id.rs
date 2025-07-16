@@ -2860,7 +2860,7 @@ impl Match<'_> {
                     // to update the coefficient flag
                 }
                 SliceType::Arg => {
-                    let fun = out.to_fun(Atom::ARG);
+                    let fun = out.to_fun(Symbol::ARG);
                     for arg in wargs {
                         fun.add_arg(*arg);
                     }
@@ -2875,7 +2875,7 @@ impl Match<'_> {
                     out.set_from_view(&wargs[0]);
                 }
                 SliceType::Empty => {
-                    let f = out.to_fun(Atom::ARG);
+                    let f = out.to_fun(Symbol::ARG);
                     f.set_normalized(true);
                 }
             },

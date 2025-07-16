@@ -439,6 +439,29 @@ impl SymbolBuilder {
 }
 
 impl Symbol {
+    /// The built-in function represents a list of function arguments.
+    pub const ARG: Symbol = State::ARG;
+    /// The built-in function that converts a rational polynomial to a coefficient.
+    pub const COEFF: Symbol = State::COEFF;
+    /// The exponent function.
+    pub const EXP: Symbol = State::EXP;
+    /// The logarithm function.
+    pub const LOG: Symbol = State::LOG;
+    /// The sine function.
+    pub const SIN: Symbol = State::SIN;
+    /// The cosine function.
+    pub const COS: Symbol = State::COS;
+    /// The square root function.
+    pub const SQRT: Symbol = State::SQRT;
+    /// The built-in function that represents an abstract derivative.
+    pub const DERIVATIVE: Symbol = State::DERIVATIVE;
+    /// The constant e, the base of the natural logarithm.
+    pub const E: Symbol = State::E;
+    /// The mathematical constant `π`.
+    pub const PI: Symbol = State::PI;
+    /// The string representation of the constant `π`.
+    pub const PI_STR: &'static str = "𝜋";
+
     /// Create a builder for a new symbol with the given name and namespace.
     ///
     /// Use the [symbol!](crate::symbol) macro instead to define symbols in the current namespace.
@@ -446,7 +469,12 @@ impl Symbol {
         SymbolBuilder::new(name)
     }
 
-    /// Get the name of the symbol.
+    /// Create a new variable from the symbol.
+    pub fn to_atom(self) -> Atom {
+        Atom::var(self)
+    }
+
+    /// Get the name of the symbol, which includes its namespace.
     ///
     /// # Examples
     ///
@@ -634,12 +662,12 @@ impl Symbol {
 
         if opts.mode.is_latex() {
             match *self {
-                Atom::E => f.write_char('e'),
-                Atom::PI => f.write_str("\\pi"),
-                Atom::COS => f.write_str("\\cos"),
-                Atom::SIN => f.write_str("\\sin"),
-                Atom::EXP => f.write_str("\\exp"),
-                Atom::LOG => f.write_str("\\log"),
+                Symbol::E => f.write_char('e'),
+                Symbol::PI => f.write_str("\\pi"),
+                Symbol::COS => f.write_str("\\cos"),
+                Symbol::SIN => f.write_str("\\sin"),
+                Symbol::EXP => f.write_str("\\exp"),
+                Symbol::LOG => f.write_str("\\log"),
                 _ => {
                     f.write_str(name)?;
                     if !opts.hide_all_namespaces {
@@ -1171,32 +1199,9 @@ pub enum Atom {
 }
 
 impl Atom {
-    /// The built-in function represents a list of function arguments.
-    pub const ARG: Symbol = State::ARG;
-    /// The built-in function that converts a rational polynomial to a coefficient.
-    pub const COEFF: Symbol = State::COEFF;
-    /// The exponent function.
-    pub const EXP: Symbol = State::EXP;
-    /// The logarithm function.
-    pub const LOG: Symbol = State::LOG;
-    /// The sine function.
-    pub const SIN: Symbol = State::SIN;
-    /// The cosine function.
-    pub const COS: Symbol = State::COS;
-    /// The square root function.
-    pub const SQRT: Symbol = State::SQRT;
-    /// The built-in function that represents an abstract derivative.
-    pub const DERIVATIVE: Symbol = State::DERIVATIVE;
-    /// The constant e, the base of the natural logarithm.
-    pub const E: Symbol = State::E;
-    /// The mathematical constant `π`.
-    pub const PI: Symbol = State::PI;
-
     /// The number suffix that represents the imaginary unit.
     /// The suffix `i` can also be used for parsing (e.g. `2+3𝑖` or `2+3i`).
     pub const I_STR: &'static str = "𝑖";
-    /// The string representation of the constant `π`.
-    pub const PI_STR: &'static str = "𝜋";
 
     /// The imaginary unit.
     pub fn i() -> Atom {
@@ -1205,27 +1210,27 @@ impl Atom {
 
     /// Exponentiate the atom.
     pub fn exp(&self) -> Atom {
-        FunctionBuilder::new(Atom::EXP).add_arg(self).finish()
+        FunctionBuilder::new(Symbol::EXP).add_arg(self).finish()
     }
 
     /// Take the logarithm of the atom.
     pub fn log(&self) -> Atom {
-        FunctionBuilder::new(Atom::LOG).add_arg(self).finish()
+        FunctionBuilder::new(Symbol::LOG).add_arg(self).finish()
     }
 
     /// Take the sine the atom.
     pub fn sin(&self) -> Atom {
-        FunctionBuilder::new(Atom::SIN).add_arg(self).finish()
+        FunctionBuilder::new(Symbol::SIN).add_arg(self).finish()
     }
 
     ///  Take the cosine the atom.
     pub fn cos(&self) -> Atom {
-        FunctionBuilder::new(Atom::COS).add_arg(self).finish()
+        FunctionBuilder::new(Symbol::COS).add_arg(self).finish()
     }
 
     ///  Take the square root of the atom.
     pub fn sqrt(&self) -> Atom {
-        FunctionBuilder::new(Atom::SQRT).add_arg(self).finish()
+        FunctionBuilder::new(Symbol::SQRT).add_arg(self).finish()
     }
 }
 

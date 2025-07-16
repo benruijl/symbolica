@@ -22,7 +22,7 @@ use rug::{integer::Order, ops::NegAssign};
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
-    atom::{Atom, AtomView},
+    atom::{Atom, AtomView, Symbol},
     domains::{
         EuclideanDomain, Field, InternalOrdering, Ring,
         algebraic_number::AlgebraicExtension,
@@ -1934,12 +1934,12 @@ impl AtomView<'_> {
                 let s = v.get_symbol();
 
                 match s {
-                    Atom::PI => {
+                    Symbol::PI => {
                         out.to_num(Coefficient::Float(
                             Float::with_val(binary_prec, rug::float::Constant::Pi).into(),
                         ));
                     }
-                    Atom::E => {
+                    Symbol::E => {
                         out.to_num(Coefficient::Float(
                             Float::with_val(binary_prec, 1).exp().into(),
                         ));

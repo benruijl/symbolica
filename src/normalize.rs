@@ -279,7 +279,7 @@ impl AtomView<'_> {
     /// Simplify logs in the argument of the exponential function.
     fn simplify_exp_log(&self, ws: &Workspace, out: &mut Atom) -> bool {
         if let AtomView::Fun(f) = self {
-            if f.get_symbol() == Atom::LOG && f.get_nargs() == 1 {
+            if f.get_symbol() == Symbol::LOG && f.get_nargs() == 1 {
                 out.set_from_view(&f.iter().next().unwrap());
                 return true;
             }
@@ -337,7 +337,7 @@ impl AtomView<'_> {
             if changed {
                 let mut new_exp = ws.new_atom();
                 // TODO: change to e^()
-                new_exp.to_fun(Atom::EXP).add_arg(aa.as_view());
+                new_exp.to_fun(Symbol::EXP).add_arg(aa.as_view());
 
                 m.extend(new_exp.as_view());
 
@@ -829,7 +829,7 @@ impl AtomView<'_> {
                 #[inline(always)]
                 fn add_arg(f: &mut Fun, a: AtomView) {
                     if let AtomView::Fun(fa) = a {
-                        if fa.get_symbol() == Atom::ARG {
+                        if fa.get_symbol() == Symbol::ARG {
                             // flatten f(arg(...)) = f(...)
                             for aa in fa.iter() {
                                 f.add_arg(aa);
@@ -880,16 +880,16 @@ impl AtomView<'_> {
 
                 out_f.set_normalized(true);
 
-                if [Atom::COS, Atom::SIN, Atom::EXP, Atom::LOG].contains(&id)
+                if [Symbol::COS, Symbol::SIN, Symbol::EXP, Symbol::LOG].contains(&id)
                     && out_f.to_fun_view().get_nargs() == 1
                 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     if let AtomView::Num(n) = arg {
-                        if n.is_zero() && id != Atom::LOG || n.is_one() && id == Atom::LOG {
-                            if id == Atom::COS || id == Atom::EXP {
+                        if n.is_zero() && id != Symbol::LOG || n.is_one() && id == Symbol::LOG {
+                            if id == Symbol::COS || id == Symbol::EXP {
                                 out.to_num(Coefficient::one());
                                 return;
-                            } else if id == Atom::SIN || id == Atom::LOG {
+                            } else if id == Symbol::SIN || id == Symbol::LOG {
                                 out.to_num(Coefficient::zero());
                                 return;
                             }
@@ -897,7 +897,7 @@ impl AtomView<'_> {
 
                         if let CoefficientView::Float(r, i) = n.get_coeff_view() {
                             match id {
-                                Atom::COS => {
+                                Symbol::COS => {
                                     let r = if i.is_zero() {
                                         r.to_float().cos().into()
                                     } else {
@@ -906,7 +906,7 @@ impl AtomView<'_> {
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
-                                Atom::SIN => {
+                                Symbol::SIN => {
                                     let r = if i.is_zero() {
                                         r.to_float().sin().into()
                                     } else {
@@ -915,7 +915,7 @@ impl AtomView<'_> {
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
-                                Atom::EXP => {
+                                Symbol::EXP => {
                                     let r = if i.is_zero() {
                                         r.to_float().exp().into()
                                     } else {
@@ -924,7 +924,7 @@ impl AtomView<'_> {
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
-                                Atom::LOG => {
+                                Symbol::LOG => {
                                     let r = if i.is_zero() {
                                         r.to_float().log().into()
                                     } else {
@@ -939,10 +939,10 @@ impl AtomView<'_> {
                     }
                 }
 
-                if id == Atom::EXP && out_f.to_fun_view().get_nargs() == 1 {
+                if id == Symbol::EXP && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     // simplify logs inside exp
-                    if arg.contains_symbol(Atom::LOG) {
+                    if arg.contains_symbol(Symbol::LOG) {
                         let mut buffer = workspace.new_atom();
                         if arg.simplify_exp_log(workspace, &mut buffer) {
                             out.set_from_view(&buffer.as_view());
@@ -952,7 +952,7 @@ impl AtomView<'_> {
                 }
 
                 // try to turn the argument into a number
-                if id == Atom::COEFF && out_f.to_fun_view().get_nargs() == 1 {
+                if id == Symbol::COEFF && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     if let AtomView::Num(_) = arg {
                         let mut buffer = workspace.new_atom();

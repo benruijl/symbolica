@@ -21,7 +21,7 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomCore, AtomView, FunctionBuilder},
+    atom::{Atom, AtomCore, AtomView, FunctionBuilder, Symbol},
     coefficient::CoefficientView,
     domains::{
         EuclideanDomain, InternalOrdering, Ring, SelfRing,
@@ -1004,7 +1004,7 @@ impl Series<AtomField> {
         };
 
         // construct the constant term, log(x) in the argument will be turned into x
-        let e = FunctionBuilder::new(Atom::EXP).add_arg(&c).finish();
+        let e = FunctionBuilder::new(Symbol::EXP).add_arg(&c).finish();
 
         // split the true constant part and the x-dependent part
         let var = self.variable.to_atom() - &self.expansion_point;
@@ -1042,7 +1042,7 @@ impl Series<AtomField> {
             .mul_exp_units(-self.shift)
             - self.one();
 
-        let mut e = self.constant(FunctionBuilder::new(Atom::LOG).add_arg(&c).finish());
+        let mut e = self.constant(FunctionBuilder::new(Symbol::LOG).add_arg(&c).finish());
         let mut sp = p.clone();
         for i in 1..=self.order {
             let s = sp.clone().div_coeff(&Atom::num(i as i64));
@@ -1088,13 +1088,13 @@ impl Series<AtomField> {
 
         let p = self.clone().remove_constant();
 
-        let mut e = self.constant(FunctionBuilder::new(Atom::SIN).add_arg(&c).finish());
+        let mut e = self.constant(FunctionBuilder::new(Symbol::SIN).add_arg(&c).finish());
         let mut sp = p.clone();
         for i in 1..=self.order {
             let mut b = if i % 2 == 1 {
-                FunctionBuilder::new(Atom::COS).add_arg(&c).finish()
+                FunctionBuilder::new(Symbol::COS).add_arg(&c).finish()
             } else {
-                FunctionBuilder::new(Atom::SIN).add_arg(&c).finish()
+                FunctionBuilder::new(Symbol::SIN).add_arg(&c).finish()
             };
 
             if i % 4 >= 2 {
@@ -1144,13 +1144,13 @@ impl Series<AtomField> {
 
         let p = self.clone().remove_constant();
 
-        let mut e = self.constant(FunctionBuilder::new(Atom::COS).add_arg(&c).finish());
+        let mut e = self.constant(FunctionBuilder::new(Symbol::COS).add_arg(&c).finish());
         let mut sp = p.clone();
         for i in 1..=self.order {
             let mut b = if i % 2 == 1 {
-                FunctionBuilder::new(Atom::SIN).add_arg(&c).finish()
+                FunctionBuilder::new(Symbol::SIN).add_arg(&c).finish()
             } else {
-                -FunctionBuilder::new(Atom::COS).add_arg(&c).finish()
+                -FunctionBuilder::new(Symbol::COS).add_arg(&c).finish()
             };
 
             if i % 4 < 2 {

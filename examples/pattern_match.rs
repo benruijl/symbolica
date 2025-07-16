@@ -7,12 +7,12 @@ fn main() {
 
     let pattern = pat_expr.to_pattern();
 
-    println!("> Matching pattern {} to {}:", pat_expr, expr);
+    println!("> Matching pattern {pat_expr} to {expr}:");
 
     // simple match
     for m in expr.pattern_match(&pattern, None, None) {
         for (wc, v) in m {
-            println!("\t{} = {}", wc, v);
+            println!("\t{wc} = {v}");
         }
         println!();
     }
@@ -25,20 +25,20 @@ fn main() {
             m.position, m.used_flags
         );
         for (id, v) in m.match_stack {
-            print!("\t\t{} = ", id);
+            print!("\t\t{id} = ");
             match v {
                 Match::Single(s) => {
-                    print!("{}", s)
+                    print!("{s}")
                 }
                 Match::Multiple(slice_type, mm) => {
-                    print!("{:?} ", slice_type);
+                    print!("{slice_type:?} ");
                     for vv in mm {
-                        print!("{}", vv);
+                        print!("{vv}");
                         print!(", ")
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", f)
+                    print!("Fn {f}")
                 }
             }
             println!();

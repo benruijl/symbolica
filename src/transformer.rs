@@ -62,17 +62,17 @@ impl StatsOptions {
 
         for t in tag {
             if s < kb {
-                return format!("{:.2}{}B", s, t);
+                return format!("{s:.2}{t}B");
             }
 
             s /= kb;
         }
 
-        format!("{:.2}EB", s)
+        format!("{s:.2}EB")
     }
 
     pub fn format_count(&self, count: usize) -> String {
-        format!("{}", count)
+        format!("{count}")
     }
 
     fn get_thread_id() -> String {

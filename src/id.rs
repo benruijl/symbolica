@@ -119,7 +119,7 @@ impl From<Pattern> for ReplaceWith<'_> {
 impl std::fmt::Debug for ReplaceWith<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReplaceWith::Pattern(p) => write!(f, "{:?}", p),
+            ReplaceWith::Pattern(p) => write!(f, "{p:?}"),
             ReplaceWith::Map(_) => write!(f, "Map"),
         }
     }
@@ -138,10 +138,10 @@ impl std::fmt::Display for ReplaceWith<'_> {
 /// with optional conditions and settings.
 #[derive(Debug, Clone)]
 pub struct Replacement {
-    pat: Pattern,
-    rhs: ReplaceWith<'static>,
-    conditions: Option<Condition<PatternRestriction>>,
-    settings: Option<MatchSettings>,
+    pub pat: Pattern,
+    pub rhs: ReplaceWith<'static>,
+    pub conditions: Option<Condition<PatternRestriction>>,
+    pub settings: Option<MatchSettings>,
 }
 
 impl std::fmt::Display for Replacement {
@@ -149,7 +149,7 @@ impl std::fmt::Display for Replacement {
         write!(f, "{} -> {}", self.pat, self.rhs)?;
 
         if let Some(c) = &self.conditions {
-            write!(f, "; {}", c)?;
+            write!(f, "; {c}")?;
         }
 
         Ok(())
@@ -187,11 +187,11 @@ pub struct BorrowedReplacement<'a> {
 }
 
 pub trait BorrowReplacement {
-    fn borrow(&self) -> BorrowedReplacement;
+    fn borrow(&self) -> BorrowedReplacement<'_>;
 }
 
 impl BorrowReplacement for Replacement {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow(&self) -> BorrowedReplacement<'_> {
         BorrowedReplacement {
             pattern: &self.pat,
             rhs: &self.rhs,
@@ -202,7 +202,7 @@ impl BorrowReplacement for Replacement {
 }
 
 impl BorrowReplacement for &Replacement {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow(&self) -> BorrowedReplacement<'_> {
         BorrowedReplacement {
             pattern: &self.pat,
             rhs: &self.rhs,
@@ -213,7 +213,7 @@ impl BorrowReplacement for &Replacement {
 }
 
 impl BorrowReplacement for BorrowedReplacement<'_> {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow(&self) -> BorrowedReplacement<'_> {
         *self
     }
 }
@@ -845,7 +845,7 @@ impl<'a> AtomView<'a> {
                     true
                 }
                 CoefficientView::Large(r, i) => {
-                    out.to_num(Complex::new(r.to_rat().into(), i.to_rat()).conj().into());
+                    out.to_num(Complex::new(r.to_rat(), i.to_rat()).conj().into());
                     true
                 }
                 CoefficientView::Float(r, i) => {
@@ -1178,7 +1178,7 @@ impl<'a> AtomView<'a> {
         }
 
         // no match found at this level, so check the children
-        let submatch = match self {
+        match self {
             AtomView::Fun(f) => {
                 let out = out.to_fun(f.get_symbol());
 
@@ -1273,9 +1273,7 @@ impl<'a> AtomView<'a> {
                 out.set_from_view(self); // no children
                 false
             }
-        };
-
-        submatch
+        }
     }
 
     /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
@@ -1794,8 +1792,7 @@ impl Pattern {
                     out.to_var(*name);
                 } else {
                     Err(TransformerError::ValueError(format!(
-                        "Unsubstituted wildcard {}",
-                        name
+                        "Unsubstituted wildcard {name}"
                     )))?;
                 }
             }
@@ -1821,8 +1818,7 @@ impl Pattern {
                         }
                     } else if !allow_new_wildcards_on_rhs {
                         Err(TransformerError::ValueError(format!(
-                            "Unsubstituted wildcard {}",
-                            name
+                            "Unsubstituted wildcard {name}"
                         )))?;
                     }
                 }
@@ -1855,8 +1851,7 @@ impl Pattern {
                             func.add_arg(workspace.new_var(*w).as_view())
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {}",
-                                w
+                                "Unsubstituted wildcard {w}"
                             )))?;
                         }
 
@@ -1899,8 +1894,7 @@ impl Pattern {
                             out.set_from_view(&workspace.new_var(*w).as_view());
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {}",
-                                w
+                                "Unsubstituted wildcard {w}"
                             )))?;
                         }
 
@@ -1949,8 +1943,7 @@ impl Pattern {
                             mul.extend(workspace.new_var(*w).as_view());
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {}",
-                                w
+                                "Unsubstituted wildcard {w}"
                             )))?;
                         }
 
@@ -1996,8 +1989,7 @@ impl Pattern {
                             add.extend(workspace.new_var(*w).as_view());
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {}",
-                                w
+                                "Unsubstituted wildcard {w}"
                             )))?;
                         }
 
@@ -2117,12 +2109,12 @@ impl WildcardRestriction {
 impl std::fmt::Display for WildcardRestriction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WildcardRestriction::Length(min, Some(max)) => write!(f, "length={}-{}", min, max),
-            WildcardRestriction::Length(min, None) => write!(f, "length > {}", min),
-            WildcardRestriction::IsAtomType(t) => write!(f, "type = {}", t),
-            WildcardRestriction::IsLiteralWildcard(s) => write!(f, "= {}", s),
+            WildcardRestriction::Length(min, Some(max)) => write!(f, "length={min}-{max}"),
+            WildcardRestriction::Length(min, None) => write!(f, "length > {min}"),
+            WildcardRestriction::IsAtomType(t) => write!(f, "type = {t}"),
+            WildcardRestriction::IsLiteralWildcard(s) => write!(f, "= {s}"),
             WildcardRestriction::Filter(_) => write!(f, "filter"),
-            WildcardRestriction::Cmp(s, _) => write!(f, "cmp with {}", s),
+            WildcardRestriction::Cmp(s, _) => write!(f, "cmp with {s}"),
             WildcardRestriction::NotGreedy => write!(f, "not greedy"),
         }
     }
@@ -2151,12 +2143,12 @@ impl Condition<PatternRestriction> {
     /// let out = expr
     ///     .replace(parse!("f(x_,y_,z_)"))
     ///     .when(Condition::match_stack(|m| {
-    ///         if let Some(x) = m.get(symbol!("x")) {
-    ///             if let Some(y) = m.get(symbol!("y")) {
+    ///         if let Some(x) = m.get(symbol!("x_")) {
+    ///             if let Some(y) = m.get(symbol!("y_")) {
     ///                 if x.to_atom() > y.to_atom() {
     ///                     return ConditionResult::False;
     ///                 }
-    ///                 if let Some(z) = m.get(symbol!("z")) {
+    ///                 if let Some(z) = m.get(symbol!("z_")) {
     ///                     if y.to_atom() > z.to_atom() {
     ///                         return ConditionResult::False;
     ///                     }
@@ -2176,7 +2168,7 @@ impl Condition<PatternRestriction> {
 impl std::fmt::Display for PatternRestriction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PatternRestriction::Wildcard((s, r)) => write!(f, "{}: {}", s, r),
+            PatternRestriction::Wildcard((s, r)) => write!(f, "{s}: {r}"),
             PatternRestriction::MatchStack(_) => write!(f, "match_function"),
         }
     }
@@ -2268,10 +2260,10 @@ impl<T: std::fmt::Display> std::fmt::Display for Condition<T> {
         match self {
             Condition::And(a) => write!(f, "({}) & ({})", a.0, a.1),
             Condition::Or(o) => write!(f, "{} | {}", o.0, o.1),
-            Condition::Not(n) => write!(f, "!({})", n),
+            Condition::Not(n) => write!(f, "!({n})"),
             Condition::True => write!(f, "True"),
             Condition::False => write!(f, "False"),
-            Condition::Yield(t) => write!(f, "{}", t),
+            Condition::Yield(t) => write!(f, "{t}"),
         }
     }
 }
@@ -2422,15 +2414,15 @@ pub enum Relation {
 impl std::fmt::Display for Relation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Relation::Eq(a, b) => write!(f, "{} == {}", a, b),
-            Relation::Ne(a, b) => write!(f, "{} != {}", a, b),
-            Relation::Gt(a, b) => write!(f, "{} > {}", a, b),
-            Relation::Ge(a, b) => write!(f, "{} >= {}", a, b),
-            Relation::Lt(a, b) => write!(f, "{} < {}", a, b),
-            Relation::Le(a, b) => write!(f, "{} <= {}", a, b),
-            Relation::Contains(a, b) => write!(f, "{} contains {}", a, b),
-            Relation::IsType(a, b) => write!(f, "{} is type {:?}", a, b),
-            Relation::Matches(a, b, _, _) => write!(f, "{} matches {}", a, b),
+            Relation::Eq(a, b) => write!(f, "{a} == {b}"),
+            Relation::Ne(a, b) => write!(f, "{a} != {b}"),
+            Relation::Gt(a, b) => write!(f, "{a} > {b}"),
+            Relation::Ge(a, b) => write!(f, "{a} >= {b}"),
+            Relation::Lt(a, b) => write!(f, "{a} < {b}"),
+            Relation::Le(a, b) => write!(f, "{a} <= {b}"),
+            Relation::Contains(a, b) => write!(f, "{a} contains {b}"),
+            Relation::IsType(a, b) => write!(f, "{a} is type {b:?}"),
+            Relation::Matches(a, b, _, _) => write!(f, "{a} matches {b}"),
         }
     }
 }
@@ -2747,7 +2739,7 @@ impl std::fmt::Debug for WildcardRestriction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Length(arg0, arg1) => f.debug_tuple("Length").field(arg0).field(arg1).finish(),
-            Self::IsAtomType(t) => write!(f, "Is{:?}", t),
+            Self::IsAtomType(t) => write!(f, "Is{t:?}"),
             Self::IsLiteralWildcard(arg0) => {
                 f.debug_tuple("IsLiteralWildcard").field(arg0).finish()
             }
@@ -2959,8 +2951,17 @@ impl<'a> MatchStack<'a> {
         MatchStack { stack: Vec::new() }
     }
 
-    /// Get a match.
+    /// Get a match for the wildcard `key`.
+    ///
+    /// Panics if `key` is not a wildcard symbol.
     pub fn get(&self, key: Symbol) -> Option<&Match<'a>> {
+        if key.get_wildcard_level() == 0 {
+            panic!(
+                "Cannot get match for a non-wildcard symbol: {}",
+                key.get_name()
+            );
+        }
+
         for (rk, rv) in self.stack.iter() {
             if rk == &key {
                 return Some(rv);
@@ -2996,7 +2997,7 @@ impl std::fmt::Display for MatchStack<'_> {
             if i > 0 {
                 f.write_str(", ")?;
             }
-            f.write_fmt(format_args!("{}: {}", k, v))?;
+            f.write_fmt(format_args!("{k}: {v}"))?;
         }
 
         f.write_str("]")

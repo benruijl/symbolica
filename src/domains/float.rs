@@ -172,14 +172,14 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     ) -> Result<bool, fmt::Error> {
         if let Some(p) = opts.precision {
             if state.in_sum {
-                f.write_fmt(format_args!("{:+.*}", p, element))?
+                f.write_fmt(format_args!("{element:+.p$}"))?
             } else {
-                f.write_fmt(format_args!("{:.*}", p, element))?
+                f.write_fmt(format_args!("{element:.p$}"))?
             }
         } else if state.in_sum {
-            f.write_fmt(format_args!("{:+}", element))?
+            f.write_fmt(format_args!("{element:+}"))?
         } else {
-            f.write_fmt(format_args!("{}", element))?
+            f.write_fmt(format_args!("{element}"))?
         }
 
         Ok(false)
@@ -211,14 +211,14 @@ impl SelfRing for F64 {
     ) -> Result<bool, fmt::Error> {
         if let Some(p) = opts.precision {
             if state.in_sum {
-                f.write_fmt(format_args!("{:+.*}", p, self))?
+                f.write_fmt(format_args!("{self:+.p$}"))?
             } else {
-                f.write_fmt(format_args!("{:.*}", p, self))?
+                f.write_fmt(format_args!("{self:.p$}"))?
             }
         } else if state.in_sum {
-            f.write_fmt(format_args!("{:+}", self))?
+            f.write_fmt(format_args!("{self:+}"))?
         } else {
-            f.write_fmt(format_args!("{}", self))?
+            f.write_fmt(format_args!("{self}"))?
         }
 
         Ok(false)
@@ -245,14 +245,14 @@ impl SelfRing for Float {
     ) -> Result<bool, fmt::Error> {
         if let Some(p) = opts.precision {
             if state.in_sum {
-                f.write_fmt(format_args!("{:+.*}", p, self))?
+                f.write_fmt(format_args!("{self:+.p$}"))?
             } else {
-                f.write_fmt(format_args!("{:.*}", p, self))?
+                f.write_fmt(format_args!("{self:.p$}"))?
             }
         } else if state.in_sum {
-            f.write_fmt(format_args!("{:+}", self))?
+            f.write_fmt(format_args!("{self:+}"))?
         } else {
-            f.write_fmt(format_args!("{}", self))?
+            f.write_fmt(format_args!("{self}"))?
         }
 
         Ok(false)
@@ -1752,7 +1752,7 @@ impl Float {
         } else if let Some((f, p)) = s.split_once('`') {
             let prec = (p
                 .parse::<f64>()
-                .map_err(|e| format!("Invalid precision: {}", e))?
+                .map_err(|e| format!("Invalid precision: {e}"))?
                 * LOG2_10)
                 .ceil() as u32;
             Ok(Float(
@@ -2411,7 +2411,7 @@ impl<T: RealNumberLike> Debug for ErrorPropagatingFloat<T> {
         Debug::fmt(&self.value, f)?;
 
         if let Some(p) = self.get_precision() {
-            f.write_fmt(format_args!("`{:.2}", p))
+            f.write_fmt(format_args!("`{p:.2}"))
         } else {
             f.write_fmt(format_args!("``{:.2}", -self.abs_err.log10()))
         }
@@ -3015,7 +3015,7 @@ impl From<Float> for Rational {
 impl LowerExp for Rational {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // lower-exp is ignored for integers
-        f.write_fmt(format_args!("{}", self))
+        f.write_fmt(format_args!("{self}"))
     }
 }
 
@@ -4078,7 +4078,7 @@ mod test {
     fn large_cancellation() {
         let a = ErrorPropagatingFloat::new(Float::with_val(200, 1e-50), 60.);
         let r = (a.exp() - a.one()) / a;
-        assert_eq!(format!("{}", r), "1.000000000");
+        assert_eq!(format!("{r}"), "1.000000000");
         assert_eq!(r.get_precision(), Some(10.205999132796238));
     }
 
@@ -4093,7 +4093,7 @@ mod test {
             - a.cosh()
             + b.tanh()
             - a.asinh()
-            + &b.acosh() / a.atanh()
+            + b.acosh() / a.atanh()
             + b.powf(&a);
         assert_eq!(r, Complex::new(0.1924131450685842, -39.83285329561913));
     }

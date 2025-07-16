@@ -14,6 +14,6 @@ fn main() {
 
         let a = input.derivative(x);
 
-        println!("d({})/dx = {}:", input, a);
+        println!("d({input})/dx = {a}:");
     }
 }

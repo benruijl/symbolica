@@ -1114,7 +1114,7 @@ where
             if d == 1 {
                 return vec![s];
             } else {
-                panic!("Degree mismatch for {}: {}", self, d);
+                panic!("Degree mismatch for {self}: {d}");
             }
         };
 
@@ -1642,8 +1642,7 @@ where
 
         if !lcoeff_left.is_one() {
             panic!(
-                "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
-                self, order, sample_points, lcoeff_left
+                "Could not reconstruct leading coefficient of {self}: order={order:?}, samples={sample_points:?} Rest = {lcoeff_left}"
             );
         }
 
@@ -2459,7 +2458,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         loop {
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization of {}", self);
+                panic!("Ran out of primes during factorization of {self}");
             }
             let p = p as u32;
 
@@ -2499,7 +2498,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .map_coeff(|c| c.to_finite_field(&field), field.clone())
                 .make_monic();
             if &hh_p != h_p {
-                panic!("Mismatch of lifted factor: {} vs {} in {}", hh_p, h_p, self);
+                panic!("Mismatch of lifted factor: {hh_p} vs {h_p} in {self}");
             }
         }
 
@@ -2721,7 +2720,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization of {}", self);
+                panic!("Ran out of primes during factorization of {self}");
             }
             let p = p as u32;
 
@@ -3155,8 +3154,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 let (q, r) = lcoeff_left.quot_rem(&new, true);
                 if !r.is_zero() {
                     panic!(
-                        "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
-                        self, order, sample_points
+                        "Problem with bivariate factor scaling in factorization of {self}: order={order:?}, samples={sample_points:?}"
                     );
                 }
 
@@ -3166,8 +3164,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         if !lcoeff_left.is_constant() {
             panic!(
-                "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
-                self, order, sample_points, lcoeff_left
+                "Could not reconstruct leading coefficient of {self}: order={order:?}, samples={sample_points:?} Rest = {lcoeff_left}"
             );
         }
 
@@ -3189,10 +3186,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let (q, r) = Z.quot_rem(&b_lc, &f_lc);
             assert!(
                 r.is_zero(),
-                "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
-                self,
-                order,
-                sample_points
+                "Problem with bivariate factor scaling in factorization of {self}: order={order:?}, samples={sample_points:?}"
             );
 
             lcoeff_left = lcoeff_left.div_coeff(&q);
@@ -3201,8 +3195,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         if !lcoeff_left.is_one() {
             panic!(
-                "Could not distribute content of {}: order={:?}, samples={:?} Rest = {}",
-                self, order, sample_points, lcoeff_left
+                "Could not distribute content of {self}: order={order:?}, samples={sample_points:?} Rest = {lcoeff_left}"
             );
         }
 
@@ -3490,7 +3483,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             p = prime_iter.next().unwrap();
 
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization of {}", self);
+                panic!("Ran out of primes during factorization of {self}");
             }
 
             if (&uni_f.lcoeff() % &p.into()).is_zero() {
@@ -3751,8 +3744,7 @@ mod test {
     #[test]
     fn factor_ff_square_free() {
         let field = Zp::new(3);
-        let poly = parse!("(1+v1)*(1+v1^2)^2*(v1^4+1)^3")
-            .to_polynomial::<_, u8>(&field, None);
+        let poly = parse!("(1+v1)*(1+v1^2)^2*(v1^4+1)^3").to_polynomial::<_, u8>(&field, None);
 
         let res = [("1+v1^4", 3), ("1+v1^2", 2), ("1+v1", 1)];
 
@@ -3802,8 +3794,8 @@ mod test {
 
     #[test]
     fn factor_square_free() {
-        let poly = parse!("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)")
-            .to_polynomial::<_, u8>(&Z, None);
+        let poly =
+            parse!("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)").to_polynomial::<_, u8>(&Z, None);
 
         let res = [
             ("3", 1),
@@ -3817,9 +3809,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3848,9 +3838,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3885,9 +3873,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3915,9 +3901,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3944,9 +3928,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -3960,15 +3942,14 @@ mod test {
 
     #[test]
     fn factor_overall_minus() {
-        let poly = parse!("-v1*v3^2-v1*v2*v3^2")
-            .to_polynomial::<_, u8>(
-                &Z,
-                Some(Arc::new(vec![
-                    symbol!("v1").into(),
-                    symbol!("v2").into(),
-                    symbol!("v3").into(),
-                ])),
-            );
+        let poly = parse!("-v1*v3^2-v1*v2*v3^2").to_polynomial::<_, u8>(
+            &Z,
+            Some(Arc::new(vec![
+                symbol!("v1").into(),
+                symbol!("v2").into(),
+                symbol!("v3").into(),
+            ])),
+        );
 
         let res = [("-1", 1), ("v3", 2), ("1+v2", 1), ("v1", 1)];
 
@@ -3976,9 +3957,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4008,9 +3987,7 @@ mod test {
             .iter()
             .map(|(f, p)| {
                 (
-                    parse!(f)
-                        .expand()
-                        .to_polynomial(&Z, poly.variables.clone()),
+                    parse!(f).expand().to_polynomial(&Z, poly.variables.clone()),
                     *p,
                 )
             })
@@ -4033,8 +4010,7 @@ mod test {
 
     #[test]
     fn algebraic_extension() {
-        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
-            .to_polynomial::<_, u8>(&Q, None);
+        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2").to_polynomial::<_, u8>(&Q, None);
         let f = parse!("a^4-3").to_polynomial::<_, u16>(&Q, None);
         let f = AlgebraicExtension::new(f);
 

@@ -107,7 +107,7 @@ impl Exponent for u32 {
     #[inline]
     fn from_i32(n: i32) -> Self {
         if n < 0 {
-            panic!("Exponent {} is negative", n);
+            panic!("Exponent {n} is negative");
         }
         n as u32
     }
@@ -252,7 +252,7 @@ impl Exponent for u16 {
         if n >= 0 && n <= u16::MAX as i32 {
             n as u16
         } else {
-            panic!("Exponent {} too large for u16", n);
+            panic!("Exponent {n} too large for u16");
         }
     }
 
@@ -325,7 +325,7 @@ impl Exponent for i16 {
         if n >= i16::MIN as i32 && n <= i16::MAX as i32 {
             n as i16
         } else {
-            panic!("Exponent {} too large for i16", n);
+            panic!("Exponent {n} too large for i16");
         }
     }
 
@@ -401,7 +401,7 @@ impl Exponent for u8 {
         if n >= 0 && n <= u8::MAX as i32 {
             n as u8
         } else {
-            panic!("Exponent {} too large for u8", n);
+            panic!("Exponent {n} too large for u8");
         }
     }
 
@@ -472,7 +472,7 @@ impl Exponent for i8 {
         if n >= i8::MIN as i32 && n <= i8::MAX as i32 {
             n as i8
         } else {
-            panic!("Exponent {} too large for i8", n);
+            panic!("Exponent {n} too large for i8");
         }
     }
 
@@ -530,7 +530,7 @@ impl Exponent for i8 {
 pub trait PositiveExponent: Exponent {
     fn from_u32(n: u32) -> Self {
         if n > i32::MAX as u32 {
-            panic!("Exponent {} too large for i32", n);
+            panic!("Exponent {n} too large for i32");
         }
         Self::from_i32(n as i32)
     }
@@ -1770,11 +1770,11 @@ impl Token {
                     Ok(x) => {
                         field.mul_assign(coefficient, &field.element_from_integer(x));
                     }
-                    Err(e) => Err(format!("Could not parse number: {}", e))?,
+                    Err(e) => Err(format!("Could not parse number: {e}"))?,
                 },
                 Token::ID(x) => {
                     let Some(index) = var_name_map.iter().position(|v| v == x) else {
-                        Err(format!("Variable {} not specified in variable map", x))?
+                        Err(format!("Variable {x} not specified in variable map"))?
                     };
                     exponents[index] += E::one();
                 }
@@ -1794,7 +1794,7 @@ impl Token {
                     let var_index = match &args[0] {
                         Token::ID(v) => match var_name_map.iter().position(|v1| v == v1) {
                             Some(p) => p,
-                            None => Err(format!("Variable {} not specified in variable map", v))?,
+                            None => Err(format!("Variable {v} not specified in variable map"))?,
                         },
                         _ => Err("Unsupported base")?,
                     };
@@ -2040,7 +2040,7 @@ impl Token {
                     dens.push((
                         den,
                         p1.parse::<usize>()
-                            .map_err(|e| format!("Could not parse power: {}", e))?,
+                            .map_err(|e| format!("Could not parse power: {e}"))?,
                     ));
                 }
 
@@ -2050,7 +2050,7 @@ impl Token {
                     let p = iter.next().ok_or("Missing power")?;
                     let p = p
                         .parse::<usize>()
-                        .map_err(|e| format!("Could not parse power: {}", e))?;
+                        .map_err(|e| format!("Could not parse power: {e}"))?;
 
                     dens.push((den, p));
                 }

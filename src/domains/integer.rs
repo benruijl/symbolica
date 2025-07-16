@@ -630,7 +630,7 @@ impl Integer {
             if let Some(res) = accum.checked_add(*v as i64) {
                 accum = res;
             } else {
-                panic!("Sum of occurrences exceeds i64: {:?}", k);
+                panic!("Sum of occurrences exceeds i64: {k:?}");
             }
 
             mcr *= &Self::binom(accum, *v as i64);
@@ -640,7 +640,7 @@ impl Integer {
 
     pub fn pow(&self, e: u64) -> Integer {
         if e > u32::MAX as u64 {
-            panic!("Power of exponentiation is larger than 2^32: {}", e);
+            panic!("Power of exponentiation is larger than 2^32: {e}");
         }
         let e = e as u32;
 
@@ -922,7 +922,7 @@ impl Integer {
         // convert to mixed-radix notation
         let gamma1 = (p1.clone() % p2.clone())
             .invert(&p2)
-            .unwrap_or_else(|_| panic!("Could not invert {} in {}", p1, p2));
+            .unwrap_or_else(|_| panic!("Could not invert {p1} in {p2}"));
 
         let v1 = ((n2 - n1.clone()) * gamma1) % p2.clone();
 
@@ -961,7 +961,7 @@ impl Integer {
         }
 
         if r0 > Integer::one() {
-            panic!("{} is not invertible in ring {}", self, n);
+            panic!("{self} is not invertible in ring {n}");
         }
         if t0.is_negative() {
             t0 += n;
@@ -1391,16 +1391,16 @@ impl SelfRing for Integer {
                 }
 
                 if state.in_sum {
-                    write!(f, "{:+}", n)?
+                    write!(f, "{n:+}")?
                 } else {
-                    write!(f, "{}", n)?
+                    write!(f, "{n}")?
                 }
             }
             Integer::Double(n) => {
                 if state.in_sum {
-                    write!(f, "{:+}", n)?
+                    write!(f, "{n:+}")?
                 } else {
-                    write!(f, "{}", n)?
+                    write!(f, "{n}")?
                 }
             }
             Integer::Large(r) => {
@@ -1410,14 +1410,14 @@ impl SelfRing for Integer {
                     if r.is_negative() {
                         write!(f, "-#{:X}", r.as_abs())?
                     } else if state.in_sum {
-                        write!(f, "+#{:X}", r)?
+                        write!(f, "+#{r:X}")?
                     } else {
-                        write!(f, "#{:X}", r)?
+                        write!(f, "#{r:X}")?
                     }
                 } else if state.in_sum {
-                    write!(f, "{:+}", r)?
+                    write!(f, "{r:+}")?
                 } else {
-                    write!(f, "{}", r)?
+                    write!(f, "{r}")?
                 }
             }
         }
@@ -2391,7 +2391,7 @@ impl Ring for MultiPrecisionIntegerRing {
     #[inline]
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         if e > u32::MAX as u64 {
-            panic!("Power of exponentiation is larger than 2^32: {}", e);
+            panic!("Power of exponentiation is larger than 2^32: {e}");
         }
         b.clone().pow(e as u32)
     }
@@ -2441,9 +2441,9 @@ impl Ring for MultiPrecisionIntegerRing {
         f: &mut W,
     ) -> Result<bool, Error> {
         if state.in_sum {
-            write!(f, "{:+}", element)?
+            write!(f, "{element:+}")?
         } else {
-            write!(f, "{}", element)?
+            write!(f, "{element}")?
         }
 
         Ok(false)

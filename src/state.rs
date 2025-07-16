@@ -264,7 +264,7 @@ impl State {
 
         for c in illegal_chars {
             if name.contains(c) {
-                return Err(format!("Illegal character '{}' in identifier.", c).into());
+                return Err(format!("Illegal character '{c}' in identifier.").into());
             }
         }
 
@@ -281,7 +281,7 @@ impl State {
         match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => Ok(*o.get()),
             Entry::Vacant(v) => {
-                State::check_symbol_name(&v.key())?;
+                State::check_symbol_name(v.key())?;
 
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
                 if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
@@ -361,7 +361,7 @@ impl State {
                 }
             }
             Entry::Vacant(v) => {
-                State::check_symbol_name(&v.key())?;
+                State::check_symbol_name(v.key())?;
 
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
                 if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
@@ -662,7 +662,7 @@ impl State {
                         } else {
                             return Err(std::io::Error::new(
                                 std::io::ErrorKind::InvalidData,
-                                format!("Symbol conflict for {}::{}", namespace, str),
+                                format!("Symbol conflict for {namespace}::{str}"),
                             ));
                         }
                     }

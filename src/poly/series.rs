@@ -77,7 +77,7 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for Series<F> {
             } else {
                 write!(f, ", ")?;
             }
-            write!(f, "{{ {:?} }}", c)?;
+            write!(f, "{{ {c:?} }}")?;
         }
         write!(f, " ]")
     }
@@ -569,9 +569,9 @@ impl<F: Ring> SelfRing for Series<F> {
         if self.coefficients.is_empty() {
             let o = self.absolute_order();
             if opts.mode.is_latex() {
-                write!(f, "\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
+                write!(f, "\\mathcal{{O}}\\left({v}^{{{o}}}\\right)")?;
             } else {
-                write!(f, "𝒪({}^", v)?;
+                write!(f, "𝒪({v}^")?;
                 Q.format(&o, opts, state.step(false, false, true, false), f)?;
                 f.write_char(')')?;
             }
@@ -613,9 +613,9 @@ impl<F: Ring> SelfRing for Series<F> {
             }
 
             if e.is_one() {
-                write!(f, "{}", v)?;
+                write!(f, "{v}")?;
             } else if !e.is_zero() {
-                write!(f, "{}^", v)?;
+                write!(f, "{v}^")?;
                 state.suppress_one = false;
 
                 if opts.mode.is_latex() {
@@ -635,9 +635,9 @@ impl<F: Ring> SelfRing for Series<F> {
         let o = self.absolute_order();
 
         if opts.mode.is_latex() {
-            write!(f, "+\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
+            write!(f, "+\\mathcal{{O}}\\left({v}^{{{o}}}\\right)")?;
         } else {
-            write!(f, "+𝒪({}^", v)?;
+            write!(f, "+𝒪({v}^")?;
             Q.format(&o, opts, state.step(false, false, true, false), f)?;
             f.write_char(')')?;
         }

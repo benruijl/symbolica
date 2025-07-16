@@ -15,5 +15,5 @@ fn main() {
             )],
         ))));
 
-    println!("> {}", o);
+    println!("> {o}");
 }

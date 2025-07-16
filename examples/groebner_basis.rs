@@ -32,7 +32,7 @@ fn main() {
 
     println!("Lex order basis:");
     for g in &gb.system {
-        println!("\t{}", g);
+        println!("\t{g}");
     }
 
     // compute the Groebner basis with grevlex ordering by converting the polynomials
@@ -40,6 +40,6 @@ fn main() {
     let gb = GroebnerBasis::new(&grevlex_ideal, true);
     println!("Grevlex order basis:");
     for g in &gb.system {
-        println!("\t{}", g);
+        println!("\t{g}");
     }
 }

@@ -824,8 +824,7 @@ impl PythonTransformer {
         let state = if let Some(stats_to_file) = stats_to_file {
             let file = File::create(stats_to_file).map_err(|e| {
                 exceptions::PyIOError::new_err(format!(
-                    "Could not create file for transformer statistics: {}",
-                    e
+                    "Could not create file for transformer statistics: {e}",
                 ))
             })?;
             TransformerState {
@@ -1244,13 +1243,12 @@ impl PythonTransformer {
             let res = Python::with_gil(|py| {
                 f.call(py, (expr,), None)
                     .map_err(|e| {
-                        TransformerError::ValueError(format!("Bad callback function: {}", e))
+                        TransformerError::ValueError(format!("Bad callback function: {e}"))
                     })?
                     .extract::<ConvertibleToExpression>(py)
                     .map_err(|e| {
                         TransformerError::ValueError(format!(
-                            "Function does not return a pattern, but {}",
-                            e,
+                            "Function does not return a pattern, but {e}",
                         ))
                     })
             });
@@ -1297,8 +1295,7 @@ impl PythonTransformer {
                     .build()
                     .map_err(|e| {
                         exceptions::PyValueError::new_err(format!(
-                            "Could not create thread pool: {}",
-                            e
+                            "Could not create thread pool: {e}",
                         ))
                     })?,
             ))
@@ -1390,7 +1387,7 @@ impl PythonTransformer {
         self.append_transformer(Transformer::IfElse(
             condition.condition,
             if_block.chain,
-            else_block.map(|x| x.chain).unwrap_or(vec![]),
+            else_block.map(|x| x.chain).unwrap_or_default(),
         ))
     }
 
@@ -1418,7 +1415,7 @@ impl PythonTransformer {
         self.append_transformer(Transformer::IfChanged(
             condition.chain,
             if_block.chain,
-            else_block.map(|x| x.chain).unwrap_or(vec![]),
+            else_block.map(|x| x.chain).unwrap_or_default(),
         ))
     }
 
@@ -1476,8 +1473,7 @@ impl PythonTransformer {
                 AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {}",
-                        e
+                        "Expected variable instead of {e}",
                     )))?;
                 }
             }
@@ -2351,7 +2347,7 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
         } else if let Ok(num) = ob.extract::<i64>() {
             Ok(ConvertibleToExpression(Atom::num(num).into()))
         } else if let Ok(num) = ob.downcast::<PyInt>() {
-            let a = format!("{}", num);
+            let a = format!("{num}");
             let i = Integer::from(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::num(i).into()))
         } else if ob.extract::<PyBackedStr>().is_ok() {
@@ -2389,8 +2385,7 @@ impl<'a> FromPyObject<'a> for Symbol {
             match a.expr.as_view() {
                 AtomView::Var(v) => Ok(v.get_symbol()),
                 e => Err(exceptions::PyTypeError::new_err(format!(
-                    "Expected variable instead of {}",
-                    e
+                    "Expected variable instead of {e}",
                 ))),
             }
         } else {
@@ -2424,7 +2419,7 @@ impl<'a> FromPyObject<'a> for Integer {
         if let Ok(num) = ob.extract::<i64>() {
             Ok(num.into())
         } else if let Ok(num) = ob.downcast::<PyInt>() {
-            let a = format!("{}", num);
+            let a = format!("{num}");
             Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid integer"))
@@ -2475,7 +2470,7 @@ impl From<Float> for PythonMultiPrecisionFloat {
 
 static PYDECIMAL: GILOnceCell<Py<PyType>> = GILOnceCell::new();
 
-fn get_decimal(py: Python) -> &Py<PyType> {
+fn get_decimal(py: Python<'_>) -> &Py<PyType> {
     PYDECIMAL.get_or_init(py, || {
         py.import("decimal")
             .unwrap()
@@ -2943,7 +2938,7 @@ impl PythonExpression {
         if let Ok(num) = num.extract::<i64>(py) {
             Ok(Atom::num(num).into())
         } else if let Ok(num) = num.downcast_bound::<PyInt>(py) {
-            let a = format!("{}", num);
+            let a = format!("{num}");
             PythonExpression::parse(_cls, &a, "python")
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             if let Some(relative_error) = relative_error {
@@ -2970,14 +2965,14 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "E")]
     pub fn e() -> PythonExpression {
-        Atom::var(Atom::E).into()
+        Atom::var(Symbol::E).into()
     }
 
     /// The mathematical constant `π`.
     #[classattr]
     #[pyo3(name = "PI")]
     pub fn pi() -> PythonExpression {
-        Atom::var(Atom::PI).into()
+        Atom::var(Symbol::PI).into()
     }
 
     /// The mathematical constant `i`, where
@@ -2992,35 +2987,35 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "COEFF")]
     pub fn coeff() -> PythonExpression {
-        Atom::var(Atom::COEFF).into()
+        Atom::var(Symbol::COEFF).into()
     }
 
     /// The built-in cosine function.
     #[classattr]
     #[pyo3(name = "COS")]
     pub fn cos() -> PythonExpression {
-        Atom::var(Atom::COS).into()
+        Atom::var(Symbol::COS).into()
     }
 
     /// The built-in sine function.
     #[classattr]
     #[pyo3(name = "SIN")]
     pub fn sin() -> PythonExpression {
-        Atom::var(Atom::SIN).into()
+        Atom::var(Symbol::SIN).into()
     }
 
     /// The built-in exponential function.
     #[classattr]
     #[pyo3(name = "EXP")]
     pub fn exp() -> PythonExpression {
-        Atom::var(Atom::EXP).into()
+        Atom::var(Symbol::EXP).into()
     }
 
     /// The built-in logarithm function.
     #[classattr]
     #[pyo3(name = "LOG")]
     pub fn log() -> PythonExpression {
-        Atom::var(Atom::LOG).into()
+        Atom::var(Symbol::LOG).into()
     }
 
     /// Return all defined symbol names (function names and variables).
@@ -3252,13 +3247,13 @@ impl PythonExpression {
     #[pyo3(signature = (filename, compression_level=9))]
     pub fn save(&self, filename: &str, compression_level: u32) -> PyResult<()> {
         let f = File::create(filename)
-            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not create file: {}", e)))?;
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not create file: {e}")))?;
         let mut writer = CompressorWriter::new(BufWriter::new(f), 4096, compression_level, 22);
 
         self.expr
             .as_view()
             .export(&mut writer)
-            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not write file: {}", e)))
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not write file: {e}")))
     }
 
     /// Load an expression and its state from a file. The state will be merged
@@ -3296,7 +3291,7 @@ impl PythonExpression {
         conflict_fn: Option<PyObject>,
     ) -> PyResult<Self> {
         let f = File::open(filename)
-            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))?;
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))?;
         let mut reader = brotli::Decompressor::new(BufReader::new(f), 4096);
 
         Atom::import(
@@ -3312,7 +3307,7 @@ impl PythonExpression {
             },
         )
         .map(|a| a.into())
-        .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))
+        .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))
     }
 
     /// Get the type of the atom.
@@ -4135,8 +4130,7 @@ impl PythonExpression {
         let state = if let Some(stats_to_file) = stats_to_file {
             let file = File::create(stats_to_file).map_err(|e| {
                 exceptions::PyIOError::new_err(format!(
-                    "Could not create file for transformer statistics: {}",
-                    e
+                    "Could not create file for transformer statistics: {e}",
                 ))
             })?;
             TransformerState {
@@ -4157,7 +4151,7 @@ impl PythonExpression {
                         let _ = Transformer::execute_chain(x, &op.chain, ws, &state, &mut out)
                             .unwrap_or_else(|e| {
                                 // TODO: capture and abort the parallel run
-                                panic!("Transformer failed during parallel execution: {:?}", e)
+                                panic!("Transformer failed during parallel execution: {e:?}")
                             });
                     });
                     out
@@ -4183,8 +4177,7 @@ impl PythonExpression {
                 AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {}",
-                        e
+                        "Expected variable instead of {e}",
                     )))?;
                 }
             }
@@ -4805,7 +4798,7 @@ impl PythonExpression {
             }
 
             let f = AlgebraicExtension::new(p);
-            if &f.poly().exponents == &[0, 2] && f.poly().get_constant() == Rational::one() {
+            if f.poly().exponents == [0, 2] && f.poly().get_constant() == Rational::one() {
                 // convert complex coefficients
                 PythonNumberFieldPolynomial {
                     poly: self.expr.to_polynomial(&f, var_map),
@@ -4847,8 +4840,7 @@ impl PythonExpression {
                     AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {}",
-                            e
+                            "Expected variable instead of {e}",
                         )))?;
                     }
                 }
@@ -5208,15 +5200,14 @@ impl PythonExpression {
                 AtomView::Var(v) => vars.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {}",
-                        e
+                        "Expected variable instead of {e}",
                     )))?;
                 }
             }
         }
 
         let res = AtomView::solve_linear_system::<u16, _, Atom>(&system_b, &vars).map_err(|e| {
-            exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+            exceptions::PyValueError::new_err(format!("Could not solve system: {e}"))
         })?;
 
         Ok(res.into_iter().map(|x| x.into()).collect())
@@ -5259,7 +5250,7 @@ impl PythonExpression {
                 .expr
                 .nsolve::<F64>(id, init.0.to_f64().into(), prec.into(), max_iterations)
                 .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                    exceptions::PyValueError::new_err(format!("Could not solve system: {e}"))
                 })?;
             r.into_inner().into_py_any(py)
         } else {
@@ -5267,7 +5258,7 @@ impl PythonExpression {
                 self.expr
                     .nsolve(id, init.0, prec.into(), max_iterations)
                     .map_err(|e| {
-                        exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                        exceptions::PyValueError::new_err(format!("Could not solve system: {e}"))
                     })?,
             )
             .into_py_any(py)
@@ -5310,8 +5301,7 @@ impl PythonExpression {
                 AtomView::Var(v) => vars.push(v.get_symbol()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {}",
-                        e
+                        "Expected variable instead of {e}",
                     )))?;
                 }
             }
@@ -5323,7 +5313,7 @@ impl PythonExpression {
             let res: Vec<F64> =
                 AtomView::nsolve_system(&system_b, &vars, &init, prec.into(), max_iterations)
                     .map_err(|e| {
-                        exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                        exceptions::PyValueError::new_err(format!("Could not solve system: {e}"))
                     })?;
 
             Ok(res
@@ -5336,7 +5326,7 @@ impl PythonExpression {
             let res: Vec<Float> =
                 AtomView::nsolve_system(&system_b, &vars, &init, prec.into(), max_iterations)
                     .map_err(|e| {
-                        exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                        exceptions::PyValueError::new_err(format!("Could not solve system: {e}"))
                     })?;
 
             Ok(res
@@ -5373,8 +5363,7 @@ impl PythonExpression {
                     v
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected function name instead of {:?}",
-                        k
+                        "Expected function name instead of {k:?}",
                     )))?
                 };
 
@@ -5395,7 +5384,7 @@ impl PythonExpression {
         self.expr
             .evaluate(|x| x.into(), &constants, &functions)
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
+                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {e}"))
             })
     }
 
@@ -5440,8 +5429,7 @@ impl PythonExpression {
                     v
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected function name instead of {}",
-                        k
+                        "Expected function name instead of {k}",
                     )))?
                 };
 
@@ -5478,7 +5466,7 @@ impl PythonExpression {
             .expr
             .evaluate(|x| x.to_multi_prec_float(prec), &constants, &functions)
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
+                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {e}"))
             })?
             .into();
 
@@ -5512,8 +5500,7 @@ impl PythonExpression {
                     v
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected function name instead of {:?}",
-                        k
+                        "Expected function name instead of {k:?}",
                     )))?
                 };
 
@@ -5542,7 +5529,7 @@ impl PythonExpression {
             .expr
             .evaluate(|x| x.into(), &constants, &functions)
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
+                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {e}"))
             })?;
         Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
@@ -5600,15 +5587,13 @@ impl PythonExpression {
             let symbol = symbol
                 .to_id()
                 .ok_or(exceptions::PyValueError::new_err(format!(
-                    "Bad function name {}",
-                    symbol
+                    "Bad function name {symbol}",
                 )))?;
             let args: Vec<_> = args
                 .iter()
                 .map(|x| {
                     x.to_id().ok_or(exceptions::PyValueError::new_err(format!(
-                        "Bad function name {}",
-                        symbol
+                        "Bad function name {symbol}",
                     )))
                 })
                 .collect::<Result<_, _>>()?;
@@ -5623,8 +5608,7 @@ impl PythonExpression {
                 let symbol = symbol
                     .to_id()
                     .ok_or(exceptions::PyValueError::new_err(format!(
-                        "Bad function name {}",
-                        symbol
+                        "Bad function name {symbol}",
                     )))?;
 
                 fn_map
@@ -5646,7 +5630,7 @@ impl PythonExpression {
             .expr
             .evaluator(&fn_map, &params, settings)
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
+                exceptions::PyValueError::new_err(format!("Could not create evaluator: {e}"))
             })?;
 
         let eval_f64 = if eval.is_real() {
@@ -5658,7 +5642,6 @@ impl PythonExpression {
                             Python::with_gil(|py| {
                                 f.call1(py, (args,)).unwrap().extract::<f64>(py).unwrap()
                             })
-                            .into()
                         });
 
                         (name.clone(), ff)
@@ -5674,8 +5657,7 @@ impl PythonExpression {
                     .with_external_functions(external_functions_f64)
                     .map_err(|e| {
                         exceptions::PyValueError::new_err(format!(
-                            "Could not create complex evaluator: {}",
-                            e
+                            "Could not create complex evaluator: {e}",
                         ))
                     })?,
             )
@@ -5694,7 +5676,7 @@ impl PythonExpression {
                         Box::new(move |args| {
                             Python::with_gil(|py| {
                                 let arg_map: Vec<_> = args
-                                    .into_iter()
+                                    .iter()
                                     .map(|x| PyComplex::from_doubles(py, x.re, x.im))
                                     .collect();
 
@@ -5703,7 +5685,6 @@ impl PythonExpression {
                                     .extract::<Complex<f64>>(py)
                                     .unwrap()
                             })
-                            .into()
                         });
 
                     (name.clone(), ff)
@@ -5717,8 +5698,7 @@ impl PythonExpression {
             .with_external_functions(external_functions_complex)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!(
-                    "Could not create complex evaluator: {}",
-                    e
+                    "Could not create complex evaluator: {e}",
                 ))
             })?;
 
@@ -5778,15 +5758,13 @@ impl PythonExpression {
             let symbol = symbol
                 .to_id()
                 .ok_or(exceptions::PyValueError::new_err(format!(
-                    "Bad function name {}",
-                    symbol
+                    "Bad function name {symbol}",
                 )))?;
             let args: Vec<_> = args
                 .iter()
                 .map(|x| {
                     x.to_id().ok_or(exceptions::PyValueError::new_err(format!(
-                        "Bad function name {}",
-                        symbol
+                        "Bad function name {symbol}",
                     )))
                 })
                 .collect::<Result<_, _>>()?;
@@ -5801,8 +5779,7 @@ impl PythonExpression {
                 let symbol = symbol
                     .to_id()
                     .ok_or(exceptions::PyValueError::new_err(format!(
-                        "Bad function name {}",
-                        symbol
+                        "Bad function name {symbol}",
                     )))?;
 
                 fn_map
@@ -5823,7 +5800,7 @@ impl PythonExpression {
         let exprs = exprs.iter().map(|x| x.expr.as_view()).collect::<Vec<_>>();
 
         let eval = Atom::evaluator_multiple(&exprs, &fn_map, &params, settings).map_err(|e| {
-            exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
+            exceptions::PyValueError::new_err(format!("Could not create evaluator: {e}"))
         })?;
 
         let eval_f64 = if eval.is_real() {
@@ -5835,7 +5812,6 @@ impl PythonExpression {
                             Python::with_gil(|py| {
                                 f.call1(py, (args,)).unwrap().extract::<f64>(py).unwrap()
                             })
-                            .into()
                         });
 
                         (name.clone(), ff)
@@ -5851,8 +5827,7 @@ impl PythonExpression {
                     .with_external_functions(external_functions_f64)
                     .map_err(|e| {
                         exceptions::PyValueError::new_err(format!(
-                            "Could not create complex evaluator: {}",
-                            e
+                            "Could not create complex evaluator: {e}",
                         ))
                     })?,
             )
@@ -5880,7 +5855,6 @@ impl PythonExpression {
                                     .extract::<Complex<f64>>(py)
                                     .unwrap()
                             })
-                            .into()
                         });
 
                     (name.clone(), ff)
@@ -5894,8 +5868,7 @@ impl PythonExpression {
             .with_external_functions(external_functions_complex)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!(
-                    "Could not create complex evaluator: {}",
-                    e
+                    "Could not create complex evaluator: {e}",
                 ))
             })?;
 
@@ -5939,7 +5912,7 @@ impl PythonExpression {
             .expr
             .canonize_tensors(&contracted_indices)
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not canonize tensors: {}", e))
+                exceptions::PyValueError::new_err(format!("Could not canonize tensors: {e}"))
             })?;
 
         Ok(r.into())
@@ -5965,7 +5938,7 @@ impl PythonReplacement {
     #[pyo3(signature = (pattern, rhs, cond=None, non_greedy_wildcards=None, level_range=None, level_is_tree_depth=None, allow_new_wildcards_on_rhs=None, rhs_cache_size=None))]
     #[new]
     pub fn new(
-        pattern: ConvertibleToPattern,
+        pattern: ConvertibleToExpression,
         rhs: ConvertibleToReplaceWith,
         cond: Option<ConvertibleToPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
@@ -5974,7 +5947,7 @@ impl PythonReplacement {
         allow_new_wildcards_on_rhs: Option<bool>,
         rhs_cache_size: Option<usize>,
     ) -> PyResult<Self> {
-        let pattern = pattern.to_pattern()?.expr;
+        let pattern = pattern.to_expression().expr.to_pattern();
         let rhs = rhs.to_replace_with()?;
 
         let mut settings = MatchSettings::cached();
@@ -6016,6 +5989,18 @@ impl PythonReplacement {
                 .with_conditions(cond.map(|r| r.0).unwrap_or_default())
                 .with_settings(settings),
         })
+    }
+
+    #[getter]
+    fn pattern(&self) -> PyResult<PythonExpression> {
+        Ok(self
+            .replacement
+            .pat
+            .to_atom()
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not convert pattern to atom: {e}"))
+            })?
+            .into())
     }
 }
 
@@ -6389,7 +6374,7 @@ impl PythonTermStreamer {
     #[pyo3(signature = (filename, conflict_fn=None))]
     pub fn load(&mut self, filename: &str, conflict_fn: Option<PyObject>) -> PyResult<u64> {
         let f = File::open(filename)
-            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))?;
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))?;
         let reader = brotli::Decompressor::new(BufReader::new(f), 4096);
 
         self.stream
@@ -6405,7 +6390,7 @@ impl PythonTermStreamer {
                     None => None,
                 },
             )
-            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))
     }
 
     /// Export terms and their state to a binary stream.
@@ -6415,7 +6400,7 @@ impl PythonTermStreamer {
     #[pyo3(signature = (filename, compression_level=9))]
     pub fn save(&mut self, filename: &str, compression_level: u32) -> PyResult<()> {
         let f = File::create(filename)
-            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not create file: {}", e)))?;
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not create file: {e}")))?;
         let writer = CompressorWriter::new(BufWriter::new(f), 4096, compression_level, 22);
         self.stream
             .export(writer)
@@ -6463,8 +6448,7 @@ impl PythonTermStreamer {
         let state = if let Some(stats_to_file) = stats_to_file {
             let file = File::create(stats_to_file).map_err(|e| {
                 exceptions::PyIOError::new_err(format!(
-                    "Could not create file for transformer statistics: {}",
-                    e
+                    "Could not create file for transformer statistics: {e}",
                 ))
             })?;
             TransformerState {
@@ -6486,7 +6470,7 @@ impl PythonTermStreamer {
                         Transformer::execute_chain(x.as_view(), &op.chain, ws, &state, &mut out)
                             .unwrap_or_else(|e| {
                                 // TODO: capture and abort the parallel run
-                                panic!("Transformer failed during parallel execution: {:?}", e)
+                                panic!("Transformer failed during parallel execution: {e:?}")
                             });
                 });
                 out
@@ -6506,8 +6490,7 @@ impl PythonTermStreamer {
         let state = if let Some(stats_to_file) = stats_to_file {
             let file = File::create(stats_to_file).map_err(|e| {
                 exceptions::PyIOError::new_err(format!(
-                    "Could not create file for transformer statistics: {}",
-                    e
+                    "Could not create file for transformer statistics: {e}",
                 ))
             })?;
             TransformerState {
@@ -6523,7 +6506,7 @@ impl PythonTermStreamer {
             let mut out = Atom::default();
             Workspace::get_local().with(|ws| {
                 let _ = Transformer::execute_chain(x.as_view(), &op.chain, ws, &state, &mut out)
-                    .unwrap_or_else(|e| panic!("Transformer failed during execution: {:?}", e));
+                    .unwrap_or_else(|e| panic!("Transformer failed during execution: {e:?}"));
             });
             out
         });
@@ -6861,8 +6844,7 @@ impl PythonPolynomial {
             Ok(Self { poly: q })
         } else {
             Err(exceptions::PyValueError::new_err(format!(
-                "The division has a remainder: {}",
-                r
+                "The division has a remainder: {r}",
             )))
         }
     }
@@ -7227,8 +7209,7 @@ impl PythonPolynomial {
             .iter()
             .position(|x| x == &var)
             .ok_or(exceptions::PyValueError::new_err(format!(
-                "Variable {} not found in polynomial",
-                var
+                "Variable {var} not found in polynomial",
             )))?;
 
         if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
@@ -11896,8 +11877,11 @@ impl PythonExpressionEvaluator {
         compiler_path: Option<&str>,
         custom_header: Option<String>,
     ) -> PyResult<PythonCompiledExpressionEvaluator> {
-        let mut options = CompileOptions::default();
-        options.optimization_level = optimization_level as usize;
+        let mut options = CompileOptions {
+            optimization_level: optimization_level as usize,
+            ..Default::default()
+        };
+
         if let Some(compiler_path) = compiler_path {
             options.compiler = compiler_path.to_string();
         }

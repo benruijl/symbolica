@@ -107,13 +107,13 @@ impl InlineVar {
         &self.data[..self.size as usize]
     }
 
-    pub fn as_var_view(&self) -> VarView {
+    pub fn as_var_view(&self) -> VarView<'_> {
         VarView {
             data: &self.data[..self.size as usize],
         }
     }
 
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Var(VarView {
             data: &self.data[..self.size as usize],
         })
@@ -148,13 +148,13 @@ impl InlineNum {
         &self.data[..self.size as usize]
     }
 
-    pub fn as_num_view(&self) -> NumView {
+    pub fn as_num_view(&self) -> NumView<'_> {
         NumView {
             data: &self.data[..self.size as usize],
         }
     }
 
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Num(NumView {
             data: &self.data[..self.size as usize],
         })
@@ -424,12 +424,12 @@ impl Num {
     }
 
     #[inline]
-    pub fn to_num_view(&self) -> NumView {
+    pub fn to_num_view(&self) -> NumView<'_> {
         NumView { data: &self.data }
     }
 
     #[inline(always)]
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Num(self.to_num_view())
     }
 
@@ -501,7 +501,7 @@ impl Var {
     }
 
     #[inline]
-    pub fn to_var_view(&self) -> VarView {
+    pub fn to_var_view(&self) -> VarView<'_> {
         VarView { data: &self.data }
     }
 
@@ -512,7 +512,7 @@ impl Var {
     }
 
     #[inline(always)]
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Var(self.to_var_view())
     }
 
@@ -648,7 +648,7 @@ impl Fun {
     }
 
     #[inline(always)]
-    pub fn to_fun_view(&self) -> FunView {
+    pub fn to_fun_view(&self) -> FunView<'_> {
         FunView { data: &self.data }
     }
 
@@ -658,7 +658,7 @@ impl Fun {
     }
 
     #[inline(always)]
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Fun(self.to_fun_view())
     }
 
@@ -722,7 +722,7 @@ impl Pow {
     }
 
     #[inline(always)]
-    pub fn to_pow_view(&self) -> PowView {
+    pub fn to_pow_view(&self) -> PowView<'_> {
         PowView { data: &self.data }
     }
 
@@ -733,7 +733,7 @@ impl Pow {
     }
 
     #[inline(always)]
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Pow(self.to_pow_view())
     }
 
@@ -904,7 +904,7 @@ impl Mul {
     }
 
     #[inline]
-    pub fn to_mul_view(&self) -> MulView {
+    pub fn to_mul_view(&self) -> MulView<'_> {
         MulView { data: &self.data }
     }
 
@@ -917,7 +917,7 @@ impl Mul {
     }
 
     #[inline(always)]
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Mul(self.to_mul_view())
     }
 
@@ -1028,7 +1028,7 @@ impl Add {
     }
 
     #[inline(always)]
-    pub fn to_add_view(&self) -> AddView {
+    pub fn to_add_view(&self) -> AddView<'_> {
         AddView { data: &self.data }
     }
 
@@ -1039,7 +1039,7 @@ impl Add {
     }
 
     #[inline(always)]
-    pub fn as_view(&self) -> AtomView {
+    pub fn as_view(&self) -> AtomView<'_> {
         AtomView::Add(self.to_add_view())
     }
 
@@ -1894,7 +1894,7 @@ impl<'a> ListSlice<'a> {
         }
     }
 
-    fn get_entry(start: &[u8]) -> (AtomView, &[u8]) {
+    fn get_entry(start: &[u8]) -> (AtomView<'_>, &[u8]) {
         let start_id = start[0] & TYPE_MASK;
         let end = Self::skip(start, 1);
         let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;

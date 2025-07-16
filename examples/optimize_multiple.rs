@@ -20,7 +20,7 @@ fn main() {
 
     let mut i = HornerScheme::to_instr_multiple(&h, poly.nvars());
 
-    println!("Number of operations={}, with scheme={:?}", score, scheme,);
+    println!("Number of operations={score}, with scheme={scheme:?}",);
 
     i.fuse_operations();
 
@@ -56,7 +56,7 @@ fn main() {
 
     let mut evaluator = o_f64.evaluator();
 
-    println!("Final number of operations={}", op_count);
+    println!("Final number of operations={op_count}");
     println!(
         "Evaluation = {:?}",
         evaluator

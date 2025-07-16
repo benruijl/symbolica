@@ -13,7 +13,7 @@ fn main() {
 
     println!("> Coefficient list:");
     for (key, val) in r {
-        println!("\t{} {}", key, val);
+        println!("\t{key} {val}");
     }
 
     println!("> Collect in x:");
@@ -24,7 +24,7 @@ fn main() {
         })),
         None,
     );
-    println!("\t{}", out);
+    println!("\t{out}");
 
     println!("> Collect in x with wrapping:");
     let out = input.collect::<i8>(
@@ -38,5 +38,5 @@ fn main() {
             *out = function!(coeff, out);
         })),
     );
-    println!("\t{}", out);
+    println!("\t{out}");
 }

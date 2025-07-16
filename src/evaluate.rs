@@ -878,7 +878,7 @@ impl<T: Clone> ExpressionEvaluator<T> {
             if let Some(f) = external_fns.remove(e) {
                 external.push((vec![], f));
             } else {
-                return Err(format!("External function '{}' not found", e));
+                return Err(format!("External function '{e}' not found"));
             }
         }
 
@@ -1755,12 +1755,11 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "\ntemplate<typename T>\nvoid {}(T* params, T* Z, T* out) {{\n",
-            function_name
+            "\ntemplate<typename T>\nvoid {function_name}(T* params, T* Z, T* out) {{\n"
         );
 
         for i in 0..self.param_count {
-            res += &format!("\tZ[{}] = params[{}];\n", i, i);
+            res += &format!("\tZ[{i}] = params[{i}];\n");
         }
 
         for i in self.param_count..self.reserved_indices {
@@ -1770,26 +1769,23 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         self.export_cpp_impl(&mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
-            res += &format!("\tout[{}] = Z[{}];\n", i, r);
+            res += &format!("\tout[{i}] = Z[{r}];\n");
         }
 
         res += "\treturn;\n}\n";
 
         if self.stack.iter().all(|x| x.is_real()) {
             res += &format!(
-                "\nextern \"C\" {{\n\tvoid {0}_double(double *params, double *buffer, double *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
-                function_name
+                "\nextern \"C\" {{\n\tvoid {function_name}_double(double *params, double *buffer, double *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
             );
         } else {
             res += &format!(
-                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
-                function_name
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}"
             );
         }
 
         res += &format!(
-            "\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{0}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n",
-            function_name
+            "\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
         );
 
         res
@@ -1801,60 +1797,60 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                 Instr::Add(o, a) => {
                     let args = a
                         .iter()
-                        .map(|x| format!("Z[{}]", x))
+                        .map(|x| format!("Z[{x}]"))
                         .collect::<Vec<_>>()
                         .join("+");
 
-                    *out += format!("\tZ[{}] = {};\n", o, args).as_str();
+                    *out += format!("\tZ[{o}] = {args};\n").as_str();
                 }
                 Instr::Mul(o, a) => {
                     let args = a
                         .iter()
-                        .map(|x| format!("Z[{}]", x))
+                        .map(|x| format!("Z[{x}]"))
                         .collect::<Vec<_>>()
                         .join("*");
 
-                    *out += format!("\tZ[{}] = {};\n", o, args).as_str();
+                    *out += format!("\tZ[{o}] = {args};\n").as_str();
                 }
                 Instr::Pow(o, b, e) => {
-                    let base = format!("Z[{}]", b);
+                    let base = format!("Z[{b}]");
                     if *e == -1 {
-                        *out += format!("\tZ[{}] = T(1) / {};\n", o, base).as_str();
+                        *out += format!("\tZ[{o}] = T(1) / {base};\n").as_str();
                     } else {
-                        *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                        *out += format!("\tZ[{o}] = pow({base}, {e});\n").as_str();
                     }
                 }
                 Instr::Powf(o, b, e) => {
-                    let base = format!("Z[{}]", b);
-                    let exp = format!("Z[{}]", e);
-                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
+                    let base = format!("Z[{b}]");
+                    let exp = format!("Z[{e}]");
+                    *out += format!("\tZ[{o}] = pow({base}, {exp});\n").as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => match s.0 {
                     Symbol::EXP => {
-                        let arg = format!("Z[{}]", a);
-                        *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
+                        let arg = format!("Z[{a}]");
+                        *out += format!("\tZ[{o}] = exp({arg});\n").as_str();
                     }
                     Symbol::LOG => {
-                        let arg = format!("Z[{}]", a);
-                        *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
+                        let arg = format!("Z[{a}]");
+                        *out += format!("\tZ[{o}] = log({arg});\n").as_str();
                     }
                     Symbol::SIN => {
-                        let arg = format!("Z[{}]", a);
-                        *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
+                        let arg = format!("Z[{a}]");
+                        *out += format!("\tZ[{o}] = sin({arg});\n").as_str();
                     }
                     Symbol::COS => {
-                        let arg = format!("Z[{}]", a);
-                        *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
+                        let arg = format!("Z[{a}]");
+                        *out += format!("\tZ[{o}] = cos({arg});\n").as_str();
                     }
                     Symbol::SQRT => {
-                        let arg = format!("Z[{}]", a);
-                        *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
+                        let arg = format!("Z[{a}]");
+                        *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                     }
                     _ => unreachable!(),
                 },
                 Instr::ExternalFun(o, s, a) => {
                     let name = &self.external_fns[*s];
-                    let args = a.iter().map(|x| format!("Z[{}]", x)).collect::<Vec<_>>();
+                    let args = a.iter().map(|x| format!("Z[{x}]")).collect::<Vec<_>>();
 
                     *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
                 }
@@ -1892,8 +1888,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n",
-            function_name
+            "extern \"C\" void {function_name}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n"
         );
 
         self.export_asm_complex_impl(
@@ -1920,8 +1915,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             );
 
             res += &format!(
-                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n",
-                function_name
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n"
             );
 
             self.export_asm_double_impl(
@@ -1934,8 +1928,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += "\treturn;\n}\n";
         } else {
             res += &format!(
-                "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
-                function_name,
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
             );
         }
         res
@@ -2264,14 +2257,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             MemOrReg::Reg(k) => match asm_flavour {
                                                 InlineASM::X64 => {
                                                     *out += &format!(
-                                                        "\t\t\"{}sd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                        oper, k, out_reg,
+                                                        "\t\t\"{oper}sd %%xmm{k}, %%xmm{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
                                                     *out += &format!(
-                                                        "\t\t\"f{} d{}, d{}, d{}\\n\\t\"\n",
-                                                        oper, out_reg, k, out_reg,
+                                                        "\t\t\"f{oper} d{out_reg}, d{k}, d{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
                                                 InlineASM::None => unreachable!(),
@@ -2280,20 +2271,17 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                 InlineASM::X64 => {
                                                     let addr = asm_load!(*k);
                                                     *out += &format!(
-                                                        "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                        oper, addr, out_reg
+                                                        "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
                                                     let addr = asm_load!(*k);
                                                     *out += &format!(
-                                                        "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                        addr,
+                                                        "\t\t\"ldr d31, {addr}\\n\\t\"\n",
                                                     );
 
                                                     *out += &format!(
-                                                        "\t\t\"f{} d{}, d31, d{}\\n\\t\"\n",
-                                                        oper, out_reg, out_reg
+                                                        "\t\t\"f{oper} d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::None => unreachable!(),
@@ -2308,13 +2296,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                 match asm_flavour {
                                     InlineASM::X64 => {
                                         *out += &format!(
-                                            "\t\t\"movapd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                            j, out_reg
+                                            "\t\t\"movapd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                         );
                                     }
                                     InlineASM::AArch64 => {
                                         *out +=
-                                            &format!("\t\t\"fmov d{}, d{}\\n\\t\"\n", out_reg, j);
+                                            &format!("\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n");
                                     }
                                     InlineASM::None => unreachable!(),
                                 }
@@ -2326,14 +2313,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             MemOrReg::Reg(k) => match asm_flavour {
                                                 InlineASM::X64 => {
                                                     *out += &format!(
-                                                        "\t\t\"{}sd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                        oper, k, out_reg,
+                                                        "\t\t\"{oper}sd %%xmm{k}, %%xmm{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
                                                     *out += &format!(
-                                                        "\t\t\"f{} d{}, d{}, d{}\\n\\t\"\n",
-                                                        oper, out_reg, k, out_reg,
+                                                        "\t\t\"f{oper} d{out_reg}, d{k}, d{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
                                                 InlineASM::None => unreachable!(),
@@ -2342,20 +2327,17 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                 InlineASM::X64 => {
                                                     let addr = asm_load!(*k);
                                                     *out += &format!(
-                                                        "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                        oper, addr, out_reg
+                                                        "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
                                                     let addr = asm_load!(*k);
                                                     *out += &format!(
-                                                        "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                        addr,
+                                                        "\t\t\"ldr d31, {addr}\\n\\t\"\n",
                                                     );
 
                                                     *out += &format!(
-                                                        "\t\t\"f{} d{}, d31, d{}\\n\\t\"\n",
-                                                        oper, out_reg, out_reg
+                                                        "\t\t\"f{oper} d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::None => unreachable!(),
@@ -2370,15 +2352,13 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         InlineASM::X64 => {
                                             let addr = asm_load!(*k);
                                             *out += &format!(
-                                                "\t\t\"movsd {}, %%xmm{}\\n\\t\"\n",
-                                                addr, out_reg
+                                                "\t\t\"movsd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                             );
                                         }
                                         InlineASM::AArch64 => {
                                             let addr = asm_load!(*k);
                                             *out += &format!(
-                                                "\t\t\"ldr d{}, {}\\n\\t\"\n",
-                                                out_reg, addr,
+                                                "\t\t\"ldr d{out_reg}, {addr}\\n\\t\"\n",
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
@@ -2393,18 +2373,16 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             InlineASM::X64 => {
                                                 let addr = asm_load!(*k);
                                                 *out += &format!(
-                                                    "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                    oper, addr, out_reg
+                                                    "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 let addr = asm_load!(*k);
                                                 *out +=
-                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
+                                                    &format!("\t\t\"ldr d31, {addr}\\n\\t\"\n",);
 
                                                 *out += &format!(
-                                                    "\t\t\"f{} d{}, d31, d{}\\n\\t\"\n",
-                                                    oper, out_reg, out_reg
+                                                    "\t\t\"f{oper} d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2422,14 +2400,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                     match asm_flavour {
                                         InlineASM::X64 => {
                                             *out += &format!(
-                                                "\t\t\"movapd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                j, out_reg
+                                                "\t\t\"movapd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                             );
                                         }
                                         InlineASM::AArch64 => {
                                             *out += &format!(
-                                                "\t\t\"fmov d{}, d{}\\n\\t\"\n",
-                                                out_reg, j
+                                                "\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n"
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
@@ -2442,14 +2418,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                 MemOrReg::Reg(k) => match asm_flavour {
                                                     InlineASM::X64 => {
                                                         *out += &format!(
-                                                            "\t\t\"{}sd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                            oper, k, out_reg
+                                                            "\t\t\"{oper}sd %%xmm{k}, %%xmm{out_reg}\\n\\t\"\n"
                                                         );
                                                     }
                                                     InlineASM::AArch64 => {
                                                         *out += &format!(
-                                                            "\t\t\"f{} d{}, d{}, d{}\\n\\t\"\n",
-                                                            oper, out_reg, k, out_reg
+                                                            "\t\t\"f{oper} d{out_reg}, d{k}, d{out_reg}\\n\\t\"\n"
                                                         );
                                                     }
                                                     InlineASM::None => unreachable!(),
@@ -2458,20 +2432,17 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                     InlineASM::X64 => {
                                                         let addr = asm_load!(*k);
                                                         *out += &format!(
-                                                            "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                            oper, addr, out_reg
+                                                            "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                         );
                                                     }
                                                     InlineASM::AArch64 => {
                                                         let addr = asm_load!(*k);
                                                         *out += &format!(
-                                                            "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                            addr,
+                                                            "\t\t\"ldr d31, {addr}\\n\\t\"\n",
                                                         );
 
                                                         *out += &format!(
-                                                            "\t\t\"f{} d{}, d31, d{}\\n\\t\"\n",
-                                                            oper, out_reg, out_reg
+                                                            "\t\t\"f{oper} d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
                                                         );
                                                     }
                                                     InlineASM::None => unreachable!(),
@@ -2487,14 +2458,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         match asm_flavour {
                                             InlineASM::X64 => {
                                                 *out += &format!(
-                                                    "\t\t\"movsd {}, %%xmm{}\\n\\t\"\n",
-                                                    addr, out_reg
+                                                    "\t\t\"movsd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
-                                                    "\t\t\"ldr d{}, {}\\n\\t\"\n",
-                                                    out_reg, addr,
+                                                    "\t\t\"ldr d{out_reg}, {addr}\\n\\t\"\n",
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2509,19 +2478,16 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             match asm_flavour {
                                                 InlineASM::X64 => {
                                                     *out += &format!(
-                                                        "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                        oper, addr, out_reg
+                                                        "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
                                                     *out += &format!(
-                                                        "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                        addr,
+                                                        "\t\t\"ldr d31, {addr}\\n\\t\"\n",
                                                     );
 
                                                     *out += &format!(
-                                                        "\t\t\"f{} d{}, d31, d{}\\n\\t\"\n",
-                                                        oper, out_reg, out_reg,
+                                                        "\t\t\"f{oper} d{out_reg}, d31, d{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
                                                 InlineASM::None => unreachable!(),
@@ -2534,13 +2500,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                 match asm_flavour {
                                     InlineASM::X64 => {
                                         *out += &format!(
-                                            "\t\t\"movsd %%xmm{}, {}\\n\\t\"\n",
-                                            out_reg, addr
+                                            "\t\t\"movsd %%xmm{out_reg}, {addr}\\n\\t\"\n"
                                         );
                                     }
                                     InlineASM::AArch64 => {
                                         *out +=
-                                            &format!("\t\t\"str d{}, {}\\n\\t\"\n", out_reg, addr,);
+                                            &format!("\t\t\"str d{out_reg}, {addr}\\n\\t\"\n",);
                                     }
                                     InlineASM::None => unreachable!(),
                                 }
@@ -2568,8 +2533,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                 (0..16).position(|k| free & (1 << k) != 0)
                                             {
                                                 *out += &format!(
-                                                    "\t\t\"movapd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                    out_reg, tmp_reg
+                                                    "\t\t\"movapd %%xmm{out_reg}, %%xmm{tmp_reg}\\n\\t\"\n"
                                                 );
 
                                                 *out += &format!(
@@ -2579,8 +2543,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                 );
 
                                                 *out += &format!(
-                                                    "\t\t\"divsd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                    tmp_reg, out_reg
+                                                    "\t\t\"divsd %%xmm{tmp_reg}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             } else {
                                                 panic!("No free registers for division")
@@ -2592,8 +2555,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                                 (self.reserved_indices - self.param_count) * 8
                                             );
                                             *out += &format!(
-                                                "\t\t\"fdiv d{}, d31, d{}\\n\\t\"\n",
-                                                out_reg, out_reg
+                                                "\t\t\"fdiv d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
@@ -2622,14 +2584,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         MemOrReg::Reg(j) => match asm_flavour {
                                             InlineASM::X64 => {
                                                 *out += &format!(
-                                                    "\t\t\"divsd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                    j, out_reg
+                                                    "\t\t\"divsd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
-                                                    "\t\t\"fdiv d{}, d{}, d{}\\n\\t\"\n",
-                                                    out_reg, out_reg, j
+                                                    "\t\t\"fdiv d{out_reg}, d{out_reg}, d{j}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2638,18 +2598,16 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             InlineASM::X64 => {
                                                 let addr = asm_load!(*k);
                                                 *out += &format!(
-                                                    "\t\t\"divsd {}, %%xmm{}\\n\\t\"\n",
-                                                    addr, out_reg,
+                                                    "\t\t\"divsd {addr}, %%xmm{out_reg}\\n\\t\"\n",
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 let addr = asm_load!(*k);
                                                 *out +=
-                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr);
+                                                    &format!("\t\t\"ldr d31, {addr}\\n\\t\"\n");
 
                                                 *out += &format!(
-                                                    "\t\t\"fdiv d{}, d{}, d31\\n\\t\"\n",
-                                                    out_reg, out_reg
+                                                    "\t\t\"fdiv d{out_reg}, d{out_reg}, d31\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2681,14 +2639,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         MemOrReg::Reg(j) => match asm_flavour {
                                             InlineASM::X64 => {
                                                 *out += &format!(
-                                                    "\t\t\"divsd %%xmm{}, %%xmm{}\\n\\t\"\n",
-                                                    j, out_reg
+                                                    "\t\t\"divsd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
-                                                    "\t\t\"fdiv d{}, d{}, d{}\\n\\t\"\n",
-                                                    out_reg, out_reg, j
+                                                    "\t\t\"fdiv d{out_reg}, d{out_reg}, d{j}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2697,18 +2653,16 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             InlineASM::X64 => {
                                                 let addr = asm_load!(*k);
                                                 *out += &format!(
-                                                    "\t\t\"divsd {}, %%xmm{}\\n\\t\"\n",
-                                                    addr, out_reg
+                                                    "\t\t\"divsd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 let addr = asm_load!(*k);
                                                 *out +=
-                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
+                                                    &format!("\t\t\"ldr d31, {addr}\\n\\t\"\n",);
 
                                                 *out += &format!(
-                                                    "\t\t\"fdiv d{}, d31, d{}\\n\\t\"\n",
-                                                    out_reg, out_reg
+                                                    "\t\t\"fdiv d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -2719,14 +2673,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                     match asm_flavour {
                                         InlineASM::X64 => {
                                             *out += &format!(
-                                                "\t\t\"movsd %%xmm{}, {}\\n\\t\"\n",
-                                                out_reg, addr
+                                                "\t\t\"movsd %%xmm{out_reg}, {addr}\\n\\t\"\n"
                                             );
                                         }
                                         InlineASM::AArch64 => {
                                             *out += &format!(
-                                                "\t\t\"str d{}, {}\\n\\t\"\n",
-                                                out_reg, addr,
+                                                "\t\t\"str d{out_reg}, {addr}\\n\\t\"\n",
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
@@ -2749,7 +2701,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
 
                     let base = get_input!(*b);
                     let exp = get_input!(*e);
-                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
+                    *out += format!("\tZ[{o}] = pow({base}, {exp});\n").as_str();
                 }
                 RegInstr::BuiltinFun(o, s, a) => {
                     end_asm_block!(in_asm_block);
@@ -2758,19 +2710,19 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
 
                     match s.0 {
                         Symbol::EXP => {
-                            *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = exp({arg});\n").as_str();
                         }
                         Symbol::LOG => {
-                            *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = log({arg});\n").as_str();
                         }
                         Symbol::SIN => {
-                            *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = sin({arg});\n").as_str();
                         }
                         Symbol::COS => {
-                            *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = cos({arg});\n").as_str();
                         }
                         Symbol::SQRT => {
-                            *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
                         _ => unreachable!(),
                     }
@@ -2846,14 +2798,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         match asm_flavour {
             InlineASM::X64 => {
                 *out += &format!(
-                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",
-                    function_name
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n"
                 );
             }
             InlineASM::AArch64 => {
                 *out += &format!(
-                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",
-                    function_name
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n"
                 );
             }
             InlineASM::None => unreachable!(),
@@ -2999,23 +2949,23 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                             // TODO: try loading in multiple registers for better instruction-level parallelism?
                             for i in a {
                                 let (addr, _) = asm_load!(*i);
-                                *out += &format!("\t\t\"addpd {}, %%xmm0\\n\\t\"\n", addr);
+                                *out += &format!("\t\t\"addpd {addr}, %%xmm0\\n\\t\"\n");
                             }
                             let (addr, _) = asm_load!(*o);
-                            *out += &format!("\t\t\"movupd %%xmm0, {}\\n\\t\"\n", addr);
+                            *out += &format!("\t\t\"movupd %%xmm0, {addr}\\n\\t\"\n");
                         }
                         InlineASM::AArch64 => {
                             let (addr, _) = asm_load!(a[0]);
-                            *out += &format!("\t\t\"ldr q0, {}\\n\\t\"\n", addr);
+                            *out += &format!("\t\t\"ldr q0, {addr}\\n\\t\"\n");
 
                             for i in &a[1..] {
                                 let (addr, _) = asm_load!(*i);
-                                *out += &format!("\t\t\"ldr q1, {}\\n\\t\"\n", addr);
+                                *out += &format!("\t\t\"ldr q1, {addr}\\n\\t\"\n");
                                 *out += "\t\t\"fadd v0.2d, v1.2d, v0.2d\\n\\t\"\n";
                             }
 
                             let (addr, _) = asm_load!(*o);
-                            *out += &format!("\t\t\"str q0, {}\\n\\t\"\n", addr);
+                            *out += &format!("\t\t\"str q0, {addr}\\n\\t\"\n");
                         }
                         InlineASM::None => unreachable!(),
                     }
@@ -3095,14 +3045,14 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                         let (addr_re, addr_im) = asm_load!(*o);
                         match asm_flavour {
                             InlineASM::X64 => {
-                                *out += &format!("\t\t\"movupd %%xmm1, {}\\n\\t\"\n", addr_re);
+                                *out += &format!("\t\t\"movupd %%xmm1, {addr_re}\\n\\t\"\n");
                             }
                             InlineASM::AArch64 => {
                                 if *o * 16 < 450 {
-                                    *out += &format!("\t\t\"stp d2, d3, {}\\n\\t\"\n", addr_re);
+                                    *out += &format!("\t\t\"stp d2, d3, {addr_re}\\n\\t\"\n");
                                 } else {
-                                    *out += &format!("\t\t\"str d2, {}\\n\\t\"\n", addr_re);
-                                    *out += &format!("\t\t\"str d3, {}\\n\\t\"\n", addr_im);
+                                    *out += &format!("\t\t\"str d2, {addr_re}\\n\\t\"\n");
+                                    *out += &format!("\t\t\"str d3, {addr_im}\\n\\t\"\n");
                                 }
                             }
                             InlineASM::None => unreachable!(),
@@ -3118,7 +3068,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                             .collect::<Vec<_>>()
                             .join("*");
 
-                        *out += format!("\tZ[{}] = {};\n", o, args).as_str();
+                        *out += format!("\tZ[{o}] = {args};\n").as_str();
                     }
                 }
                 Instr::Pow(o, b, e) => {
@@ -3174,14 +3124,14 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                         end_asm_block!(in_asm_block);
 
                         let base = get_input!(*b);
-                        *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                        *out += format!("\tZ[{o}] = pow({base}, {e});\n").as_str();
                     }
                 }
                 Instr::Powf(o, b, e) => {
                     end_asm_block!(in_asm_block);
                     let base = get_input!(*b);
                     let exp = get_input!(*e);
-                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
+                    *out += format!("\tZ[{o}] = pow({base}, {exp});\n").as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => {
                     end_asm_block!(in_asm_block);
@@ -3190,19 +3140,19 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
 
                     match s.0 {
                         Symbol::EXP => {
-                            *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = exp({arg});\n").as_str();
                         }
                         Symbol::LOG => {
-                            *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = log({arg});\n").as_str();
                         }
                         Symbol::SIN => {
-                            *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = sin({arg});\n").as_str();
                         }
                         Symbol::COS => {
-                            *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = cos({arg});\n").as_str();
                         }
                         Symbol::SQRT => {
-                            *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
+                            *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
                         _ => unreachable!(),
                     }
@@ -3275,14 +3225,12 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         match asm_flavour {
             InlineASM::X64 => {
                 *out += &format!(
-                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",
-                    function_name
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n"
                 );
             }
             InlineASM::AArch64 => {
                 *out += &format!(
-                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",
-                    function_name
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n"
                 );
             }
             InlineASM::None => unreachable!(),
@@ -3404,10 +3352,10 @@ pub enum Slot {
 impl std::fmt::Display for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Slot::Param(i) => write!(f, "p{}", i),
-            Slot::Const(i) => write!(f, "c{}", i),
-            Slot::Temp(i) => write!(f, "t{}", i),
-            Slot::Out(i) => write!(f, "o{}", i),
+            Slot::Param(i) => write!(f, "p{i}"),
+            Slot::Const(i) => write!(f, "c{i}"),
+            Slot::Temp(i) => write!(f, "t{i}"),
+            Slot::Out(i) => write!(f, "o{i}"),
         }
     }
 }
@@ -3458,10 +3406,10 @@ impl std::fmt::Display for Instruction {
                 )
             }
             Instruction::Pow(o, b, e) => {
-                write!(f, "{} = {}^{}", o, b, e)
+                write!(f, "{o} = {b}^{e}")
             }
             Instruction::Powf(o, b, e) => {
-                write!(f, "{} = {}^{}", o, b, e)
+                write!(f, "{o} = {b}^{e}")
             }
             Instruction::Fun(o, s, a) => {
                 write!(f, "{} = {}({})", o, s.0, a)
@@ -3596,7 +3544,7 @@ impl<T: Clone + PartialEq> Expression<T> {
             Expression::SubExpression(i) => Expression::SubExpression(*i),
             Expression::ExternalFun(s, a) => {
                 let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
-                Expression::ExternalFun(s.clone(), new_args)
+                Expression::ExternalFun(*s, new_args)
             }
         }
     }
@@ -4048,11 +3996,10 @@ impl Expression<Complex<Rational>> {
                     max_pow = Some(pow_counter);
                 }
             } else if let Expression::Pow(p) = x {
-                if p.0 == scheme[0] && p.1 > 0 {
-                    if max_pow.is_none() || p.1 < max_pow.unwrap() {
+                if p.0 == scheme[0] && p.1 > 0
+                    && (max_pow.is_none() || p.1 < max_pow.unwrap()) {
                         max_pow = Some(p.1);
                     }
-                }
             } else if x == &scheme[0] {
                 max_pow = Some(1);
             }
@@ -4112,7 +4059,7 @@ impl Expression<Complex<Rational>> {
             } else if let Expression::Pow(p) = &mut x {
                 if p.0 == scheme[0] && p.1 > 0 {
                     if p.1 > max_pow + 1 {
-                        p.1 = p.1 - max_pow;
+                        p.1 -= max_pow;
                     } else if p.1 - max_pow == 1 {
                         x = scheme[0].clone();
                     } else {
@@ -5006,13 +4953,13 @@ impl CompiledEvaluator {
             Library::try_new::<String>(self.library.borrow_owner().clone(), |lib| {
                 Ok(EvaluatorFunctions {
                     eval_double: lib
-                        .get(format!("{}_double", function_name).as_bytes())
+                        .get(format!("{function_name}_double").as_bytes())
                         .map_err(|e| e.to_string())?,
                     eval_complex: lib
-                        .get(format!("{}_complex", function_name).as_bytes())
+                        .get(format!("{function_name}_complex").as_bytes())
                         .map_err(|e| e.to_string())?,
                     get_buffer_len: lib
-                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                        .get(format!("{function_name}_get_buffer_len").as_bytes())
                         .map_err(|e| e.to_string())?,
                 })
             })
@@ -5041,13 +4988,13 @@ impl CompiledEvaluator {
             let library = Library::try_new::<String>(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
                     eval_double: lib
-                        .get(format!("{}_double", function_name).as_bytes())
+                        .get(format!("{function_name}_double").as_bytes())
                         .map_err(|e| e.to_string())?,
                     eval_complex: lib
-                        .get(format!("{}_complex", function_name).as_bytes())
+                        .get(format!("{function_name}_complex").as_bytes())
                         .map_err(|e| e.to_string())?,
                     get_buffer_len: lib
-                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                        .get(format!("{function_name}_get_buffer_len").as_bytes())
                         .map_err(|e| e.to_string())?,
                 })
             })?;
@@ -5155,8 +5102,7 @@ impl ExportedCode {
             .output()?;
 
         if !r.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!(
                     "Could not compile code: {}",
                     String::from_utf8_lossy(&r.stderr)
@@ -5230,12 +5176,11 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             }
 
             let ret = self.export_cpp_impl(&body.tree[0], arg_names);
-            res += &format!("\treturn {};\n}}\n", ret);
+            res += &format!("\treturn {ret};\n}}\n");
         }
 
         res += &format!(
-            "\ntemplate<typename T>\nvoid {}(T* params, T* out) {{\n",
-            function_name
+            "\ntemplate<typename T>\nvoid {function_name}(T* params, T* out) {{\n"
         );
 
         for (i, s) in self.expressions.subexpressions.iter().enumerate() {
@@ -5249,12 +5194,10 @@ impl<T: NumericalFloatLike> EvalTree<T> {
         res += "\treturn;\n}\n";
 
         res += &format!(
-            "\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n",
-            function_name
+            "\nextern \"C\" {{\n\tvoid {function_name}_double(double* params, double* out) {{\n\t\t{function_name}(params, out);\n\t\treturn;\n\t}}\n}}\n"
         );
         res += &format!(
-            "\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n",
-            function_name
+            "\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{function_name}(params, out);\n\t\treturn;\n\t}}\n}}\n"
         );
 
         res
@@ -5263,10 +5206,10 @@ impl<T: NumericalFloatLike> EvalTree<T> {
     fn export_cpp_impl(&self, expr: &Expression<T>, args: &[Symbol]) -> String {
         match expr {
             Expression::Const(c) => {
-                format!("T({})", c)
+                format!("T({c})")
             }
             Expression::Parameter(p) => {
-                format!("params[{}]", p)
+                format!("params[{p}]")
             }
             Expression::Eval(id, e_args) => {
                 let mut r = format!("{}(params", self.functions[*id].0);
@@ -5349,7 +5292,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                 _ => unreachable!(),
             },
             Expression::SubExpression(id) => {
-                format!("Z{}_", id)
+                format!("Z{id}_")
             }
             Expression::ExternalFun(name, a) => {
                 let mut r = name.to_string();
@@ -5484,7 +5427,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let Some(fun) = fn_map.get(*self) else {
-                    return Err(format!("Undefined function {:#}", self));
+                    return Err(format!("Undefined function {self:#}"));
                 };
 
                 match fun {
@@ -5963,7 +5906,7 @@ mod test {
             .unwrap();
 
         assert_eq!(
-            format!("{}", r),
+            format!("{r}"),
             "6.00000000998400625211945786243908951675582851493871969158108"
         );
     }

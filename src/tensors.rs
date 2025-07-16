@@ -23,10 +23,10 @@ impl std::fmt::Display for TensorGraphNode<'_> {
         match self {
             TensorGraphNode::Mul => write!(f, "Mul"),
             TensorGraphNode::Add => write!(f, "Add"),
-            TensorGraphNode::Fun(s) => write!(f, "Fun({})", s),
+            TensorGraphNode::Fun(s) => write!(f, "Fun({s})"),
             TensorGraphNode::Slot(d) => {
                 if let Some(d) = d {
-                    write!(f, "{}", d)
+                    write!(f, "{d}")
                 } else {
                     write!(f, "")
                 }

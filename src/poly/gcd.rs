@@ -2134,16 +2134,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
         'newfirstprime: loop {
             let Some(p) = primes.next() else {
-                panic!(
-                    "Ran out of primes for gcd reconstruction.\ngcd({},{})",
-                    self, b
-                );
+                panic!("Ran out of primes for gcd reconstruction.\ngcd({self},{b})");
             };
             let Some(p) = UField::try_from_integer(p.into()) else {
-                panic!(
-                    "Ran out of primes for gcd reconstruction.\ngcd({},{})",
-                    self, b
-                );
+                panic!("Ran out of primes for gcd reconstruction.\ngcd({self},{b})");
             };
 
             let mut finite_field = FiniteField::<UField>::new(p.clone());
@@ -2248,14 +2242,12 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 loop {
                     let Some(p) = primes.next() else {
                         panic!(
-                            "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
-                            self, b, gm, vars, bounds, tight_bounds
+                            "Ran out of primes for gcd images.\ngcd({self},{b})\nAttempt: {gm}\n vars: {vars:?}, bounds: {bounds:?}; {tight_bounds:?}"
                         );
                     };
                     let Some(p) = UField::try_from_integer(p.into()) else {
                         panic!(
-                            "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
-                            self, b, gm, vars, bounds, tight_bounds
+                            "Ran out of primes for gcd images.\ngcd({self},{b})\nAttempt: {gm}\n vars: {vars:?}, bounds: {bounds:?}; {tight_bounds:?}"
                         );
                     };
 
@@ -2502,10 +2494,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
                 debug!("Variable bounds failed due to bad prime");
 
                 let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
-                    panic!(
-                        "Ran out of primes for gcd var bound detection.\ngcd({},{})",
-                        a, b
-                    );
+                    panic!("Ran out of primes for gcd var bound detection.\ngcd({a},{b})");
                 };
 
                 f = Zp::new(p);
@@ -2712,10 +2701,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
 
         'newfirstprime: loop {
             let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
-                panic!(
-                    "Ran out of primes for gcd reconstruction.\ngcd({},{})",
-                    a, b
-                );
+                panic!("Ran out of primes for gcd reconstruction.\ngcd({a},{b})");
             };
 
             let mut finite_field = Zp::new(p);
@@ -2818,8 +2804,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
                 loop {
                     let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
                         panic!(
-                            "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
-                            a, b, gm, vars, bounds, tight_bounds
+                            "Ran out of primes for gcd images.\ngcd({a},{b})\nAttempt: {gm}\n vars: {vars:?}, bounds: {bounds:?}; {tight_bounds:?}"
                         );
                     };
 
@@ -3028,10 +3013,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
                 debug!("Variable bounds failed due to bad prime");
 
                 let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
-                    panic!(
-                        "Ran out of primes for gcd var bound detection.\ngcd({},{})",
-                        a, b
-                    );
+                    panic!("Ran out of primes for gcd var bound detection.\ngcd({a},{b})");
                 };
 
                 f = Zp::new(p);

@@ -57,7 +57,7 @@ fn main() {
 
     let mut evaluator = o_f64.evaluator();
 
-    println!("Final number of operations={}", op_count);
+    println!("Final number of operations={op_count}");
     println!(
         "Evaluation = {}",
         evaluator

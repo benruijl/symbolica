@@ -554,16 +554,14 @@ mod test {
 
     #[test]
     fn expand_in_var() {
-        let exp = parse!("(1+v1)^2+(1+v2)^100")
-            .expand_in_symbol(symbol!("v1"));
+        let exp = parse!("(1+v1)^2+(1+v2)^100").expand_in_symbol(symbol!("v1"));
         let res = parse!("1+2*v1+v1^2+(v2+1)^100");
         assert_eq!(exp, res);
     }
 
     #[test]
     fn expand_with_poly() {
-        let exp = parse!("(1+v1)^2+(1+v2)^100")
-            .expand_in_symbol(symbol!("v1"));
+        let exp = parse!("(1+v1)^2+(1+v2)^100").expand_in_symbol(symbol!("v1"));
         let res = parse!("1+2*v1+v1^2+(v2+1)^100");
         assert_eq!(exp, res);
     }

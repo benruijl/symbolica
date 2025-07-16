@@ -163,7 +163,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
                 return a;
             }
         }
-        panic!("Unknown polynomial associated with exponent map {:?}", lcm);
+        panic!("Unknown polynomial associated with exponent map {lcm:?}");
     }
 
     /// The F4 algorithm for computing a Groebner basis.
@@ -765,7 +765,7 @@ impl Echelonize for Zp {
             }
 
             // do not reduce pivots
-            if pivots.iter().any(|c| *c == Some(r)) {
+            if pivots.contains(&Some(r)) {
                 continue;
             }
 

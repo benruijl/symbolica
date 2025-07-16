@@ -41,7 +41,6 @@ impl std::ops::Neg for AtomView<'_> {
 /// This generates implementations for:
 /// - Binary operations (+, -, *, /)
 /// - Assignment operations (+=, -=, *=, /=)
-
 macro_rules! impl_atom_arithmetic {
     () => {
         // Binary operations (+, -, *, /)

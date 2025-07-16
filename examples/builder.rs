@@ -7,5 +7,5 @@ fn main() {
 
     let xb = (-(y + x + 2) * y * 6).npow(5) / y * f / 4;
 
-    println!("{}", xb);
+    println!("{xb}");
 }

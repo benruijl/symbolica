@@ -9,5 +9,5 @@ fn main() {
 
     let out = a.series(x, Atom::num(0), 4.into(), true).unwrap();
 
-    println!("{}", out);
+    println!("{out}");
 }

@@ -302,8 +302,7 @@ impl Token {
             Ok(())
         } else {
             Err(format!(
-                "operator expected, but found '{}'. Are parentheses unbalanced?",
-                self
+                "operator expected, but found '{self}'. Are parentheses unbalanced?"
             ))
         }
     }
@@ -317,16 +316,14 @@ impl Token {
             Token::Op(_, _, Operator::Mul, args) => {
                 if distribute_neg {
                     args[0].distribute_neg(distribute_neg);
-                } else {
-                    if let Token::Number(n, _) = &mut args[0] {
-                        if n.starts_with('-') {
-                            n.remove(0);
-                        } else {
-                            n.insert(0, '-');
-                        }
+                } else if let Token::Number(n, _) = &mut args[0] {
+                    if n.starts_with('-') {
+                        n.remove(0);
                     } else {
-                        args.push(Token::Number("-1".into(), false));
+                        n.insert(0, '-');
                     }
+                } else {
+                    args.push(Token::Number("-1".into(), false));
                 }
             }
             Token::Op(_, _, Operator::Add, args) => {
@@ -393,11 +390,10 @@ impl Token {
 
             Ok(())
         } else if let Token::Number(n, _) = other {
-            Err(format!("operator expected between '{}' and '{}'", self, n))
+            Err(format!("operator expected between '{self}' and '{n}'"))
         } else {
             Err(format!(
-                "operator expected, but found '{}'. Are parentheses unbalanced?",
-                self
+                "operator expected, but found '{self}'. Are parentheses unbalanced?"
             ))
         }
     }
@@ -443,12 +439,12 @@ impl Token {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
                         if *is_imag {
-                            out.to_num(Complex::new(f.zero(), f.into()).into());
+                            out.to_num(Complex::new(f.zero(), f).into());
                         } else {
                             out.to_num(Coefficient::Float(f.into()));
                         }
                     }
-                    Err(e) => Err(format!("Error parsing number: {}", e))?,
+                    Err(e) => Err(format!("Error parsing number: {e}"))?,
                 },
             },
             Token::ID(x) => {
@@ -525,10 +521,9 @@ impl Token {
                 }
             }
             Token::RationalPolynomial(_) => Err(format!(
-                "Optimized rational polynomial input cannot be parsed yet as atom: {}",
-                self
+                "Optimized rational polynomial input cannot be parsed yet as atom: {self}"
             ))?,
-            x => return Err(format!("Unexpected token {}", x)),
+            x => return Err(format!("Unexpected token {x}")),
         }
 
         Ok(())
@@ -555,23 +550,23 @@ impl Token {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
                         if *is_imag {
-                            out.to_num(Complex::new(f.zero(), f.into()).into());
+                            out.to_num(Complex::new(f.zero(), f).into());
                         } else {
                             out.to_num(Coefficient::Float(f.into()));
                         }
                     }
-                    Err(e) => Err(format!("Error parsing number: {}", e))?,
+                    Err(e) => Err(format!("Error parsing number: {e}"))?,
                 },
             },
             Token::ID(name) => {
                 let index = var_name_map
                     .iter()
                     .position(|x| x == name)
-                    .ok_or_else(|| format!("Undefined variable {}", name))?;
+                    .ok_or_else(|| format!("Undefined variable {name}"))?;
                 if let Variable::Symbol(id) = var_map[index] {
                     out.to_var(id);
                 } else {
-                    Err(format!("Undefined variable {}", name))?;
+                    Err(format!("Undefined variable {name}"))?;
                 }
             }
             Token::Op(_, _, op, args) => match op {
@@ -677,7 +672,7 @@ impl Token {
                 let index = var_name_map
                     .iter()
                     .position(|x| x == name)
-                    .ok_or_else(|| format!("Undefined variable {}", name))?;
+                    .ok_or_else(|| format!("Undefined variable {name}"))?;
                 if let Variable::Symbol(id) = var_map[index] {
                     let mut fun_h = workspace.new_atom();
                     let fun = fun_h.to_fun(id);
@@ -694,10 +689,10 @@ impl Token {
 
                     fun_h.as_view().normalize(workspace, out);
                 } else {
-                    Err(format!("Undefined variable {}", name))?;
+                    Err(format!("Undefined variable {name}"))?;
                 }
             }
-            x => return Err(format!("Unexpected token {}", x)),
+            x => return Err(format!("Unexpected token {x}")),
         }
 
         Ok(())
@@ -741,8 +736,7 @@ impl Token {
                         // check for some symbols that could be the result of copy-paste errors
                         // when importing from other languages
                         Err(format!(
-                            "Unexpected '{}' in input at line {} and column {}",
-                            c, line_counter, column_counter
+                            "Unexpected '{c}' in input at line {line_counter} and column {column_counter}"
                         ))?;
                     }
                 }
@@ -833,8 +827,7 @@ impl Token {
 
                     if c == '\0' {
                         Err(format!(
-                            "Missing ] of bracket started at line {} and column {}",
-                            line_counter, column_counter
+                            "Missing ] of bracket started at line {line_counter} and column {column_counter}"
                         ))?;
                     }
 
@@ -964,8 +957,7 @@ impl Token {
                             id_buffer.push(c);
                         } else {
                             Err(format!(
-                                "Unexpected '{}' in input at line {} and column {}",
-                                c, line_counter, column_counter
+                                "Unexpected '{c}' in input at line {line_counter} and column {column_counter}"
                             ))?;
                         }
                     }
@@ -981,8 +973,7 @@ impl Token {
                     match unsafe { stack.get_unchecked(stack.len() - 1) } {
                         Token::Op(true, _, op, _) => {
                             Err(format!(
-                                "Error at line {} and position {}: operator '{}' is missing left-hand side",
-                                line_counter, column_counter, op,
+                                "Error at line {line_counter} and position {column_counter}: operator '{op}' is missing left-hand side",
                             ))?;
                         }
 
@@ -1037,19 +1028,15 @@ impl Token {
                 match first.get_precedence().cmp(&last.get_precedence()) {
                     std::cmp::Ordering::Greater => {
                         first.add_right(middle, distribute_neg).map_err(|e| {
-                            format!(
-                                "Error at line {} and position {}: ",
-                                line_counter, column_counter
-                            ) + e.as_str()
+                            format!("Error at line {line_counter} and position {column_counter}: ")
+                                + e.as_str()
                         })?;
                         stack.push(last);
                     }
                     std::cmp::Ordering::Less => {
                         last.add_left(middle).map_err(|e| {
-                            format!(
-                                "Error at line {} and position {}: ",
-                                line_counter, column_counter
-                            ) + e.as_str()
+                            format!("Error at line {line_counter} and position {column_counter}: ")
+                                + e.as_str()
                         })?;
 
                         stack.push(last);
@@ -1155,8 +1142,7 @@ impl Token {
         } else {
             match stack.get(stack.len() - 2) {
                 Some(Token::Op(false, true, op, _)) => Err(format!(
-                    "Unexpected end of input: missing right-hand side for operator '{}'",
-                    op
+                    "Unexpected end of input: missing right-hand side for operator '{op}'"
                 )),
                 Some(Token::OpenParenthesis) => {
                     Err("Unexpected end of input: open parenthesis is not closed".to_string())
@@ -1167,7 +1153,7 @@ impl Token {
                     args[0]
                 )),
                 Some(Token::Start) => Err("Expression is empty".to_string()),
-                _ => Err(format!("Unknown parsing error: {:?}", stack)),
+                _ => Err(format!("Unknown parsing error: {stack:?}")),
             }
         }
     }

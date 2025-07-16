@@ -16,9 +16,9 @@ fn factor_ff_univariate() {
 
     let factors = poly.square_free_factorization();
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, pow) in factors {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -35,9 +35,9 @@ fn factor_ff_bivariate() {
     let field = Zp::new(17);
     let poly: MultivariatePolynomial<Zp, u8> = exp.to_polynomial(&field, Some(order));
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, pow) in poly.factor() {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -49,51 +49,48 @@ fn factor_ff_square_free() {
 
     let factors = poly.square_free_factorization();
 
-    println!("Square-free factorization of {}:", poly);
+    println!("Square-free factorization of {poly}:");
     for (f, pow) in factors {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
 fn factor_square_free() {
-    let exp = parse!("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)")
-        .expand();
+    let exp = parse!("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)").expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, None);
 
     let factors = poly.square_free_factorization();
 
-    println!("Square-free factorization of {}:", poly);
+    println!("Square-free factorization of {poly}:");
     for (f, pow) in factors {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
 fn factor_univariate_1() {
-    let exp = parse!("2*(4 + 3*x)*(3 + 2*x + 3*x^2)*(3 + 8*x^2)*(4 + x + x^16)")
-        .expand();
+    let exp = parse!("2*(4 + 3*x)*(3 + 2*x + 3*x^2)*(3 + 8*x^2)*(4 + x + x^16)").expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, None);
 
     let fs = poly.factor();
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, _p) in fs {
-        println!("\t {}", f);
+        println!("\t {f}");
     }
 }
 
 fn factor_univariate_2() {
-    let exp = parse!("(x+1)(x+2)(x+3)^3(x+4)(x+5)(x^2+6)(x^3+7)(x+8)^2(x^4+9)(x^5+x+10)")
-        .expand();
+    let exp = parse!("(x+1)(x+2)(x+3)^3(x+4)(x+5)(x^2+6)(x^3+7)(x+8)^2(x^4+9)(x^5+x+10)").expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, None);
 
     let fs = poly.factor();
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, p) in fs {
-        println!("\t {} {}", f, p);
+        println!("\t {f} {p}");
     }
 }
 
@@ -109,9 +106,9 @@ fn factor_bivariate() {
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, pow) in poly.factor() {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -129,9 +126,9 @@ fn factor_multivariate() {
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, p) in poly.factor() {
-        println!("\t({})^{}", f, p);
+        println!("\t({f})^{p}");
     }
 }
 

@@ -9,9 +9,9 @@ fn main() {
 
     let pattern = pat_expr.to_pattern();
 
-    println!("> Replace once {}={} in {}:", pat_expr, rhs_expr, expr);
+    println!("> Replace once {pat_expr}={rhs_expr} in {expr}:");
 
     for x in expr.replace(pattern).iter(rhs) {
-        println!("\t{}", x);
+        println!("\t{x}");
     }
 }

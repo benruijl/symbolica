@@ -136,7 +136,7 @@ pub enum IntegerRelationError {
     CoefficientLimit,
 }
 
-macro_rules! from_with_cast {
+macro_rules! from_with_i64_cast {
     ($base: ty) => {
         impl From<$base> for Integer {
             #[inline]
@@ -187,14 +187,13 @@ macro_rules! from_with_cast {
     };
 }
 
-from_with_cast!(i8);
-from_with_cast!(i16);
-from_with_cast!(i32);
-from_with_cast!(i64);
-from_with_cast!(u8);
-from_with_cast!(u16);
-from_with_cast!(u32);
-from_with_cast!(usize);
+from_with_i64_cast!(i8);
+from_with_i64_cast!(i16);
+from_with_i64_cast!(i32);
+from_with_i64_cast!(i64);
+from_with_i64_cast!(u8);
+from_with_i64_cast!(u16);
+from_with_i64_cast!(u32);
 
 macro_rules! cmp_with_conv {
     ($base: ty) => {
@@ -235,6 +234,21 @@ impl From<i128> for Integer {
     }
 }
 
+impl From<isize> for Integer {
+    #[inline]
+    fn from(value: isize) -> Self {
+        if usize::BITS == 32 {
+            Integer::Natural(value as i64)
+        } else if usize::BITS == 64 {
+            Integer::Natural(value as i64)
+        } else if usize::BITS == 128 {
+            Integer::from(value as i128)
+        } else {
+            Integer::from(MultiPrecisionInteger::from(value))
+        }
+    }
+}
+
 impl From<u64> for Integer {
     #[inline]
     fn from(value: u64) -> Self {
@@ -257,6 +271,21 @@ impl From<u128> for Integer {
     }
 }
 
+impl From<usize> for Integer {
+    #[inline]
+    fn from(value: usize) -> Self {
+        if usize::BITS == 32 {
+            Integer::Natural(value as i64)
+        } else if usize::BITS == 64 {
+            Integer::from(value as u64)
+        } else if usize::BITS == 128 {
+            Integer::from(value as u128)
+        } else {
+            Integer::from(MultiPrecisionInteger::from(value))
+        }
+    }
+}
+
 impl From<MultiPrecisionInteger> for Integer {
     /// Convert from a multi-precision integer to an Integer, potentially
     /// downcasting the number.
@@ -272,9 +301,11 @@ impl From<MultiPrecisionInteger> for Integer {
     }
 }
 
+cmp_with_conv!(i128);
+cmp_with_conv!(isize);
 cmp_with_conv!(u64);
 cmp_with_conv!(u128);
-cmp_with_conv!(i128);
+cmp_with_conv!(usize);
 
 impl FromStr for Integer {
     type Err = &'static str;

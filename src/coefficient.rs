@@ -73,29 +73,38 @@ impl Coefficient {
     }
 }
 
-impl From<i64> for Coefficient {
-    fn from(value: i64) -> Self {
-        Coefficient::Complex(Rational::from(value).into())
-    }
+macro_rules! from_via_rational {
+    ($type:ty) => {
+        impl From<$type> for Coefficient {
+            fn from(value: $type) -> Self {
+                Coefficient::Complex(Rational::from(value).into())
+            }
+        }
+
+        impl From<&$type> for Coefficient {
+            fn from(value: &$type) -> Self {
+                Coefficient::Complex(Rational::from(*value).into())
+            }
+        }
+    };
 }
 
-impl From<&i64> for Coefficient {
-    fn from(value: &i64) -> Self {
-        Coefficient::Complex(Rational::from(*value).into())
-    }
-}
-
-impl From<i32> for Coefficient {
-    fn from(value: i32) -> Self {
-        Coefficient::Complex(Rational::from(value).into())
-    }
-}
-
-impl From<&i32> for Coefficient {
-    fn from(value: &i32) -> Self {
-        Coefficient::Complex(Rational::from(*value).into())
-    }
-}
+from_via_rational!(i32);
+from_via_rational!(i64);
+from_via_rational!(i128);
+from_via_rational!(isize);
+from_via_rational!(u32);
+from_via_rational!(u64);
+from_via_rational!(u128);
+from_via_rational!(usize);
+from_via_rational!((i32, i32));
+from_via_rational!((i64, i64));
+from_via_rational!((i128, i128));
+from_via_rational!((isize, isize));
+from_via_rational!((u32, u32));
+from_via_rational!((u64, u64));
+from_via_rational!((u128, u128));
+from_via_rational!((usize, usize));
 
 impl From<f64> for Coefficient {
     fn from(value: f64) -> Self {
@@ -106,20 +115,6 @@ impl From<f64> for Coefficient {
 impl From<&f64> for Coefficient {
     fn from(value: &f64) -> Self {
         Coefficient::Float(Float::with_val(53, value).into())
-    }
-}
-
-impl From<(i64, i64)> for Coefficient {
-    #[inline]
-    fn from(r: (i64, i64)) -> Self {
-        Coefficient::Complex(Rational::from(r).into())
-    }
-}
-
-impl From<&(i64, i64)> for Coefficient {
-    #[inline]
-    fn from(r: &(i64, i64)) -> Self {
-        Coefficient::Complex(Rational::from(*r).into())
     }
 }
 
@@ -166,12 +161,6 @@ impl From<Rational> for Coefficient {
         Coefficient::Complex(value.into())
     }
 }
-
-/*impl From<ComplexCoefficient> for Coefficient {
-    fn from(value: ComplexCoefficient) -> Self {
-        Coefficient::Complex(value)
-    }
-}*/
 
 impl From<Float> for Coefficient {
     fn from(value: Float) -> Self {

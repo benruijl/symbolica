@@ -285,7 +285,7 @@ impl AtomView<'_> {
 
         let sol = match m.solve(&b) {
             Ok(sol) => sol,
-            Err(e) => Err(format!("Could not solve {:?}", e))?,
+            Err(e) => Err(format!("Could not solve {e:?}"))?,
         };
 
         // replace the temporary variables

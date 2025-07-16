@@ -56,7 +56,7 @@ fn main() {
 
     let mut e_f64 = evaluator.map_coeff(&|x| x.to_real().unwrap().into());
     let r = e_f64.evaluate_single(&[5.]);
-    println!("{}", r);
+    println!("{r}");
 
     let mut compiled = e_f64
         .export_cpp(

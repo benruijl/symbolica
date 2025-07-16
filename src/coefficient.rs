@@ -799,19 +799,17 @@ impl ConvertToRing for AlgebraicExtension<Q> {
             Coefficient::Complex(r) => {
                 if r.is_real() {
                     self.constant(r.re.clone())
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().get_constant() == Rational::one()
+                {
+                    self.to_element(
+                        self.poly().monomial(r.im.clone(), vec![1])
+                            + self.poly().constant(r.re.clone()),
+                    )
                 } else {
-                    if &self.poly().exponents == &[0, 2]
-                        && self.poly().get_constant() == Rational::one()
-                    {
-                        self.to_element(
-                            self.poly().monomial(r.im.clone(), vec![1])
-                                + self.poly().constant(r.re.clone()),
-                        )
-                    } else {
-                        panic!(
-                            "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
-                        )
-                    }
+                    panic!(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                    )
                 }
             }
             Coefficient::Float(_) => panic!("Cannot convert float to rational"),
@@ -829,38 +827,34 @@ impl ConvertToRing for AlgebraicExtension<Q> {
             CoefficientView::Natural(r, d, cr, cd) => {
                 if cr == 0 {
                     self.constant(Rational::from_unchecked(r, d))
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().get_constant() == Rational::one()
+                {
+                    self.to_element(
+                        self.poly()
+                            .monomial(Rational::from_unchecked(cr, cd), vec![1])
+                            + self.poly().constant(Rational::from_unchecked(r, d)),
+                    )
                 } else {
-                    if &self.poly().exponents == &[0, 2]
-                        && self.poly().get_constant() == Rational::one()
-                    {
-                        self.to_element(
-                            self.poly()
-                                .monomial(Rational::from_unchecked(cr, cd), vec![1])
-                                + self.poly().constant(Rational::from_unchecked(r, d)),
-                        )
-                    } else {
-                        panic!(
-                            "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
-                        )
-                    }
+                    panic!(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                    )
                 }
             }
             CoefficientView::Large(r, i) => {
                 if i.is_zero() {
                     self.constant(r.to_rat())
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().get_constant() == Rational::one()
+                {
+                    self.to_element(
+                        self.poly().monomial(i.to_rat(), vec![1])
+                            + self.poly().constant(r.to_rat()),
+                    )
                 } else {
-                    if &self.poly().exponents == &[0, 2]
-                        && self.poly().get_constant() == Rational::one()
-                    {
-                        self.to_element(
-                            self.poly().monomial(i.to_rat(), vec![1])
-                                + self.poly().constant(r.to_rat()),
-                        )
-                    } else {
-                        panic!(
-                            "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
-                        )
-                    }
+                    panic!(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                    )
                 }
             }
             CoefficientView::Float(_, _) => {
@@ -941,14 +935,14 @@ impl CoefficientView<'_> {
                         } else {
                             Complex::new(Rational::zero(), base_integer_pow)
                         },
-                        base.abs().into(),
-                        Rational::from_unchecked(rest, exp.denominator()).into(),
+                        base.abs(),
+                        Rational::from_unchecked(rest, exp.denominator()),
                     )
                 } else {
                     (
                         base_integer_pow.into(),
-                        base.into(),
-                        Rational::from_unchecked(rest, exp.denominator()).into(),
+                        base,
+                        Rational::from_unchecked(rest, exp.denominator()),
                     )
                 }
             } else {
@@ -960,8 +954,8 @@ impl CoefficientView<'_> {
                 base = base.pow(exp.numerator().to_i64().unwrap().unsigned_abs());
                 (
                     Rational::one().into(),
-                    base.into(),
-                    Rational::from_unchecked(Integer::one(), exp.denominator()).into(),
+                    base,
+                    Rational::from_unchecked(Integer::one(), exp.denominator()),
                 )
             }
         }
@@ -1020,7 +1014,7 @@ impl CoefficientView<'_> {
             }
             (&CoefficientView::RationalPolynomial(r), &CoefficientView::Natural(n2, d2, _, _)) => {
                 if n2.unsigned_abs() > u32::MAX as u64 {
-                    panic!("Power is too large: {}", n2);
+                    panic!("Power is too large: {n2}");
                 }
 
                 if n2 < 0 {
@@ -2012,10 +2006,10 @@ impl AtomView<'_> {
                     )),
                     CoefficientView::Natural(n, d, ni, di) => {
                         let r = Rational::from_unchecked(n, d);
-                        let real = r.round(relative_error).into();
+                        let real = r.round(relative_error);
 
                         let r = Rational::from_unchecked(ni, di);
-                        let imag = r.round(relative_error).into();
+                        let imag = r.round(relative_error);
 
                         Coefficient::Complex(Complex::new(real, imag))
                     }

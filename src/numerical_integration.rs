@@ -298,14 +298,14 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
 
         // special cases
         if v.is_nan() || dv.is_nan() {
-            format!("{:e} ± {:e}", v, dv)
+            format!("{v:e} ± {dv:e}")
         } else if dv.is_infinite() {
-            format!("{:e} ± inf", v)
+            format!("{v:e} ± inf")
         } else if v == 0. && !(1e-4..1e5).contains(&dv) {
             if dv == 0. {
                 "0(0)".to_owned()
             } else {
-                let e = format!("{:.1e}", dv);
+                let e = format!("{dv:.1e}");
                 let mut ans = e.split('e');
                 let e1 = ans.next().unwrap();
                 let e2 = ans.next().unwrap();
@@ -313,9 +313,9 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
             }
         } else if v == 0. {
             if dv >= 9.95 {
-                format!("0({:.0})", dv)
+                format!("0({dv:.0})")
             } else if dv >= 0.995 {
-                format!("0.0({:.1})", dv)
+                format!("0.0({dv:.1})")
             } else {
                 let ndecimal = ndec(dv, 2);
                 format!(
@@ -326,7 +326,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
                 )
             }
         } else if dv == 0. {
-            let e = format!("{:e}", v);
+            let e = format!("{v:e}");
             let mut ans = e.split('e');
             let e1 = ans.next().unwrap();
             let e2 = ans.next().unwrap();
@@ -336,27 +336,27 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
                 e1.to_owned() + "(0)"
             }
         } else if dv > 1e4 * v.abs() {
-            format!("{:.1e} ± {:.2e}", v, dv)
+            format!("{v:.1e} ± {dv:.2e}")
         } else if v.abs() >= 1e6 || v.abs() < 1e-5 {
             // exponential notation for large |self.mean|
             let exponent = v.abs().log10().floor();
             let fac = 10.0.powf(&exponent);
             let mantissa = Self::format_uncertainty_impl(v / fac, dv / fac);
-            let e = format!("{:.0e}", fac);
+            let e = format!("{fac:.0e}");
             let mut ee = e.split('e');
             mantissa + "e" + ee.nth(1).unwrap()
         }
         // normal cases
         else if dv >= 9.95 {
             if v.abs() >= 9.5 {
-                format!("{:.0}({:.0})", v, dv)
+                format!("{v:.0}({dv:.0})")
             } else {
                 let ndecimal = ndec(v.abs(), 1);
                 format!("{:.*}({:.*})", ndecimal as usize, v, ndecimal as usize, dv)
             }
         } else if dv >= 0.995 {
             if v.abs() >= 0.95 {
-                format!("{:.1}({:.1})", v, dv)
+                format!("{v:.1}({dv:.1})")
             } else {
                 let ndecimal = ndec(v.abs(), 1);
                 format!("{:.*}({:.*})", ndecimal as usize, v, ndecimal as usize, dv)
@@ -735,8 +735,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Discrete
     pub fn add_training_sample(&mut self, sample: &Sample<T>, eval: T) -> Result<(), String> {
         if !eval.is_finite() {
             return Err(format!(
-                "Added training sample that is not finite: sample={:?}, fx={}",
-                sample, eval
+                "Added training sample that is not finite: sample={sample:?}, fx={eval}"
             ));
         }
 
@@ -757,7 +756,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Discrete
 
             Ok(())
         } else {
-            Err(format!("Discrete sample expected: {:?}", sample))
+            Err(format!("Discrete sample expected: {sample:?}"))
         }
     }
 
@@ -860,8 +859,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
     pub fn add_training_sample(&mut self, sample: &Sample<T>, eval: T) -> Result<(), String> {
         if !eval.is_finite() {
             return Err(format!(
-                "Added training sample that is not finite: sample={:?}, fx={}",
-                sample, eval
+                "Added training sample that is not finite: sample={sample:?}, fx={eval}"
             ));
         }
 
@@ -1002,8 +1000,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
             || !weight.is_finite()
         {
             return Err(format!(
-                "Malformed sample point: sample={}, weight={}, fx={}",
-                sample, weight, eval
+                "Malformed sample point: sample={sample}, weight={weight}, fx={eval}"
             ));
         }
 

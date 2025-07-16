@@ -210,7 +210,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
                 for (d, p) in &self.denominators {
                     f.write_char(',')?;
                     d.format(opts, PrintState::new(), f)?;
-                    f.write_fmt(format_args!(",{}", p))?;
+                    f.write_fmt(format_args!(",{p}"))?;
                 }
 
                 f.write_char(']')?;
@@ -306,7 +306,7 @@ impl<R: Ring, E: PositiveExponent> SelfRing for FactorizedRationalPolynomial<R, 
                 d.format(opts, state.step(false, true, false, *p != 1), f)?;
 
                 if *p != 1 {
-                    f.write_fmt(format_args!("^{}", p))?;
+                    f.write_fmt(format_args!("^{p}"))?;
                 }
             }
 
@@ -658,7 +658,7 @@ where
 {
     pub fn pow(&self, e: u64) -> Self {
         if e > u32::MAX as u64 {
-            panic!("Power of exponentiation is larger than 2^32: {}", e);
+            panic!("Power of exponentiation is larger than 2^32: {e}");
         }
         let e = e as u32;
 
@@ -820,7 +820,7 @@ where
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         if e > u32::MAX as u64 {
-            panic!("Power of exponentiation is larger than 2^32: {}", e);
+            panic!("Power of exponentiation is larger than 2^32: {e}");
         }
         let e = e as u32;
 

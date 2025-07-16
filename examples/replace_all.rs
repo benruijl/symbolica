@@ -6,5 +6,5 @@ fn main() {
     let rhs = parse!("f(1,2,y_+1)");
 
     let out = expr.replace(pat).with(rhs);
-    println!("{}", out);
+    println!("{out}");
 }

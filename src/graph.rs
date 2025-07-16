@@ -201,9 +201,9 @@ impl<N: Display, E: Display> Graph<N, E> {
         for (i, x) in self.nodes.iter().enumerate() {
             let d = format!("{}", x.data);
             if d.is_empty() {
-                out.push_str(&format!("  {};\n", i));
+                out.push_str(&format!("  {i};\n"));
             } else {
-                out.push_str(&format!("  {}[\"{}\"];\n", i, d));
+                out.push_str(&format!("  {i}[\"{d}\"];\n"));
             }
         }
 
@@ -1957,7 +1957,7 @@ mod test {
 
             if let Some(gg) = &gc {
                 if &c.graph != gg {
-                    panic!("Inequivalent isomorph with permutation {:?}", p);
+                    panic!("Inequivalent isomorph with permutation {p:?}");
                 }
             } else {
                 gc = Some(c.graph);

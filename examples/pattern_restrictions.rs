@@ -44,28 +44,27 @@ fn main() {
     let settings = MatchSettings::default();
 
     println!(
-        "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
-        pat_expr, expr
+        "> Matching pattern {pat_expr} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {expr}:"
     );
 
     let mut it = expr.pattern_match(&pattern, Some(&conditions), Some(&settings));
     while let Some(m) = it.next_detailed() {
         println!("\tMatch at location {:?} - {:?}:", m.position, m.used_flags);
         for (id, v) in m.match_stack {
-            print!("\t\t{} = ", id);
+            print!("\t\t{id} = ");
             match v {
                 Match::Single(s) => {
-                    print!("{}", s)
+                    print!("{s}")
                 }
                 Match::Multiple(slice_type, mm) => {
-                    print!("{:?} ", slice_type);
+                    print!("{slice_type:?} ");
                     for vv in mm {
-                        print!("{}", vv);
+                        print!("{vv}");
                         print!(", ")
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", f)
+                    print!("Fn {f}")
                 }
             }
             println!();

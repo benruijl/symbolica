@@ -121,7 +121,7 @@ impl<'a> AtomView<'a> {
             for (p, v) in t.exponents.iter().zip(xs) {
                 let mut pow = Atom::new();
                 pow.to_pow(v.as_atom_view(), Atom::num(p.to_i32() as i64).as_view());
-                key = key * pow;
+                key *= pow;
             }
 
             coeffs.push((key, t.coefficient.clone()));

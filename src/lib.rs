@@ -174,7 +174,7 @@ impl LicenseManager {
             }
             Err(e) => {
                 if !e.contains("missing") {
-                    eprintln!("{}", e);
+                    eprintln!("{e}");
                 }
             }
         }
@@ -207,7 +207,7 @@ impl LicenseManager {
 
         let port = env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
 
-        match TcpListener::bind(format!("127.0.0.1:{}", port)) {
+        match TcpListener::bind(format!("127.0.0.1:{port}")) {
             Ok(o) => {
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(1)
@@ -222,16 +222,16 @@ impl LicenseManager {
                             env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
 
                         if port != new_port {
-                            println!("{}", MULTIPLE_INSTANCE_WARNING);
+                            println!("{MULTIPLE_INSTANCE_WARNING}");
                             abort();
                         }
 
-                        match TcpListener::bind(format!("127.0.0.1:{}", port)) {
+                        match TcpListener::bind(format!("127.0.0.1:{port}")) {
                             Ok(_) => {
                                 std::thread::sleep(Duration::from_secs(1));
                             }
                             Err(_) => {
-                                println!("{}", MULTIPLE_INSTANCE_WARNING);
+                                println!("{MULTIPLE_INSTANCE_WARNING}");
                                 abort();
                             }
                         }
@@ -247,7 +247,7 @@ impl LicenseManager {
                 }
             }
             Err(_) => {
-                println!("{}", MULTIPLE_INSTANCE_WARNING);
+                println!("{MULTIPLE_INSTANCE_WARNING}");
                 abort();
             }
         }
@@ -295,7 +295,7 @@ impl LicenseManager {
                 h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }
 
-            let h = format!("{:x}", h);
+            let h = format!("{h:x}");
             if f1 != h {
                 Err(ACTIVATION_ERROR.to_owned())?;
             }
@@ -320,7 +320,7 @@ impl LicenseManager {
             std::thread::spawn(|| {
                 if let Err(e) = Self::check_registration(key) {
                     if e.contains("expired") {
-                        println!("{}", e);
+                        println!("{e}");
                         abort();
                     }
                 }
@@ -336,7 +336,7 @@ impl LicenseManager {
     fn connect() -> Result<TcpStream, String> {
         let mut ip = ("symbolica.io", 12012)
             .to_socket_addrs()
-            .map_err(|e| format!("{}\nError: {}", RESOLVE_ERROR, e))?;
+            .map_err(|e| format!("{RESOLVE_ERROR}\nError: {e}"))?;
         let Some(n) = ip.next() else {
             return Err(RESOLVE_ERROR.to_owned());
         };
@@ -372,14 +372,14 @@ impl LicenseManager {
 
         stream
             .write_all(v.as_bytes())
-            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+            .map_err(|e| format!("{NETWORK_ERROR}\nError: {e}"))?;
 
         let mut buf = Vec::new();
         stream
             .read_to_end(&mut buf)
-            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+            .map_err(|e| format!("{NETWORK_ERROR}\nError: {e}"))?;
         let read_str =
-            std::str::from_utf8(&buf).map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+            std::str::from_utf8(&buf).map_err(|e| format!("{NETWORK_ERROR}\nError: {e}"))?;
 
         if read_str == "{\"status\":\"ok\"}\n" {
             Ok(())
@@ -391,21 +391,20 @@ impl LicenseManager {
         } else {
             let message: JsonValue = read_str[..read_str.len() - 1]
                 .parse()
-                .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+                .map_err(|e| format!("{NETWORK_ERROR}\nError: {e}"))?;
             let message_parsed: &HashMap<_, _> = message
                 .get()
-                .ok_or_else(|| format!("{}\nError: Empty response", NETWORK_ERROR))?;
+                .ok_or_else(|| format!("{NETWORK_ERROR}\nError: Empty response"))?;
             let status: &String = message_parsed
                 .get("status")
                 .unwrap()
                 .get()
-                .ok_or_else(|| format!("{}\nError: missing status", NETWORK_ERROR))?;
+                .ok_or_else(|| format!("{NETWORK_ERROR}\nError: missing status"))?;
             Err(format!(
                 "┌──────────────────────────────────────────┐
 │ Could not activate the Symbolica license │
 └──────────────────────────────────────────┘
-Error: {}",
-                status,
+Error: {status}",
             ))
         }
     }
@@ -430,7 +429,7 @@ Error: {}",
         let thread_id = std::thread::current().id();
 
         if manager.pid != pid || manager.thread_id != thread_id {
-            println!("{}", MULTIPLE_INSTANCE_WARNING);
+            println!("{MULTIPLE_INSTANCE_WARNING}");
             abort();
         }
     }
@@ -469,13 +468,13 @@ Error: {}",
             h = h.wrapping_mul(33).wrapping_add(*b);
         }
 
-        if key1 == format!("SYMBOLICA_OEM_KEY_{:x}", h) {
+        if key1 == format!("SYMBOLICA_OEM_KEY_{h:x}") {
             LICENSED.store(true, Relaxed);
 
             std::thread::spawn(|| {
                 if let Err(e) = Self::check_registration(oom_key.to_owned()) {
                     if e.contains("Unknown license") {
-                        println!("{}", e);
+                        println!("{e}");
                         abort();
                     }
                 }
@@ -504,12 +503,12 @@ Error: {}",
 
         stream
             .write_all(v.as_bytes())
-            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+            .map_err(|e| format!("{NETWORK_ERROR}\nError: {e}"))?;
 
         let mut buf = Vec::new();
         stream
             .read_to_end(&mut buf)
-            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+            .map_err(|e| format!("{NETWORK_ERROR}\nError: {e}"))?;
         let read_str = std::str::from_utf8(&buf).map_err(|_| "Bad server response".to_string())?;
 
         if read_str == "{\"status\":\"email sent\"}\n" {

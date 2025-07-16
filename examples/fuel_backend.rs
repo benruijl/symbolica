@@ -54,7 +54,7 @@ fn main() {
         buffer.clear();
         r.format(&print_opt, PrintState::new(), &mut buffer)
             .unwrap();
-        writeln!(stdout, "{}", buffer).unwrap();
+        writeln!(stdout, "{buffer}").unwrap();
 
         buffer.clear();
     }

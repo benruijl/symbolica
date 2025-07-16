@@ -81,8 +81,7 @@ impl NamespacedSymbol {
     pub fn parse(s: &str) -> NamespacedSymbol {
         let (namespace, _partial_symbol) = s.rsplit_once("::").unwrap_or_else(|| {
             panic!(
-                "Input {} does not contain a symbol in the format `namespace::symbol`.",
-                s
+                "Input {s} does not contain a symbol in the format `namespace::symbol`."
             )
         });
 
@@ -189,7 +188,7 @@ impl DefaultNamespace<'_> {
             s
         } else if State::BUILTIN_SYMBOL_NAMES.contains(&s) {
             NamespacedSymbol {
-                symbol: format!("symbolica::{}", s).into(),
+                symbol: format!("symbolica::{s}").into(),
                 namespace: "symbolica".into(),
                 file: "".into(),
                 line: 0,
@@ -671,7 +670,7 @@ impl Symbol {
                 _ => {
                     f.write_str(name)?;
                     if !opts.hide_all_namespaces {
-                        f.write_fmt(format_args!("_{{\\tiny \text{{{}}}}}", namespace))
+                        f.write_fmt(format_args!("_{{\\tiny \text{{{namespace}}}}}"))
                     } else {
                         Ok(())
                     }
@@ -686,7 +685,7 @@ impl Symbol {
                     f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
                     f.write_fmt(format_args!("{}", "::".dimmed()))?;
                 } else {
-                    f.write_fmt(format_args!("{}::", namespace))?;
+                    f.write_fmt(format_args!("{namespace}::"))?;
                 }
             }
 
@@ -2002,7 +2001,7 @@ mod test {
     fn debug() {
         let x = parse!("v1+f1(v2)");
         assert_eq!(
-            format!("{:?}", x),
+            format!("{x:?}"),
             "AddView { data: [5, 17, 2, 13, 2, 1, 11, 3, 5, 0, 0, 0, 1, 41, 2, 1, 12] }"
         );
         assert_eq!(
@@ -2033,10 +2032,10 @@ mod test {
         let _ = FunctionBuilder::new(symbol!("a"))
             .add_arg(1)
             .add_args(&[1, 2])
-            .add_arg(&symbol!("a"))
+            .add_arg(symbol!("a"))
             .add_args(&[symbol!("b")])
             .add_args(&[parse!("a")])
-            .add_arg(&parse!("a"))
+            .add_arg(parse!("a"))
             .add_arg(parse!("a"))
             .add_arg(parse!("a").as_view())
             .finish();

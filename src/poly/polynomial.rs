@@ -636,16 +636,15 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 
         for c in &self.coefficients {
             if self.ring.is_zero(c) {
-                panic!("Inconsistent polynomial (0 coefficient): {}", self);
+                panic!("Inconsistent polynomial (0 coefficient): {self}");
             }
         }
 
         for t in 1..self.nterms() {
             match O::cmp(self.exponents(t), self.exponents(t - 1)) {
-                Ordering::Equal => panic!("Inconsistent polynomial (equal monomials): {}", self),
+                Ordering::Equal => panic!("Inconsistent polynomial (equal monomials): {self}"),
                 Ordering::Less => panic!(
-                    "Inconsistent polynomial (wrong monomial ordering): {}",
-                    self
+                    "Inconsistent polynomial (wrong monomial ordering): {self}"
                 ),
                 Ordering::Greater => {}
             }
@@ -833,11 +832,11 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
 
                 if e.to_i32() != 1 {
                     if opts.mode.is_latex() {
-                        write!(f, "^{{{}}}", e)?;
+                        write!(f, "^{{{e}}}")?;
                     } else if opts.double_star_for_exponentiation {
-                        write!(f, "**{}", e)?;
+                        write!(f, "**{e}")?;
                     } else {
-                        write!(f, "^{}", e)?;
+                        write!(f, "^{e}")?;
                     }
                 }
             }
@@ -1209,7 +1208,7 @@ impl<'a, F: EuclideanDomain, E: PositiveExponent> Div<&'a MultivariatePolynomial
 
     fn div(self, other: &'a MultivariatePolynomial<F, E, LexOrder>) -> Self::Output {
         self.try_div(other)
-            .unwrap_or_else(|| panic!("No clean division of {} by {}", self, other))
+            .unwrap_or_else(|| panic!("No clean division of {self} by {other}"))
     }
 }
 
@@ -1894,7 +1893,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         for (i, v) in self.variables.iter().enumerate() {
             if !new_order.contains(&Some(i)) && self.contains(i) {
-                return Err(format!("Variable {} is not in the new order", v));
+                return Err(format!("Variable {v} is not in the new order"));
             }
         }
 
@@ -2277,7 +2276,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         #[cfg(debug_assertions)]
         {
             if !(&q * div + r.clone() - self.clone()).is_zero() {
-                panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
+                panic!("Division failed: ({self})/({div}): q={q}, r={r}");
             }
         }
 
@@ -3475,7 +3474,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         #[cfg(debug_assertions)]
         {
             if !(&q * div + r.clone() - self.clone()).is_zero() {
-                panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
+                panic!("Division failed: ({self})/({div}): q={q}, r={r}");
             }
         }
 
@@ -3735,7 +3734,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         #[cfg(debug_assertions)]
         {
             if !(&q * div + r.clone() - self.clone()).is_zero() {
-                panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
+                panic!("Division failed: ({self})/({div}): q={q}, r={r}");
             }
         }
 

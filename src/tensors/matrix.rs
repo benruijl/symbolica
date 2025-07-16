@@ -1253,11 +1253,10 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
                 rank,
                 row_reduced_augmented_matrix,
             } => {
-                writeln!(f, "The system is underdetermined with rank {}", rank)?;
+                writeln!(f, "The system is underdetermined with rank {rank}")?;
                 writeln!(
                     f,
-                    "\nRow reduced augmented matrix:\n{}",
-                    row_reduced_augmented_matrix
+                    "\nRow reduced augmented matrix:\n{row_reduced_augmented_matrix}"
                 )
             }
             MatrixError::Inconsistent => write!(f, "The system is inconsistent"),

@@ -187,7 +187,7 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for UnivariatePolynomial<F> {
             } else {
                 write!(f, ", ")?;
             }
-            write!(f, "{{ {:?} }}", c)?;
+            write!(f, "{{ {c:?} }}")?;
         }
         write!(f, " ]")
     }
@@ -685,9 +685,9 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
             }
 
             if e == 1 {
-                write!(f, "{}", v)?;
+                write!(f, "{v}")?;
             } else if e > 1 {
-                write!(f, "{}^{}", v, e)?;
+                write!(f, "{v}^{e}")?;
             }
 
             state.in_sum = true;
@@ -1473,7 +1473,7 @@ impl<'a, F: EuclideanDomain> Div<&'a UnivariatePolynomial<F>> for &UnivariatePol
 
     fn div(self, other: &'a UnivariatePolynomial<F>) -> Self::Output {
         self.try_div(other)
-            .unwrap_or_else(|| panic!("No exact division of {} by {}", self, other))
+            .unwrap_or_else(|| panic!("No exact division of {self} by {other}"))
     }
 }
 

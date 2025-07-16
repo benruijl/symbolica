@@ -7,7 +7,7 @@ use symbolica::{
 fn main() {
     let expr: Atom = parse!("f(z)*f(f(x),z)*f(y)");
 
-    println!("> Tree walk of {}:", expr);
+    println!("> Tree walk of {expr}:");
 
     for (loc, view) in AtomTreeIterator::new(
         expr.as_view(),
@@ -17,6 +17,6 @@ fn main() {
             ..Default::default()
         },
     ) {
-        println!("\tAtom at location {:?}: {}", loc, view);
+        println!("\tAtom at location {loc:?}: {view}");
     }
 }

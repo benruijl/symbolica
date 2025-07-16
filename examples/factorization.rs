@@ -16,9 +16,9 @@ fn factor_ff_univariate() {
 
     let factors = poly.square_free_factorization();
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, pow) in factors {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -35,9 +35,9 @@ fn factor_ff_bivariate() {
     let field = Zp::new(17);
     let poly: MultivariatePolynomial<Zp, u8> = exp.to_polynomial(&field, Some(order));
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, pow) in poly.factor() {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -49,9 +49,9 @@ fn factor_ff_square_free() {
 
     let factors = poly.square_free_factorization();
 
-    println!("Square-free factorization of {}:", poly);
+    println!("Square-free factorization of {poly}:");
     for (f, pow) in factors {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -63,9 +63,9 @@ fn factor_square_free() {
 
     let factors = poly.square_free_factorization();
 
-    println!("Square-free factorization of {}:", poly);
+    println!("Square-free factorization of {poly}:");
     for (f, pow) in factors {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -77,9 +77,9 @@ fn factor_univariate_1() {
 
     let fs = poly.factor();
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, _p) in fs {
-        println!("\t {}", f);
+        println!("\t {f}");
     }
 }
 
@@ -91,9 +91,9 @@ fn factor_univariate_2() {
 
     let fs = poly.factor();
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, p) in fs {
-        println!("\t {} {}", f, p);
+        println!("\t {f} {p}");
     }
 }
 
@@ -109,9 +109,9 @@ fn factor_bivariate() {
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, pow) in poly.factor() {
-        println!("\t({})^{}", f, pow);
+        println!("\t({f})^{pow}");
     }
 }
 
@@ -129,9 +129,9 @@ fn factor_multivariate() {
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
-    println!("Factorization of {}:", poly);
+    println!("Factorization of {poly}:");
     for (f, p) in poly.factor() {
-        println!("\t({})^{}", f, p);
+        println!("\t({f})^{p}");
     }
 }
 

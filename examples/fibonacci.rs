@@ -18,8 +18,7 @@ fn main() {
     let mut target = parse!("f(10)");
 
     println!(
-        "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
-        target,
+        "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {target}:",
     );
 
     for _ in 0..9 {
@@ -33,7 +32,7 @@ fn main() {
             .replace(&lhs_one_pat)
             .with(&rhs_one);
 
-        println!("\t{}", out);
+        println!("\t{out}");
 
         target = out;
     }

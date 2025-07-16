@@ -441,7 +441,7 @@ impl AtomView<'_> {
                     if i > 0 {
                         write!(out, ",").unwrap();
                     }
-                    write!(out, "{}", arg).unwrap();
+                    write!(out, "{arg}").unwrap();
                 }
 
                 write!(out, ")").unwrap();
@@ -492,7 +492,7 @@ impl AtomView<'_> {
                         write!(out, "*").unwrap();
                     }
 
-                    write!(out, "{}", term).unwrap();
+                    write!(out, "{term}").unwrap();
                 }
             }
             AtomView::Add(a) => {
@@ -520,7 +520,7 @@ impl AtomView<'_> {
                     if i > 0 {
                         write!(out, "+").unwrap();
                     }
-                    write!(out, "{}", term).unwrap();
+                    write!(out, "{term}").unwrap();
                 }
             }
         }
@@ -1307,10 +1307,10 @@ mod test {
     #[test]
     fn rational_polynomials() {
         let a = parse!("15 x^2 / (1+x)").to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
-        assert_eq!(format!("{}", a), "15*x^2/(1+x)");
+        assert_eq!(format!("{a}"), "15*x^2/(1+x)");
 
         let a = parse!("(15 x^2 + 6) / (1+x)").to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
-        assert_eq!(format!("{}", a), "(6+15*x^2)/(1+x)");
+        assert_eq!(format!("{a}"), "(6+15*x^2)/(1+x)");
     }
 
     #[test]
@@ -1318,22 +1318,22 @@ mod test {
         let a = parse!("15 x^2 / ((1+x)(x+2))")
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{}", a) == "15*x^2/((1+x)*(2+x))"
-                || format!("{}", a) == "15*x^2/((2+x)*(1+x))"
+            format!("{a}") == "15*x^2/((1+x)*(2+x))"
+                || format!("{a}") == "15*x^2/((2+x)*(1+x))"
         );
 
         let a = parse!("(15 x^2 + 6) / ((1+x)(x+2))")
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{}", a) == "3*(2+5*x^2)/((1+x)*(2+x))"
-                || format!("{}", a) == "3*(2+5*x^2)/((2+x)*(1+x))"
+            format!("{a}") == "3*(2+5*x^2)/((1+x)*(2+x))"
+                || format!("{a}") == "3*(2+5*x^2)/((2+x)*(1+x))"
         );
 
         let a = parse!("1/(v1*v2)").to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
-        assert!(format!("{}", a) == "1/(v1*v2)" || format!("{}", a) == "1/(v2*v1)");
+        assert!(format!("{a}") == "1/(v1*v2)" || format!("{a}") == "1/(v2*v1)");
 
         let a = parse!("-1/(2+v1)").to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
-        assert!(format!("{}", a) == "-1/(2+v1)");
+        assert!(format!("{a}") == "-1/(2+v1)");
     }
 
     #[test]

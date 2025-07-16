@@ -5,5 +5,5 @@ fn main() {
 
     let o = input.expand();
 
-    println!("> Expansion of {}: {}", input, o);
+    println!("> Expansion of {input}: {o}");
 }

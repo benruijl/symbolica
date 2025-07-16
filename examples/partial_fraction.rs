@@ -18,9 +18,9 @@ fn univariate() {
         .to_rational_polynomial(&Z, &Z, &var_map, &var_names)
         .unwrap();
 
-    println!("Partial fraction {}:", rat);
+    println!("Partial fraction {rat}:");
     for x in rat.apart(0) {
-        println!("\t{}", x);
+        println!("\t{x}");
     }
 }
 
@@ -33,9 +33,9 @@ fn multivariate() {
         .to_factorized_rational_polynomial(&Z, &Z, &var_map, &var_names)
         .unwrap();
 
-    println!("Partial fraction {} in x:", rat);
+    println!("Partial fraction {rat} in x:");
     for x in rat.apart(0) {
-        println!("\t{}", x);
+        println!("\t{x}");
     }
 }
 

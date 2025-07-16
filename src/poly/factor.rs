@@ -1114,7 +1114,7 @@ where
             if d == 1 {
                 return vec![s];
             } else {
-                panic!("Degree mismatch for {}: {}", self, d);
+                panic!("Degree mismatch for {self}: {d}");
             }
         };
 
@@ -1642,8 +1642,7 @@ where
 
         if !lcoeff_left.is_one() {
             panic!(
-                "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
-                self, order, sample_points, lcoeff_left
+                "Could not reconstruct leading coefficient of {self}: order={order:?}, samples={sample_points:?} Rest = {lcoeff_left}"
             );
         }
 
@@ -2459,7 +2458,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         loop {
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization of {}", self);
+                panic!("Ran out of primes during factorization of {self}");
             }
             let p = p as u32;
 
@@ -2499,7 +2498,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .map_coeff(|c| c.to_finite_field(&field), field.clone())
                 .make_monic();
             if &hh_p != h_p {
-                panic!("Mismatch of lifted factor: {} vs {} in {}", hh_p, h_p, self);
+                panic!("Mismatch of lifted factor: {hh_p} vs {h_p} in {self}");
             }
         }
 
@@ -2721,7 +2720,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization of {}", self);
+                panic!("Ran out of primes during factorization of {self}");
             }
             let p = p as u32;
 
@@ -3155,8 +3154,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 let (q, r) = lcoeff_left.quot_rem(&new, true);
                 if !r.is_zero() {
                     panic!(
-                        "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
-                        self, order, sample_points
+                        "Problem with bivariate factor scaling in factorization of {self}: order={order:?}, samples={sample_points:?}"
                     );
                 }
 
@@ -3166,8 +3164,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         if !lcoeff_left.is_constant() {
             panic!(
-                "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
-                self, order, sample_points, lcoeff_left
+                "Could not reconstruct leading coefficient of {self}: order={order:?}, samples={sample_points:?} Rest = {lcoeff_left}"
             );
         }
 
@@ -3189,10 +3186,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let (q, r) = Z.quot_rem(&b_lc, &f_lc);
             assert!(
                 r.is_zero(),
-                "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
-                self,
-                order,
-                sample_points
+                "Problem with bivariate factor scaling in factorization of {self}: order={order:?}, samples={sample_points:?}"
             );
 
             lcoeff_left = lcoeff_left.div_coeff(&q);
@@ -3201,8 +3195,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         if !lcoeff_left.is_one() {
             panic!(
-                "Could not distribute content of {}: order={:?}, samples={:?} Rest = {}",
-                self, order, sample_points, lcoeff_left
+                "Could not distribute content of {self}: order={order:?}, samples={sample_points:?} Rest = {lcoeff_left}"
             );
         }
 
@@ -3490,7 +3483,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             p = prime_iter.next().unwrap();
 
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization of {}", self);
+                panic!("Ran out of primes during factorization of {self}");
             }
 
             if (&uni_f.lcoeff() % &p.into()).is_zero() {

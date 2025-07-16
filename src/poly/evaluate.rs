@@ -285,7 +285,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HornerScheme::Leaf(_, l) => f.write_fmt(format_args!("{:?}", l)),
+            HornerScheme::Leaf(_, l) => f.write_fmt(format_args!("{l:?}")),
             HornerScheme::Node(n) => {
                 f.write_fmt(format_args!("+{:?}*(", n.gcd))?;
 
@@ -880,13 +880,13 @@ impl Variable<Rational> {
                 let mut s = var_map[*v].to_string();
 
                 if let Some(index) = index {
-                    s.push_str(&format!("[{}]", index));
+                    s.push_str(&format!("[{index}]"));
                 }
 
                 s
             }
             Variable::Constant(c) => match mode {
-                InstructionSetMode::Plain => format!("{}", c),
+                InstructionSetMode::Plain => format!("{c}"),
                 InstructionSetMode::CPP(_) => {
                     if c.is_integer() {
                         format!("T({})", c.numerator_ref())
@@ -904,9 +904,9 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
         match self {
             Variable::Var(v, index) => {
                 if let Some(index) = index {
-                    f.write_fmt(format_args!("x[{}][{}]", v, index))
+                    f.write_fmt(format_args!("x[{v}][{index}]"))
                 } else {
-                    f.write_fmt(format_args!("x{}", v))
+                    f.write_fmt(format_args!("x{v}"))
                 }
             }
             Variable::Constant(c) => <N as std::fmt::Display>::fmt(c, f),
@@ -1576,7 +1576,7 @@ impl std::fmt::Display for InstructionList {
                     "Z{} = {};\n",
                     reg,
                     a.iter()
-                        .map(|x| format!("Z{}", x))
+                        .map(|x| format!("Z{x}"))
                         .collect::<Vec<_>>()
                         .join("+")
                 ))?,
@@ -1584,16 +1584,16 @@ impl std::fmt::Display for InstructionList {
                     "Z{} = {};\n",
                     reg,
                     m.iter()
-                        .map(|x| format!("Z{}", x))
+                        .map(|x| format!("Z{x}"))
                         .collect::<Vec<_>>()
                         .join("*")
                 ))?,
                 Instruction::Yield(y) => {
-                    f.write_fmt(format_args!("OUT{} = Z{};\n", out_counter, y))?;
+                    f.write_fmt(format_args!("OUT{out_counter} = Z{y};\n"))?;
                     out_counter += 1;
                 }
-                Instruction::Empty => f.write_fmt(format_args!("Z{} = NOP;\n", reg))?,
-                Instruction::Init(i) => f.write_fmt(format_args!("Z{} = {};\n", reg, i))?,
+                Instruction::Empty => f.write_fmt(format_args!("Z{reg} = NOP;\n"))?,
+                Instruction::Init(i) => f.write_fmt(format_args!("Z{reg} = {i};\n"))?,
             }
         }
 
@@ -1675,10 +1675,10 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                         if [Symbol::E, Symbol::PI].contains(i) {
                             None
                         } else {
-                            Some(format!("T {}", x))
+                            Some(format!("T {x}"))
                         }
                     } else {
-                        Some(format!("T {}", x))
+                        Some(format!("T {x}"))
                     })
                     .collect::<Vec<_>>()
                     .join(","),
@@ -1689,7 +1689,7 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
             f.write_fmt(format_args!(
                 "\tT {};\n",
                 (0..=max_register)
-                    .map(|x| format!("Z{}", x))
+                    .map(|x| format!("Z{x}"))
                     .collect::<Vec<_>>()
                     .join(","),
             ))?;
@@ -1703,7 +1703,7 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                     "\tZ{} = {};\n",
                     reg,
                     a.iter()
-                        .map(|x| format!("Z{}", x))
+                        .map(|x| format!("Z{x}"))
                         .collect::<Vec<_>>()
                         .join("+")
                 ))?,
@@ -1711,26 +1711,26 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                     "\tZ{} = {};\n",
                     reg,
                     m.iter()
-                        .map(|x| format!("Z{}", x))
+                        .map(|x| format!("Z{x}"))
                         .collect::<Vec<_>>()
                         .join("*")
                 ))?,
                 Instruction::Yield(y) => {
                     match self.mode {
                         InstructionSetMode::Plain => {
-                            f.write_fmt(format_args!("\tOUT{} = Z{};\n", out_counter, y))?
+                            f.write_fmt(format_args!("\tOUT{out_counter} = Z{y};\n"))?
                         }
                         InstructionSetMode::CPP(_) => {
                             if use_return_value {
-                                f.write_fmt(format_args!("\treturn Z{};\n", y))?
+                                f.write_fmt(format_args!("\treturn Z{y};\n"))?
                             } else {
-                                f.write_fmt(format_args!("\tout[{}] = Z{};\n", out_counter, y))?
+                                f.write_fmt(format_args!("\tout[{out_counter}] = Z{y};\n"))?
                             }
                         }
                     }
                     out_counter += 1;
                 }
-                Instruction::Empty => f.write_fmt(format_args!("\tZ{} = NOP;\n", reg))?,
+                Instruction::Empty => f.write_fmt(format_args!("\tZ{reg} = NOP;\n"))?,
                 Instruction::Init(x) => f.write_fmt(format_args!(
                     "\tZ{} = {};\n",
                     reg,
@@ -1758,7 +1758,7 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                         out_counter,
                         points.join(","),
                         (0..out_counter)
-                            .map(|i| format!("out[{}]", i))
+                            .map(|i| format!("out[{i}]"))
                             .collect::<Vec<_>>()
                             .join(" << \", \" << ")
                     ))?;
@@ -1920,7 +1920,7 @@ auto 𝑖 = 1i;\n",
             "void evaluate({}, T* {}_res) {{\n",
             self.input
                 .iter()
-                .map(|x| format!("T* {}", x))
+                .map(|x| format!("T* {x}"))
                 .collect::<Vec<_>>()
                 .join(", "),
             last
@@ -1930,7 +1930,7 @@ auto 𝑖 = 1i;\n",
             let name = id.to_string();
 
             if *id != last {
-                f.write_fmt(format_args!("\tT {}_res[{}];\n", name, out_len))?;
+                f.write_fmt(format_args!("\tT {name}_res[{out_len}];\n"))?;
             }
 
             let mut f_args: Vec<_> = args
@@ -1943,7 +1943,7 @@ auto 𝑖 = 1i;\n",
                     }
                 })
                 .collect();
-            f_args.push(format!("{}_res", name));
+            f_args.push(format!("{name}_res"));
 
             f.write_fmt(format_args!("\t{}({});\n", name, f_args.join(",")))?;
         }

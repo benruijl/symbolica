@@ -24,7 +24,7 @@ fn solve() {
     let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
     for (v, s) in ["x", "y", "z"].iter().zip(&sol) {
-        println!("{} = {}", v, s);
+        println!("{v} = {s}");
     }
 }
 
@@ -72,12 +72,12 @@ fn solve_from_matrix() {
                 "x\u{20D7} = {{{}}}",
                 sol.row_iter()
                     .flatten()
-                    .map(|r| format!("{}", r))
+                    .map(|r| format!("{r}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
         }
-        Err(e) => panic!("Could not solve {:?}", e),
+        Err(e) => panic!("Could not solve {e:?}"),
     }
 }
 

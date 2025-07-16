@@ -1708,6 +1708,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
             .collect();
 
         // determine safe bounds for variables in the gcd
+        // TODO: deprecate, tight bounds are always better
         let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> = (0..a.nvars())
             .map(|i| {
                 let da = a.degree(i);
@@ -2387,7 +2388,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
     /// The polynomials must be primitive in the first variable, which must also be present.
     #[instrument(level = "debug", skip_all)]
     pub fn gcd_hu_monagan(&self, b: &Self, bounds: &[E]) -> Self {
-        debug!("Hu-Monagan gcd of {} and {}", self, b);
+        debug!(
+            "Hu-Monagan gcd of {} and {} with bounds {:?}",
+            self, b, bounds
+        );
         assert!(bounds[0] > E::zero());
 
         let lc_a = self.univariate_lcoeff(0);
@@ -2399,11 +2403,20 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
             lc_b
         };
 
+        let largest_coeff = self
+            .coefficients
+            .iter()
+            .chain(&b.coefficients)
+            .max_by(|a, b| a.abs_cmp(b))
+            .unwrap()
+            .abs()
+            * 2i64;
+
         let mut r: Vec<_> = (0..self.nvars())
             .map(|i| {
                 self.degree(i)
-                    .min(b.degree(i))
-                    .min(bounds[i] + gamma.degree(i))
+                    .max(b.degree(i))
+                    .max(bounds[i] + gamma.degree(i))
                     .to_u32()
             })
             .collect();
@@ -2431,9 +2444,9 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
             }
             let ri_prod = *powers.last().unwrap() as u64;
 
-            let kr_a = self.map_exp(|e| e.to_u32()).kronecker_map(&powers);
-            let kr_b = b.map_exp(|e| e.to_u32()).kronecker_map(&powers);
-            let kr_gamma = gamma.map_exp(|e| e.to_u32()).kronecker_map(&powers);
+            let kr_a = self.map_exp(|e| e.to_u32()).kronecker_map(&powers, 1);
+            let kr_b = b.map_exp(|e| e.to_u32()).kronecker_map(&powers, 1);
+            let kr_gamma = gamma.map_exp(|e| e.to_u32()).kronecker_map(&powers, 1);
 
             if kr_a.degree(0) < self.degree(0).to_u32() || kr_b.degree(0) < b.degree(0).to_u32() {
                 debug!("Bad Kronecker image");
@@ -2495,7 +2508,9 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                     smooth_prime_index += 1;
 
-                    if *p < prime_bound {
+                    if *p < prime_bound
+                        || largest_coeff < 1i64 << 32 && *p < largest_coeff.to_u64().unwrap()
+                    {
                         continue;
                     }
 
@@ -2733,28 +2748,30 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     let sol = gs[0].solve_vandermonde_matrix(mat, coeffs[i as usize].clone());
 
                     let mut exp = vec![0; self.nvars()];
-                    exp[0] = i;
+                    let mut h_p_e = kr_a_p.zero();
                     for (coeff, e) in sol.into_iter().zip(&monomials) {
                         assert!(*e <= u32::MAX as u64);
                         exp[1] = *e as u32; // FIXME: we should support u64 exponents!
-                        h_p.append_monomial(coeff, &exp);
+                        h_p_e.append_monomial(coeff, &exp);
                     }
 
                     if !missing_terms {
-                        let aa = h_p
-                            .replace(
-                                1,
-                                &p.pow(&alpha, p.from_element(&s) as u64 + tau[i as usize] as u64),
-                            )
-                            .replace(0, &p.one());
+                        let aa = h_p_e.replace(
+                            1,
+                            &p.pow(&alpha, p.from_element(&s) as u64 + tau[i as usize] as u64),
+                        );
                         if aa.get_constant() != coeffs[i as usize][tau[i as usize]] {
-                            debug!("Missing terms in h_p: {}", h_p);
+                            debug!("Missing terms in h_p_e: {}", h_p_e);
 
                             missing_terms = true;
                             delta += 1;
                             continue 'new_image;
                         }
                     }
+
+                    exp[0] = i;
+                    exp[1] = 0;
+                    h_p = h_p + h_p_e.mul_exp(&exp);
                 }
 
                 missing_terms = false;
@@ -2798,9 +2815,510 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 debug!("h_cra = {}", h);
 
                 // division test
-                let hm = h.kronecker_inv_map(&powers).map_exp(|e| E::from_u32(*e));
+                let hm = h.kronecker_inv_map(&powers, 1).map_exp(|e| E::from_u32(*e));
                 debug!("h_inv = {}", hm);
-                let content = hm.univariate_content(0);
+                let content = hm.univariate_content(0); // triggers another hu gcd run!
+                let hc = hm / &content;
+
+                debug!("hc {}", hc);
+
+                if self.try_div(&hc).is_some() && b.try_div(&hc).is_some() {
+                    debug!("Found GCD: {}", hc);
+                    return hc;
+                } else {
+                    debug!("Non-division of {}, trying new image", hc);
+                }
+            }
+        }
+    }
+
+    /// Compute the gcd of two multivariate polynomials using Hu-Monagan's algorithm.
+    /// The polynomials must be primitive in the first variable, which must also be present.
+    #[instrument(level = "debug", skip_all)]
+    pub fn gcd_hu_monagan_bivariate(&self, b: &Self, bounds: &[E]) -> Self {
+        debug!(
+            "Hu-Monagan gcd of {} and {} with bounds {:?}",
+            self, b, bounds
+        );
+        assert!(bounds[0] > E::zero());
+
+        let start_exp = 2;
+
+        // TODO: make primitive in x0,x1?
+
+        let lc_a = self.bivariate_lcoeff();
+        let lc_b = b.bivariate_lcoeff();
+        let gamma = if lc_a.nterms() < lc_b.nterms() {
+            lc_a
+        } else {
+            lc_b
+        };
+
+        let largest_coeff = self
+            .coefficients
+            .iter()
+            .chain(&b.coefficients)
+            .max_by(|a, b| a.abs_cmp(b))
+            .unwrap()
+            .abs()
+            * 2i64;
+
+        let mut r: Vec<_> = (0..self.nvars())
+            .map(|i| {
+                self.degree(i)
+                    .max(b.degree(i))
+                    .max(bounds[i] + gamma.degree(i))
+                    .to_u32()
+            })
+            .collect();
+
+        let mut delta = 1;
+        let mut d_0_1 = (bounds[0], bounds[1]);
+        let mut h = self.map_exp(|e| e.to_u32()).zero();
+        let mut m = Integer::one(); // CRA new modulus
+        let mut ms: Vec<u64> = vec![]; // CRA primes
+        let mut missing_terms = true;
+        let mut sigma: HashMap<(u32, u32), HashSet<u64>> = HashMap::default();
+        let mut tau = HashMap::default();
+
+        let mut smooth_prime_index = 0;
+        let mut rng = rand::rng();
+
+        'kronecker_prime: loop {
+            for rr in &mut r {
+                *rr += 1;
+            }
+
+            let mut powers = vec![r[start_exp]];
+            for (i, r) in r.iter().skip(start_exp).enumerate().skip(1) {
+                powers.push(powers[i - 1] * r);
+            }
+            let ri_prod = *powers.last().unwrap() as u64;
+
+            let kr_a = self
+                .map_exp(|e| e.to_u32())
+                .kronecker_map(&powers, start_exp);
+            let kr_b = b.map_exp(|e| e.to_u32()).kronecker_map(&powers, start_exp);
+            let kr_gamma = gamma
+                .map_exp(|e| e.to_u32())
+                .kronecker_map(&powers, start_exp);
+
+            for i in 0..start_exp {
+                if kr_a.degree(i) < self.degree(i).to_u32() || kr_b.degree(i) < b.degree(i).to_u32()
+                {
+                    debug!("Bad Kronecker image");
+                    continue 'kronecker_prime;
+                }
+            }
+
+            delta += 1;
+
+            let mut re_init = true;
+            'new_image: loop {
+                if re_init {
+                    h = kr_a.zero();
+                    m = Integer::one();
+                    missing_terms = true;
+                    sigma.clear();
+                    tau.clear();
+
+                    re_init = false;
+                }
+
+                // TODO: check degree bound d_0 again?
+                // TODO: store current images of kra and krb, only recompute h mod p!
+                ms.retain(|p| {
+                    let p = Zp64::new(*p);
+                    let kr_a_p = kr_a.map_coeff(|c| c.to_finite_field(&p), p.clone());
+                    let kr_b_p = kr_b.map_coeff(|c| c.to_finite_field(&p), p.clone());
+                    let kr_gamma_p = kr_gamma.map_coeff(|c| c.to_finite_field(&p), p.clone());
+                    let h = h.map_coeff(|c| c.to_finite_field(&p), p.clone());
+
+                    loop {
+                        let beta = p.sample(&mut rng, (0, i64::MAX));
+                        if kr_gamma_p.replace(start_exp, &beta).is_zero() {
+                            continue;
+                        }
+
+                        let h_b = h.replace(start_exp, &beta);
+                        if kr_a_p.replace(start_exp, &beta).try_div(&h_b).is_none()
+                            || kr_b_p.replace(start_exp, &beta).try_div(&h_b).is_none()
+                        {
+                            debug!("Bad Kronecker image for prime {}", p);
+
+                            m /= p.get_prime();
+                            break false; // keep prime
+                        }
+
+                        break true;
+                    }
+                });
+
+                let prime_bound = ri_prod.clone() * 2u64.pow(delta);
+
+                let (p, totient_primes, alpha, kr_a_p, kr_b_p, kr_gamma_p) = 'new_prime: loop {
+                    let Some((p, alpha, fs)) = SMOOTH_PRIMES.get(smooth_prime_index) else {
+                        panic!(
+                            "Ran out of smooth primes for Hu-Monagan GCD.\ngcd({},{})",
+                            self, b
+                        );
+                    };
+
+                    smooth_prime_index += 1;
+
+                    if *p < prime_bound
+                        || largest_coeff < 1i64 << 32 && *p < largest_coeff.to_u64().unwrap()
+                    {
+                        continue;
+                    }
+
+                    let field = Zp64::new(*p);
+
+                    let kr_a_p = kr_a.map_coeff(|c| c.to_finite_field(&field), field.clone());
+                    let kr_b_p = kr_b.map_coeff(|c| c.to_finite_field(&field), field.clone());
+                    let kr_gamma_p =
+                        kr_gamma.map_coeff(|c| c.to_finite_field(&field), field.clone());
+
+                    for i in 0..start_exp {
+                        if kr_a_p.degree(i) < kr_a.degree(i).to_u32()
+                            || kr_b_p.degree(i) < kr_b.degree(i).to_u32()
+                        {
+                            debug!("Bad prime {}", p);
+                            continue 'new_prime;
+                        }
+                    }
+
+                    let mut totient_primes = vec![];
+                    for (f, prime) in fs.iter().zip(&SMOOTH_PRIME_BASE) {
+                        if *f > 0 {
+                            totient_primes.push((*prime, *f as u32));
+                        }
+                    }
+
+                    let alpha = field.to_element(*alpha as u64);
+                    break (field, totient_primes, alpha, kr_a_p, kr_b_p, kr_gamma_p);
+                };
+
+                let s = p.sample(&mut rng, (0, i64::MAX));
+                let shift = p.from_element(&s);
+
+                let mut gs = vec![];
+
+                let mut sample_points = vec![];
+                let mut coeffs: HashMap<(u32, u32), Vec<(usize, FiniteFieldElement<u64>)>> =
+                    HashMap::default();
+                let mut bma_polys = HashMap::default();
+
+                let kr_ap_exponents_alpha: Vec<_> = kr_a_p
+                    .exponents
+                    .chunks(kr_a_p.nvars())
+                    .map(|x| p.pow(&alpha, x[start_exp].to_u32() as u64))
+                    .collect(); // will be updated live
+
+                let mut kr_ap_exponents_s: Vec<_> = kr_ap_exponents_alpha
+                    .iter()
+                    .map(|x| p.pow(&x, shift))
+                    .collect();
+
+                let kr_bp_exponents_alpha: Vec<_> = kr_b_p
+                    .exponents
+                    .chunks(kr_b_p.nvars())
+                    .map(|x| p.pow(&alpha, x[start_exp].to_u32() as u64))
+                    .collect();
+
+                let mut kr_bp_exponents_s: Vec<_> = kr_bp_exponents_alpha
+                    .iter()
+                    .map(|x| p.pow(&x, shift))
+                    .collect();
+
+                let kr_gamma_p_exponents_alpha: Vec<_> = kr_gamma_p
+                    .exponents
+                    .chunks(kr_gamma_p.nvars())
+                    .map(|x| p.pow(&alpha, x[start_exp].to_u32() as u64))
+                    .collect();
+
+                let mut kr_gamma_p_exponents_s: Vec<_> = kr_gamma_p_exponents_alpha
+                    .iter()
+                    .map(|x| p.pow(&x, shift))
+                    .collect();
+
+                fn eval(
+                    p: &Zp64,
+                    poly: &MultivariatePolynomial<Zp64, u32>,
+                    alpha: &[FiniteFieldElement<u64>],
+                    s: &mut [FiniteFieldElement<u64>],
+                ) -> MultivariatePolynomial<Zp64, u32> {
+                    let mut res = poly.zero();
+                    let mut exp = vec![0; poly.nvars()];
+                    for (((c, ee), aa), ss) in poly
+                        .coefficients
+                        .iter()
+                        .zip(poly.exponents.chunks(poly.nvars()))
+                        .zip(alpha.iter())
+                        .zip(s.iter_mut())
+                    {
+                        exp[0] = ee[0];
+                        exp[1] = ee[1];
+
+                        let c = p.mul(c, ss);
+                        *ss = p.mul(ss, aa);
+
+                        res.append_monomial(c, &exp);
+                    }
+
+                    res
+                }
+
+                'new_sample: loop {
+                    for _ in 0..2 {
+                        let sample_point = p.pow(&alpha, gs.len() as u64 + p.from_element(&s));
+
+                        let a_j = eval(&p, &kr_a_p, &kr_ap_exponents_alpha, &mut kr_ap_exponents_s);
+                        let b_j = eval(&p, &kr_b_p, &kr_bp_exponents_alpha, &mut kr_bp_exponents_s);
+
+                        for i in 0..start_exp {
+                            if a_j.degree(i) < kr_a_p.degree(i) || b_j.degree(i) < kr_b_p.degree(i)
+                            {
+                                debug!("Bad Kronecker image, trying new prime");
+                                continue 'kronecker_prime;
+                            }
+                        }
+
+                        let kr_gamma_p_e = eval(
+                            &p,
+                            &kr_gamma_p,
+                            &kr_gamma_p_exponents_alpha,
+                            &mut kr_gamma_p_exponents_s,
+                        );
+
+                        let g = a_j.gcd(&b_j) * &kr_gamma_p_e; // FIXME: bad normalization?
+                        gs.push(g);
+                        sample_points.push(sample_point);
+                    }
+
+                    let d_min = gs[gs.len() - 2].degree(0).min(gs[gs.len() - 1].degree(0));
+                    let d_max = gs[gs.len() - 2].degree(0).max(gs[gs.len() - 1].degree(0));
+                    if d_min < d_0_1.0.to_u32() {
+                        debug!("Unlucky sample: dim x0 is {} vs {}", d_min, d_0_1.0);
+                        d_0_1.0 = E::from_u32(d_min);
+                        re_init = true;
+                        continue 'new_image;
+                    }
+                    if d_max > d_0_1.0.to_u32() {
+                        debug!("Bad Kronecker image, trying new prime");
+                        continue 'kronecker_prime;
+                    }
+
+                    let d_min = gs[gs.len() - 2].degree(1).min(gs[gs.len() - 1].degree(1));
+                    let d_max = gs[gs.len() - 2].degree(1).max(gs[gs.len() - 1].degree(1));
+                    if d_min < d_0_1.1.to_u32() {
+                        debug!("Unlucky sample: dim x1 is {} vs {}", d_min, d_0_1.1);
+                        d_0_1.1 = E::from_u32(d_min);
+                        re_init = true;
+                        continue 'new_image;
+                    }
+                    if d_max > d_0_1.1.to_u32() {
+                        debug!(
+                            "Bad Kronecker image for var 1, trying new prime: {} vs {}",
+                            d_max, d_0_1.1
+                        );
+                        continue 'kronecker_prime;
+                    }
+
+                    if missing_terms
+                        && (gs.len() < kr_gamma.nterms() * 2
+                            || gs.len() < tau.values().max().unwrap_or(&0) * 2)
+                        || !missing_terms && gs.len() <= *tau.values().max().unwrap_or(&0)
+                    {
+                        continue 'new_sample;
+                    }
+
+                    coeffs.clear(); // FIXME: do update instead
+
+                    for (i, hh) in gs.iter().enumerate() {
+                        for m in hh {
+                            if !p.is_zero(&m.coefficient) {
+                                coeffs
+                                    .entry((m.exponents[0], m.exponents[1]))
+                                    .or_default()
+                                    .push((i, m.coefficient.clone()));
+                            }
+                        }
+                    }
+
+                    // determine all monomials through linear recurrence relations
+                    let mut row = vec![p.zero(); gs.len()];
+                    if missing_terms {
+                        for (e_x_y, l) in &coeffs {
+                            for pp in l {
+                                row[pp.0] = pp.1.clone();
+                            }
+
+                            let (r, s) = p.find_linear_recurrence_relation(&row);
+
+                            for pp in l {
+                                row[pp.0] = p.zero();
+                            }
+
+                            if s < 2 || p.is_zero(&r[0]) {
+                                continue 'new_sample;
+                            }
+
+                            let mut bma_poly = kr_a_p.zero();
+                            let mut exp2 = vec![0u32; self.nvars()];
+                            for (j, cs) in r.iter().rev().enumerate() {
+                                if !p.is_zero(cs) {
+                                    exp2[0] = j as u32;
+                                    bma_poly.append_monomial(p.neg(cs), &exp2);
+                                }
+                            }
+                            exp2[0] = r.len() as u32;
+                            bma_poly.append_monomial(p.one(), &exp2);
+
+                            tau.insert(*e_x_y, bma_poly.degree(0).to_u32() as usize);
+
+                            if let Some(bma_poly_old) = bma_polys.get(e_x_y) {
+                                if bma_poly_old != &bma_poly {
+                                    debug!("bma_poly changed for {:?}, trying new sample", e_x_y);
+                                    sigma.remove(e_x_y);
+                                } else {
+                                    continue;
+                                }
+                            }
+
+                            debug!("bma_poly for {:?}: {}; s= {}", e_x_y, bma_poly, s);
+
+                            let mut fs = bma_poly.factor();
+                            bma_polys.insert(*e_x_y, bma_poly);
+                            fs.retain(|(f, _)| !f.is_constant());
+
+                            if fs.len() != tau[e_x_y] {
+                                debug!("Stabilized too early"); // TODO: don't remove all the other terms
+                                continue 'new_sample; // TODO: clear sigma on fail?
+                            }
+
+                            for (f, _ee) in fs {
+                                assert_eq!(f.degree(0), 1);
+
+                                let m = p.neg(&f.get_constant());
+
+                                let e =
+                                    p.discrete_log(&alpha, &m, p.get_prime() - 1, &totient_primes);
+
+                                let ee = p.from_element(&e);
+
+                                if ee >= ri_prod {
+                                    debug!("Unlucky evaluations");
+                                    continue 'kronecker_prime;
+                                }
+
+                                sigma.entry(*e_x_y).or_default().insert(ee);
+                            }
+                        }
+                    }
+
+                    break;
+                }
+
+                // solve system to find coefficients
+                let mut h_p = kr_a_p.zero();
+                for (e_x_y, l) in &coeffs {
+                    let mut row = vec![p.zero(); gs.len()];
+                    for pp in l {
+                        row[pp.0] = pp.1.clone();
+                    }
+
+                    let monomials: Vec<_> = sigma[e_x_y].iter().cloned().collect();
+                    let mat = sample_points
+                        .iter()
+                        .map(|x| monomials.iter().map(|e| p.pow(x, *e)).collect())
+                        .collect::<Vec<_>>();
+
+                    let sol = gs[0].solve_vandermonde_matrix(mat, row);
+
+                    let mut exp = vec![0; self.nvars()];
+                    let mut h_p_e = kr_a_p.zero();
+                    for (coeff, e) in sol.into_iter().zip(&monomials) {
+                        assert!(*e <= u32::MAX as u64);
+                        exp[2] = *e as u32; // FIXME: we should support u64 exponents!
+                        h_p_e.append_monomial(coeff, &exp);
+                    }
+
+                    if !missing_terms {
+                        let max = tau[e_x_y];
+                        let aa = h_p_e.replace(
+                            start_exp,
+                            &p.pow(&alpha, p.from_element(&s) as u64 + max as u64),
+                        );
+
+                        if aa.get_constant()
+                            != coeffs[e_x_y]
+                                .iter()
+                                .find(|(i, _)| *i == max)
+                                .map(|(_, v)| v.clone())
+                                .unwrap_or(p.zero())
+                        {
+                            debug!("Missing terms in h_p2 for {:?}: {}; {}", e_x_y, h_p_e, aa);
+
+                            missing_terms = true;
+                            delta += 1;
+                            continue 'new_image;
+                        }
+                    }
+
+                    exp[0] = e_x_y.0;
+                    exp[1] = e_x_y.1;
+                    exp[2] = 0;
+
+                    h_p = h_p + h_p_e.mul_exp(&exp);
+                }
+
+                missing_terms = false;
+                // TODO: increase tau and sigma or is this already done correctly during the run?
+
+                let hz = h_p.map_coeff(|c| p.to_symmetric_integer(c), Z);
+
+                debug!("h_p: {}", h_p);
+                debug!("hz: {}", hz);
+
+                // chinese remainder
+                ms.push(p.get_prime());
+                if m == 1 {
+                    h = hz;
+                    m = p.get_prime().into();
+                } else {
+                    // FIXME: assumes that there are no missing terms in gm
+                    let mut gpi = 0;
+                    for t in 0..h.nterms() {
+                        let gpc = if h.exponents(t) == hz.exponents(gpi) {
+                            gpi += 1;
+                            hz.coefficients[gpi - 1].clone()
+                        } else {
+                            0.into()
+                        };
+
+                        let gmc = &mut h.coefficients[t];
+                        let coeff = if gmc.is_negative() {
+                            self.ring.add(gmc, &m)
+                        } else {
+                            gmc.clone()
+                        };
+
+                        *gmc =
+                            Integer::chinese_remainder(coeff, gpc, m.clone(), p.get_prime().into());
+                    }
+
+                    m *= p.get_prime();
+                }
+
+                debug!("h_cra = {}", h);
+
+                // division test
+                let hm = h
+                    .kronecker_inv_map(&powers, start_exp)
+                    .map_exp(|e| E::from_u32(*e));
+                debug!("h_inv = {}", hm);
+                let content = hm.univariate_content(0); // TODO: bivariate content?
                 let hc = hm / &content;
 
                 debug!("hc {}", hc);
@@ -2912,6 +3430,14 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         bounds: &mut [E],
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
+        // TODO: choose better ordering
+        if vars[0] == 0
+            && bounds[0] > E::zero()
+            && bounds.iter().filter(|x| **x > E::zero()).count() > 2
+        {
+            return a.gcd_hu_monagan_bivariate(b, tight_bounds);
+        }
+
         if a.coefficients
             .iter()
             .any(|x| !matches!(x, Integer::Natural(_)))

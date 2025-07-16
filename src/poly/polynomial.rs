@@ -1518,32 +1518,37 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         }
     }
 
-    /// Kronecker map to bivariate polynomial.
-    pub fn kronecker_map(&self, powers: &[E]) -> Self {
+    /// Kronecker map all variables starting from `start_index` using the powers given in `powers`:
+    /// `x_i -> x_{start_index}^powers[i - start_index]` for `i > start_index`.
+    pub fn kronecker_map(&self, powers: &[E], start_index: usize) -> Self {
         let mut res = self.zero_with_capacity(self.nterms());
         let mut new_exponents = vec![E::zero(); self.nvars()];
         for a in self {
-            new_exponents[0] = a.exponents[0];
-            new_exponents[1] = a.exponents[1];
-            for (i, e) in a.exponents.iter().enumerate().skip(2) {
-                new_exponents[1] += powers[i - 2] * *e;
+            for i in 0..=start_index {
+                new_exponents[i] = a.exponents[i];
+            }
+            for (i, e) in a.exponents.iter().skip(start_index + 1).enumerate() {
+                new_exponents[start_index] += powers[i] * *e;
             }
             res.append_monomial(a.coefficient.clone(), &new_exponents);
         }
         res
     }
 
-    pub fn kronecker_inv_map(&self, powers: &[E]) -> Self {
+    /// Invert a Kronecker map.
+    pub fn kronecker_inv_map(&self, powers: &[E], start_index: usize) -> Self {
         let mut res = self.zero_with_capacity(self.nterms());
         let mut new_exponents = vec![E::zero(); self.nvars()];
         for a in self {
-            let mut total = a.exponents[1];
-            new_exponents[0] = a.exponents[0];
-            new_exponents[1] = total % powers[0];
-            for i in 2..self.nvars() {
+            for i in 0..start_index {
+                new_exponents[i] = a.exponents[i];
+            }
+            let mut total = a.exponents[start_index];
+            new_exponents[start_index] = total % powers[0];
+            for i in (start_index + 1)..self.nvars() {
                 total = total - new_exponents[i - 1];
-                new_exponents[i] = total % powers[i - 1];
-                new_exponents[i] = new_exponents[i] / powers[i - 2];
+                new_exponents[i] = total % powers[i - start_index];
+                new_exponents[i] = new_exponents[i] / powers[i - start_index - 1];
             }
             res.append_monomial(a.coefficient.clone(), &new_exponents);
         }
@@ -1885,6 +1890,35 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             if t.exponents[x] == d {
                 e.copy_from_slice(t.exponents);
                 e[x] = E::zero();
+                lcoeff.append_monomial(t.coefficient.clone(), &e);
+            }
+        }
+
+        lcoeff
+    }
+
+    /// Get the leading coefficient of a multivariate polynomial viewed as a bivariate polynomial in the first two variables.
+    pub fn bivariate_lcoeff(&self) -> MultivariatePolynomial<F, E, LexOrder> {
+        let mut lcoeff = self.zero();
+
+        if self.coefficients.is_empty() {
+            return lcoeff;
+        }
+
+        let d = self.degree(0);
+        let mut d1 = E::zero();
+        for t in self {
+            if t.exponents[0] == d && t.exponents[1] > d1 {
+                d1 = t.exponents[1];
+            }
+        }
+
+        let mut e = vec![E::zero(); self.nvars()];
+        for t in self {
+            if t.exponents[0] == d && t.exponents[1] == d1 {
+                e.copy_from_slice(t.exponents);
+                e[0] = E::zero();
+                e[1] = E::zero();
                 lcoeff.append_monomial(t.coefficient.clone(), &e);
             }
         }

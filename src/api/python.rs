@@ -54,9 +54,9 @@ use crate::{
         },
     },
     evaluate::{
-        CompileOptions, CompiledEvaluator, EvaluationFn, ExportSettings, ExpressionEvaluator,
-        ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM, Instruction,
-        OptimizationSettings, Slot,
+        CompileOptions, CompiledComplexEvaluator, CompiledRealEvaluator, EvaluationFn,
+        ExportSettings, ExpressionEvaluator, ExpressionEvaluatorWithExternalFunctions, FunctionMap,
+        InlineASM, Instruction, OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -187,7 +187,8 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonPrintMode>()?;
     m.add_class::<PythonReplacement>()?;
     m.add_class::<PythonExpressionEvaluator>()?;
-    m.add_class::<PythonCompiledExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledRealExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledComplexExpressionEvaluator>()?;
     m.add_class::<PythonRandomNumberGenerator>()?;
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
@@ -11888,6 +11889,7 @@ impl PythonExpressionEvaluator {
         (function_name,
         filename,
         library_name,
+        number_type,
         inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
@@ -11898,11 +11900,13 @@ impl PythonExpressionEvaluator {
         function_name: &str,
         filename: &str,
         library_name: &str,
+        number_type: &str,
         inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
         custom_header: Option<String>,
-    ) -> PyResult<PythonCompiledExpressionEvaluator> {
+        py: Python<'_>,
+    ) -> PyResult<PyObject> {
         let mut options = CompileOptions {
             optimization_level: optimization_level as usize,
             ..Default::default()
@@ -11924,45 +11928,78 @@ impl PythonExpressionEvaluator {
             }
         };
 
-        Ok(PythonCompiledExpressionEvaluator {
-            eval: self
-                .eval_complex
-                .export_cpp(
-                    filename,
-                    function_name,
-                    ExportSettings {
-                        include_header: true,
-                        inline_asm,
-                        custom_header,
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
-                .compile(library_name, options)
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
-                })?
-                .load()
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
-                })?,
-            input_len: self.eval_rat.get_input_len(),
-            output_len: self.eval_rat.get_output_len(),
-        })
+        match number_type {
+            "real" => PythonCompiledRealExpressionEvaluator {
+                eval: self
+                    .eval_complex
+                    .export_cpp::<f64>(
+                        filename,
+                        function_name,
+                        ExportSettings {
+                            include_header: true,
+                            inline_asm,
+                            custom_header,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                    .compile(library_name, options)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                    })?
+                    .load()
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                    })?,
+                input_len: self.eval_rat.get_input_len(),
+                output_len: self.eval_rat.get_output_len(),
+            }
+            .into_py_any(py),
+            "complex" => PythonCompiledComplexExpressionEvaluator {
+                eval: self
+                    .eval_complex
+                    .export_cpp::<Complex<f64>>(
+                        filename,
+                        function_name,
+                        ExportSettings {
+                            include_header: true,
+                            inline_asm,
+                            custom_header,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                    .compile(library_name, options)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                    })?
+                    .load()
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                    })?,
+                input_len: self.eval_rat.get_input_len(),
+                output_len: self.eval_rat.get_output_len(),
+            }
+            .into_py_any(py),
+            _ => Err(exceptions::PyValueError::new_err(format!(
+                "Invalid number type {} specified.",
+                number_type,
+            ))),
+        }
     }
 }
 
 /// A compiled and optimized evaluator for expressions.
-#[pyclass(name = "CompiledEvaluator", module = "symbolica")]
+#[pyclass(name = "CompiledRealEvaluator", module = "symbolica")]
 #[derive(Clone)]
-pub struct PythonCompiledExpressionEvaluator {
-    pub eval: CompiledEvaluator,
+pub struct PythonCompiledRealExpressionEvaluator {
+    pub eval: CompiledRealEvaluator,
     pub input_len: usize,
     pub output_len: usize,
 }
 
 #[pymethods]
-impl PythonCompiledExpressionEvaluator {
+impl PythonCompiledRealExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
     #[classmethod]
     fn load(
@@ -11973,7 +12010,7 @@ impl PythonCompiledExpressionEvaluator {
         output_len: usize,
     ) -> PyResult<Self> {
         Ok(Self {
-            eval: CompiledEvaluator::load(filename, function_name)
+            eval: CompiledRealEvaluator::load(filename, function_name)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
             input_len,
             output_len,
@@ -11995,9 +12032,50 @@ impl PythonCompiledExpressionEvaluator {
         res
     }
 
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        inputs
+            .iter()
+            .map(|s| {
+                let mut v = vec![0.; self.output_len];
+                self.eval.evaluate(s, &mut v);
+                v
+            })
+            .collect()
+    }
+}
+
+/// A compiled and optimized evaluator for expressions.
+#[pyclass(name = "CompiledComplexEvaluator", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonCompiledComplexExpressionEvaluator {
+    pub eval: CompiledComplexEvaluator,
+    pub input_len: usize,
+    pub output_len: usize,
+}
+
+#[pymethods]
+impl PythonCompiledComplexExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[classmethod]
+    fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        function_name: &str,
+        input_len: usize,
+        output_len: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledComplexEvaluator::load(filename, function_name)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
+            output_len,
+        })
+    }
+
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate_complex`.
-    fn evaluate_complex_flat<'py>(
+    fn evaluate_flat<'py>(
         &mut self,
         py: Python<'py>,
         inputs: Vec<Complex<f64>>,
@@ -12017,19 +12095,7 @@ impl PythonCompiledExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        inputs
-            .iter()
-            .map(|s| {
-                let mut v = vec![0.; self.output_len];
-                self.eval.evaluate(s, &mut v);
-                v
-            })
-            .collect()
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate_complex<'py>(
+    fn evaluate<'py>(
         &mut self,
         python: Python<'py>,
         inputs: Vec<Vec<Complex<f64>>>,

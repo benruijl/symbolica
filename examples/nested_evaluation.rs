@@ -55,11 +55,12 @@ fn main() {
     .unwrap();
 
     let mut e_f64 = evaluator.map_coeff(&|x| x.to_real().unwrap().into());
-    let r = e_f64.evaluate_single(&[5.]);
-    println!("{r}");
+    let mut out = vec![0.];
+    e_f64.evaluate(&[5.], &mut out);
+    println!("{}", out[0]);
 
     let mut compiled = e_f64
-        .export_cpp(
+        .export_cpp::<f64>(
             "nested_evaluate.cpp",
             "nested",
             ExportSettings {
@@ -74,7 +75,6 @@ fn main() {
         .load()
         .unwrap();
 
-    let mut out = vec![0.];
     compiled.evaluate(&[5.], &mut out);
     println!("{}", out[0]);
 }

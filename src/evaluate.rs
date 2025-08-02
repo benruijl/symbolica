@@ -1737,36 +1737,39 @@ impl Default for ExportSettings {
 impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
     /// The resulting source code can be compiled and loaded.
-    pub fn export_cpp(
+    pub fn export_cpp<F: CompiledNumber>(
         &self,
         filename: &str,
         function_name: &str,
         settings: ExportSettings,
-    ) -> Result<ExportedCode, std::io::Error> {
+    ) -> Result<ExportedCode<F>, std::io::Error> {
         let mut filename = filename.to_string();
         if !filename.ends_with(".cpp") {
             filename += ".cpp";
         }
 
-        let cpp = &self.export_cpp_str(function_name, settings);
+        let cpp = &self
+            .export_cpp_str::<F>(function_name, settings)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
         std::fs::write(&filename, cpp)?;
         Ok(ExportedCode {
             source_filename: filename,
             function_name: function_name.to_string(),
+            _phantom: std::marker::PhantomData,
         })
     }
 
     /// Write the evaluation tree to a C++ source string.
-    pub fn export_cpp_str(&self, function_name: &str, settings: ExportSettings) -> String {
-        match settings.inline_asm {
-            InlineASM::X64 => self.export_asm_str(function_name, &settings),
-            InlineASM::AArch64 => self.export_asm_str(function_name, &settings),
-            InlineASM::None => self.export_standard_cpp_str(function_name, &settings),
-        }
+    pub fn export_cpp_str<F: CompiledNumber>(
+        &self,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        F::export_cpp(self, function_name, settings)
     }
 
-    fn export_standard_cpp_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+    fn export_generic_cpp_str(&self, function_name: &str, settings: &ExportSettings) -> String {
         let mut res = String::new();
         if settings.include_header {
             res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
@@ -1783,9 +1786,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             self.stack.len()
         );
 
-        res += &format!(
-            "\ntemplate<typename T>\nvoid {function_name}(T* params, T* Z, T* out) {{\n"
-        );
+        res +=
+            &format!("\ntemplate<typename T>\nvoid {function_name}(T* params, T* Z, T* out) {{\n");
 
         for i in 0..self.param_count {
             res += &format!("\tZ[{i}] = params[{i}];\n");
@@ -1801,23 +1803,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += &format!("\tout[{i}] = Z[{r}];\n");
         }
 
-        res += "\treturn;\n}\n";
-
-        if self.stack.iter().all(|x| x.is_real()) {
-            res += &format!(
-                "\nextern \"C\" {{\n\tvoid {function_name}_double(double *params, double *buffer, double *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
-            );
-        } else {
-            res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}"
-            );
-        }
-
-        res += &format!(
-            "\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
-        );
-
-        res
+        res + "\treturn;\n}\n"
     }
 
     fn export_cpp_impl(&self, out: &mut String) {
@@ -1887,7 +1873,57 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         }
     }
 
-    fn export_asm_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+    fn export_asm_real_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+        let mut res = String::new();
+        if settings.include_header {
+            res += "#include <iostream>\n#include <cmath>\n\n";
+        };
+
+        if let Some(header) = &settings.custom_header {
+            res += header;
+        }
+
+        res += &format!(
+            "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
+            function_name,
+            self.stack.len()
+        );
+
+        if self.stack.iter().all(|x| x.is_real()) {
+            res += &format!(
+                "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+                function_name,
+                self.reserved_indices - self.param_count + 1,
+                {
+                    let mut nums = (self.param_count..self.reserved_indices)
+                        .map(|i| format!("double({})", self.stack[i].export()))
+                        .collect::<Vec<_>>();
+                    nums.push("1".to_string()); // used for inversion
+                    nums.join(",")
+                }
+            );
+
+            res += &format!(
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n"
+            );
+
+            self.export_asm_double_impl(
+                &self.instructions,
+                function_name,
+                settings.inline_asm,
+                &mut res,
+            );
+
+            res += "\treturn;\n}\n";
+        } else {
+            res += &format!(
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+            );
+        }
+        res
+    }
+
+    fn export_asm_complex_str(&self, function_name: &str, settings: &ExportSettings) -> String {
         let mut res = String::new();
         if settings.include_header {
             res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
@@ -1927,40 +1963,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             &mut res,
         );
 
-        res += "\treturn;\n}\n\n";
-
-        if self.stack.iter().all(|x| x.is_real()) {
-            res += &format!(
-                "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
-                function_name,
-                self.reserved_indices - self.param_count + 1,
-                {
-                    let mut nums = (self.param_count..self.reserved_indices)
-                        .map(|i| format!("double({})", self.stack[i].export()))
-                        .collect::<Vec<_>>();
-                    nums.push("1".to_string()); // used for inversion
-                    nums.join(",")
-                }
-            );
-
-            res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n"
-            );
-
-            self.export_asm_double_impl(
-                &self.instructions,
-                function_name,
-                settings.inline_asm,
-                &mut res,
-            );
-
-            res += "\treturn;\n}\n";
-        } else {
-            res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
-            );
-        }
-        res
+        res + "\treturn;\n}\n\n"
     }
 
     fn export_asm_double_impl(
@@ -2329,8 +2332,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         );
                                     }
                                     InlineASM::AArch64 => {
-                                        *out +=
-                                            &format!("\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n");
+                                        *out += &format!("\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n");
                                     }
                                     InlineASM::None => unreachable!(),
                                 }
@@ -2386,9 +2388,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         }
                                         InlineASM::AArch64 => {
                                             let addr = asm_load!(*k);
-                                            *out += &format!(
-                                                "\t\t\"ldr d{out_reg}, {addr}\\n\\t\"\n",
-                                            );
+                                            *out +=
+                                                &format!("\t\t\"ldr d{out_reg}, {addr}\\n\\t\"\n",);
                                         }
                                         InlineASM::None => unreachable!(),
                                     }
@@ -2433,9 +2434,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             );
                                         }
                                         InlineASM::AArch64 => {
-                                            *out += &format!(
-                                                "\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n"
-                                            );
+                                            *out +=
+                                                &format!("\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n");
                                         }
                                         InlineASM::None => unreachable!(),
                                     }
@@ -2533,8 +2533,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                         );
                                     }
                                     InlineASM::AArch64 => {
-                                        *out +=
-                                            &format!("\t\t\"str d{out_reg}, {addr}\\n\\t\"\n",);
+                                        *out += &format!("\t\t\"str d{out_reg}, {addr}\\n\\t\"\n",);
                                     }
                                     InlineASM::None => unreachable!(),
                                 }
@@ -2632,8 +2631,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             }
                                             InlineASM::AArch64 => {
                                                 let addr = asm_load!(*k);
-                                                *out +=
-                                                    &format!("\t\t\"ldr d31, {addr}\\n\\t\"\n");
+                                                *out += &format!("\t\t\"ldr d31, {addr}\\n\\t\"\n");
 
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{out_reg}, d{out_reg}, d31\\n\\t\"\n"
@@ -2706,9 +2704,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
                                             );
                                         }
                                         InlineASM::AArch64 => {
-                                            *out += &format!(
-                                                "\t\t\"str d{out_reg}, {addr}\\n\\t\"\n",
-                                            );
+                                            *out +=
+                                                &format!("\t\t\"str d{out_reg}, {addr}\\n\\t\"\n",);
                                         }
                                         InlineASM::None => unreachable!(),
                                     }
@@ -4020,10 +4017,9 @@ impl Expression<Complex<Rational>> {
                     max_pow = Some(pow_counter);
                 }
             } else if let Expression::Pow(p) = x {
-                if p.0 == scheme[0] && p.1 > 0
-                    && (max_pow.is_none() || p.1 < max_pow.unwrap()) {
-                        max_pow = Some(p.1);
-                    }
+                if p.0 == scheme[0] && p.1 > 0 && (max_pow.is_none() || p.1 < max_pow.unwrap()) {
+                    max_pow = Some(p.1);
+                }
             } else if x == &scheme[0] {
                 max_pow = Some(1);
             }
@@ -4912,101 +4908,133 @@ impl<T: Real> EvalTree<T> {
     }
 }
 
-pub struct ExportedCode {
+pub struct ExportedCode<T: CompiledNumber> {
     source_filename: String,
     function_name: String,
+    //mode: T,
+    _phantom: std::marker::PhantomData<T>,
 }
-pub struct CompiledCode {
+pub struct CompiledCode<T: CompiledNumber> {
     library_filename: String,
     function_name: String,
+    //mode: T,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl CompiledCode {
+impl<T: CompiledNumber> CompiledCode<T> {
     /// Load the evaluator from the compiled shared library.
-    pub fn load(&self) -> Result<CompiledEvaluator, String> {
-        CompiledEvaluator::load(&self.library_filename, &self.function_name)
+    pub fn load(&self) -> Result<T::Evaluator, String> {
+        T::Evaluator::load(&self.library_filename, &self.function_name)
     }
 }
 
 type L = std::sync::Arc<libloading::Library>;
 
+/// All known functions that may exist in the shared library.
 struct EvaluatorFunctions<'a> {
-    eval_double: libloading::Symbol<
-        'a,
-        unsafe extern "C" fn(params: *const f64, buffer: *mut f64, out: *mut f64),
+    eval_double: Option<
+        libloading::Symbol<
+            'a,
+            unsafe extern "C" fn(params: *const f64, buffer: *mut f64, out: *mut f64),
+        >,
     >,
-    eval_complex: libloading::Symbol<
-        'a,
-        unsafe extern "C" fn(
-            params: *const Complex<f64>,
-            buffer: *mut Complex<f64>,
-            out: *mut Complex<f64>,
-        ),
+    eval_complex: Option<
+        libloading::Symbol<
+            'a,
+            unsafe extern "C" fn(
+                params: *const Complex<f64>,
+                buffer: *mut Complex<f64>,
+                out: *mut Complex<f64>,
+            ),
+        >,
     >,
     get_buffer_len: libloading::Symbol<'a, unsafe extern "C" fn() -> c_ulong>,
 }
 
-pub struct CompiledEvaluator {
+/// A number type that can be used to call a compiled evaluator.
+pub trait CompiledNumber: Sized {
+    type Evaluator: EvaluatorLoader;
+
+    /// Export an evaluator to C++ code for this number type.
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String>;
+}
+
+pub trait EvaluatorLoader: Sized {
+    /// Load a compiled evaluator from a shared library.
+    fn load(file: &str, function_name: &str) -> Result<Self, String>;
+}
+
+impl CompiledNumber for f64 {
+    type Evaluator = CompiledRealEvaluator;
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        if !eval.stack.iter().all(|x| x.is_real()) {
+            return Err(
+                "Cannot create real evaluator with complex coefficients. Use Complex<f64>".into(),
+            );
+        }
+
+        Ok(match settings.inline_asm {
+            InlineASM::X64 => eval.export_asm_real_str(function_name, &settings),
+            InlineASM::AArch64 => eval.export_asm_real_str(function_name, &settings),
+            InlineASM::None => {
+                let r = eval.export_generic_cpp_str(function_name, &settings);
+                r + format!("\nextern \"C\" {{\n\tvoid {function_name}_double(double *params, double *buffer, double *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
+            }
+        })
+    }
+}
+
+impl CompiledNumber for Complex<f64> {
+    type Evaluator = CompiledComplexEvaluator;
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        Ok(match settings.inline_asm {
+            InlineASM::X64 => eval.export_asm_complex_str(function_name, &settings),
+            InlineASM::AArch64 => eval.export_asm_complex_str(function_name, &settings),
+            InlineASM::None => {
+                let r = eval.export_generic_cpp_str(function_name, &settings);
+                r + format!("\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double> *params, std::complex<double> *buffer, std::complex<double> *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
+            }
+        })
+    }
+}
+
+pub struct CompiledRealEvaluator {
     fn_name: String,
     library: Library,
     buffer_double: Vec<f64>,
-    buffer_complex: Vec<Complex<f64>>,
 }
 
-self_cell!(
-    struct Library {
-        owner: L,
-
-        #[covariant]
-        dependent: EvaluatorFunctions,
-    }
-);
-
-unsafe impl Send for CompiledEvaluator {}
-
-impl std::fmt::Debug for CompiledEvaluator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CompiledEvaluator({})", self.fn_name)
+impl EvaluatorLoader for CompiledRealEvaluator {
+    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+        CompiledRealEvaluator::load(file, function_name)
     }
 }
 
-impl Clone for CompiledEvaluator {
-    fn clone(&self) -> Self {
-        self.load_new_function(&self.fn_name).unwrap()
-    }
-}
-
-/// A floating point type that can be used for compiled evaluation.
-pub trait CompiledEvaluatorFloat: Sized {
-    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]);
-}
-
-impl CompiledEvaluatorFloat for f64 {
-    #[inline(always)]
-    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
-        eval.evaluate_double(args, out);
-    }
-}
-
-impl CompiledEvaluatorFloat for Complex<f64> {
-    #[inline(always)]
-    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
-        eval.evaluate_complex(args, out);
-    }
-}
-
-impl CompiledEvaluator {
+impl CompiledRealEvaluator {
     /// Load a new function from the same library.
-    pub fn load_new_function(&self, function_name: &str) -> Result<CompiledEvaluator, String> {
+    pub fn load_new_function(&self, function_name: &str) -> Result<CompiledRealEvaluator, String> {
         let library = unsafe {
             Library::try_new::<String>(self.library.borrow_owner().clone(), |lib| {
                 Ok(EvaluatorFunctions {
-                    eval_double: lib
-                        .get(format!("{function_name}_double").as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    eval_complex: lib
-                        .get(format!("{function_name}_complex").as_bytes())
-                        .map_err(|e| e.to_string())?,
+                    eval_double: Some(
+                        lib.get(format!("{function_name}_double").as_bytes())
+                            .map_err(|e| e.to_string())?,
+                    ),
+                    eval_complex: None,
                     get_buffer_len: lib
                         .get(format!("{function_name}_get_buffer_len").as_bytes())
                         .map_err(|e| e.to_string())?,
@@ -5016,16 +5044,15 @@ impl CompiledEvaluator {
 
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
-        Ok(CompiledEvaluator {
+        Ok(CompiledRealEvaluator {
             fn_name: function_name.to_string(),
             buffer_double: vec![0.; len],
-            buffer_complex: vec![Complex::new(0., 0.); len],
             library,
         })
     }
 
     /// Load a compiled evaluator from a shared library.
-    pub fn load(file: &str, function_name: &str) -> Result<CompiledEvaluator, String> {
+    pub fn load(file: &str, function_name: &str) -> Result<CompiledRealEvaluator, String> {
         unsafe {
             let lib = match libloading::Library::new(file) {
                 Ok(lib) => lib,
@@ -5036,12 +5063,11 @@ impl CompiledEvaluator {
 
             let library = Library::try_new::<String>(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
-                    eval_double: lib
-                        .get(format!("{function_name}_double").as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    eval_complex: lib
-                        .get(format!("{function_name}_complex").as_bytes())
-                        .map_err(|e| e.to_string())?,
+                    eval_double: Some(
+                        lib.get(format!("{}_double", function_name).as_bytes())
+                            .map_err(|e| e.to_string())?,
+                    ),
+                    eval_complex: None,
                     get_buffer_len: lib
                         .get(format!("{function_name}_get_buffer_len").as_bytes())
                         .map_err(|e| e.to_string())?,
@@ -5050,38 +5076,131 @@ impl CompiledEvaluator {
 
             let len = (library.borrow_dependent().get_buffer_len)() as usize;
 
-            Ok(CompiledEvaluator {
+            Ok(CompiledRealEvaluator {
                 fn_name: function_name.to_string(),
                 buffer_double: vec![0.; len],
-                buffer_complex: vec![Complex::new(0., 0.); len],
                 library,
             })
         }
     }
 
-    /// Evaluate the compiled code.
-    #[inline(always)]
-    pub fn evaluate<T: CompiledEvaluatorFloat>(&mut self, args: &[T], out: &mut [T]) {
-        T::evaluate(self, args, out);
-    }
-
     /// Evaluate the compiled code with double-precision floating point numbers.
     #[inline(always)]
-    pub fn evaluate_double(&mut self, args: &[f64], out: &mut [f64]) {
+    pub fn evaluate(&mut self, args: &[f64], out: &mut [f64]) {
         unsafe {
-            (self.library.borrow_dependent().eval_double)(
+            (self
+                .library
+                .borrow_dependent()
+                .eval_double
+                .as_ref()
+                .unwrap_unchecked())(
                 args.as_ptr(),
                 self.buffer_double.as_mut_ptr(),
                 out.as_mut_ptr(),
             )
         }
     }
+}
+
+unsafe impl Send for CompiledRealEvaluator {}
+
+impl std::fmt::Debug for CompiledRealEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledRealEvaluator({})", self.fn_name)
+    }
+}
+
+impl Clone for CompiledRealEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+pub struct CompiledComplexEvaluator {
+    fn_name: String,
+    library: Library,
+    buffer_complex: Vec<Complex<f64>>,
+}
+
+impl EvaluatorLoader for CompiledComplexEvaluator {
+    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+        CompiledComplexEvaluator::load(file, function_name)
+    }
+}
+
+impl CompiledComplexEvaluator {
+    /// Load a new function from the same library.
+    pub fn load_new_function(
+        &self,
+        function_name: &str,
+    ) -> Result<CompiledComplexEvaluator, String> {
+        let library = unsafe {
+            Library::try_new::<String>(self.library.borrow_owner().clone(), |lib| {
+                Ok(EvaluatorFunctions {
+                    eval_double: None,
+                    eval_complex: Some(
+                        lib.get(format!("{}_complex", function_name).as_bytes())
+                            .map_err(|e| e.to_string())?,
+                    ),
+                    get_buffer_len: lib
+                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                })
+            })
+        }?;
+
+        let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
+
+        Ok(CompiledComplexEvaluator {
+            fn_name: function_name.to_string(),
+            buffer_complex: vec![Complex::new_zero(); len],
+            library,
+        })
+    }
+
+    /// Load a compiled evaluator from a shared library.
+    pub fn load(file: &str, function_name: &str) -> Result<CompiledComplexEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(file) {
+                Ok(lib) => lib,
+                Err(_) => {
+                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
+                }
+            };
+
+            let library = Library::try_new::<String>(std::sync::Arc::new(lib), |lib| {
+                Ok(EvaluatorFunctions {
+                    eval_double: None,
+                    eval_complex: Some(
+                        lib.get(format!("{}_complex", function_name).as_bytes())
+                            .map_err(|e| e.to_string())?,
+                    ),
+                    get_buffer_len: lib
+                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                })
+            })?;
+
+            let len = (library.borrow_dependent().get_buffer_len)() as usize;
+
+            Ok(CompiledComplexEvaluator {
+                fn_name: function_name.to_string(),
+                buffer_complex: vec![Complex::new_zero(); len],
+                library,
+            })
+        }
+    }
 
     /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
-    pub fn evaluate_complex(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
+    pub fn evaluate(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
         unsafe {
-            (self.library.borrow_dependent().eval_complex)(
+            (self
+                .library
+                .borrow_dependent()
+                .eval_complex
+                .as_ref()
+                .unwrap_unchecked())(
                 args.as_ptr(),
                 self.buffer_complex.as_mut_ptr(),
                 out.as_mut_ptr(),
@@ -5089,6 +5208,29 @@ impl CompiledEvaluator {
         }
     }
 }
+
+unsafe impl Send for CompiledComplexEvaluator {}
+
+impl std::fmt::Debug for CompiledComplexEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledComplexEvaluator({})", self.fn_name)
+    }
+}
+
+impl Clone for CompiledComplexEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+self_cell!(
+    struct Library {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctions,
+    }
+);
 
 /// Options for compiling exported code.
 #[derive(Clone)]
@@ -5113,12 +5255,13 @@ impl Default for CompileOptions {
     }
 }
 
-impl ExportedCode {
+impl<T: CompiledNumber> ExportedCode<T> {
     /// Create a new exported code object from a source file and function name.
     pub fn new(source_filename: String, function_name: String) -> Self {
         ExportedCode {
             source_filename,
             function_name,
+            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -5127,7 +5270,7 @@ impl ExportedCode {
         &self,
         out: &str,
         options: CompileOptions,
-    ) -> Result<CompiledCode, std::io::Error> {
+    ) -> Result<CompiledCode<T>, std::io::Error> {
         let mut builder = std::process::Command::new(&options.compiler);
         builder
             .arg("-shared")
@@ -5151,17 +5294,16 @@ impl ExportedCode {
             .output()?;
 
         if !r.status.success() {
-            return Err(std::io::Error::other(
-                format!(
-                    "Could not compile code: {}",
-                    String::from_utf8_lossy(&r.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Could not compile code: {}",
+                String::from_utf8_lossy(&r.stderr)
+            )));
         }
 
         Ok(CompiledCode {
             library_filename: out.to_string(),
             function_name: self.function_name.clone(),
+            _phantom: std::marker::PhantomData,
         })
     }
 }
@@ -5228,9 +5370,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             res += &format!("\treturn {ret};\n}}\n");
         }
 
-        res += &format!(
-            "\ntemplate<typename T>\nvoid {function_name}(T* params, T* out) {{\n"
-        );
+        res += &format!("\ntemplate<typename T>\nvoid {function_name}(T* params, T* out) {{\n");
 
         for (i, s) in self.expressions.subexpressions.iter().enumerate() {
             res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, &[]));

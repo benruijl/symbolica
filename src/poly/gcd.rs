@@ -1707,21 +1707,11 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
             .filter_map(|(i, v)| if *v == 3 { Some(i) } else { None })
             .collect();
 
-        // determine safe bounds for variables in the gcd
-        // TODO: deprecate, tight bounds are always better
-        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> = (0..a.nvars())
-            .map(|i| {
-                let da = a.degree(i);
-                let db = b.degree(i);
-                if da < db { da } else { db }
-            })
-            .collect();
-
-        // find better upper bounds for all variables
-        let mut tight_bounds = R::get_gcd_var_bounds(&a, &b, &vars, &bounds);
+        // find upper bounds for all variables
+        let mut bounds = R::get_gcd_var_bounds(&a, &b, &vars);
 
         // if all bounds are 0, the gcd is a constant
-        if tight_bounds.iter().all(|x| x.is_zero()) {
+        if bounds.iter().all(|x| x.is_zero()) {
             return rescale_gcd(
                 a.constant(a.ring.gcd(&a.content(), &b.content())),
                 &shared_degree,
@@ -1731,8 +1721,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
         }
 
         // if some variables do not appear in the gcd, split the polynomials in these variables
-        if tight_bounds.iter().any(|x| x.is_zero()) {
-            let zero_bound: SmallVec<[_; INLINED_EXPONENTS]> = tight_bounds
+        if bounds.iter().any(|x| x.is_zero()) {
+            let zero_bound: SmallVec<[_; INLINED_EXPONENTS]> = bounds
                 .iter()
                 .enumerate()
                 .filter_map(|(i, v)| {
@@ -1762,7 +1752,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
         // Determine a good variable ordering based on the estimated degree (decreasing) in the gcd.
         // If it is different from the input, make a copy and rearrange so that the
         // polynomials do not have to be sorted after filling in variables.
-        vars.sort_by(|&i, &j| tight_bounds[j].cmp(&tight_bounds[i]));
+        vars.sort_by(|&i, &j| bounds[j].cmp(&bounds[i]));
 
         // strip the gcd of the univariate contents wrt the new first variable
         let content = if vars.len() > 1 {
@@ -1809,13 +1799,6 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
                 newbounds[x] = bounds[vars[x]];
             }
             bounds = newbounds;
-
-            let mut newtight_bounds: SmallVec<[_; INLINED_EXPONENTS]> =
-                smallvec![E::zero(); bounds.len()];
-            for x in 0..vars.len() {
-                newtight_bounds[x] = tight_bounds[vars[x]];
-            }
-            tight_bounds = newtight_bounds;
         }
 
         let mut g = PolynomialGCD::gcd(
@@ -1827,7 +1810,6 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
                 Cow::Borrowed(&vars)
             },
             &mut bounds,
-            &mut tight_bounds,
         );
 
         if rearrange {
@@ -3350,13 +3332,11 @@ pub trait PolynomialGCD<E: PositiveExponent>: Ring {
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
         bounds: &mut [E],
-        tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E>;
     fn get_gcd_var_bounds(
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
-        loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]>;
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E>;
 }
@@ -3428,16 +3408,16 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
         bounds: &mut [E],
-        tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
         // TODO: choose better ordering
         if vars[0] == 0
             && bounds[0] > E::zero()
             && bounds.iter().filter(|x| **x > E::zero()).count() > 2
         {
-            return a.gcd_hu_monagan_bivariate(b, tight_bounds);
+            return a.gcd_hu_monagan_bivariate(b, bounds);
         }
 
+        let mut tight_bounds: SmallVec<[E; INLINED_EXPONENTS]> = bounds.iter().cloned().collect();
         if a.coefficients
             .iter()
             .any(|x| !matches!(x, Integer::Natural(_)))
@@ -3445,9 +3425,9 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
                 .iter()
                 .any(|x| !matches!(x, Integer::Natural(_)))
         {
-            MultivariatePolynomial::gcd_zippel::<u64>(a, b, vars, bounds, tight_bounds)
+            MultivariatePolynomial::gcd_zippel::<u64>(a, b, vars, bounds, &mut tight_bounds)
         } else {
-            MultivariatePolynomial::gcd_zippel::<u32>(a, b, vars, bounds, tight_bounds)
+            MultivariatePolynomial::gcd_zippel::<u32>(a, b, vars, bounds, &mut tight_bounds)
         }
     }
 
@@ -3455,9 +3435,9 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
-        loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
-        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
+        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> =
+            (0..a.nvars()).map(|_| E::zero()).collect();
 
         let mut primes = PrimeIteratorU64::new(u32::get_large_prime() as u64);
 
@@ -3466,7 +3446,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         let mut bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
 
         for var in vars.iter() {
-            if loose_bounds[*var] == E::zero() {
+            if a.degree(*var) == E::zero() || b.degree(*var) == E::zero() {
                 continue;
             }
 
@@ -3487,7 +3467,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
 
             let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
                 vars.iter().filter(|i| *i != var).cloned().collect();
-            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
+            bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
 
             // evaluate at every other variable at one, if they are present
             /*if loose_bounds
@@ -3519,7 +3499,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
             }*/
         }
 
-        tight_bounds
+        bounds
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
@@ -3549,7 +3529,6 @@ impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
         bounds: &mut [E],
-        tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
         // remove the content so that the polynomials have integer coefficients
         let content = a.ring.gcd(&a.content(), &b.content());
@@ -3557,15 +3536,13 @@ impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
         let a_int = a.map_coeff(|c| a.ring.div(c, &content).numerator(), Z);
         let b_int = b.map_coeff(|c| b.ring.div(c, &content).numerator(), Z);
 
-        PolynomialGCD::gcd(&a_int, &b_int, vars, bounds, tight_bounds)
-            .map_coeff(|c| c.to_rational(), Q)
+        PolynomialGCD::gcd(&a_int, &b_int, vars, bounds).map_coeff(|c| c.to_rational(), Q)
     }
 
     fn get_gcd_var_bounds(
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
-        loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
         // remove the content so that the polynomials have integer coefficients
         let content = a.ring.gcd(&a.content(), &b.content());
@@ -3573,7 +3550,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
         let a_int = a.map_coeff(|c| a.ring.div(c, &content).numerator(), Z);
         let b_int = b.map_coeff(|c| b.ring.div(c, &content).numerator(), Z);
 
-        PolynomialGCD::get_gcd_var_bounds(&a_int, &b_int, vars, loose_bounds)
+        PolynomialGCD::get_gcd_var_bounds(&a_int, &b_int, vars)
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
@@ -3603,10 +3580,18 @@ where
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
         bounds: &mut [E],
-        tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
         assert!(!a.is_zero() || !b.is_zero());
-        match MultivariatePolynomial::gcd_shape_modular(a, b, vars, bounds, tight_bounds) {
+        match MultivariatePolynomial::gcd_shape_modular(
+            a,
+            b,
+            vars,
+            bounds,
+            &mut bounds
+                .iter()
+                .cloned()
+                .collect::<SmallVec<[E; INLINED_EXPONENTS]>>(),
+        ) {
             Some(x) => x,
             None => {
                 // upgrade to a Galois field that is large enough
@@ -3615,7 +3600,7 @@ where
                 let field = a.ring.upgrade(a.ring.get_extension_degree() as usize + 1);
                 let ag = a.map_coeff(|c| a.ring.upgrade_element(c, &field), field.clone());
                 let bg = b.map_coeff(|c| a.ring.upgrade_element(c, &field), field.clone());
-                let g = PolynomialGCD::gcd(&ag, &bg, vars, bounds, tight_bounds);
+                let g = PolynomialGCD::gcd(&ag, &bg, vars, bounds);
                 g.map_coeff(|c| a.ring.downgrade_element(c), a.ring.clone())
             }
         }
@@ -3625,9 +3610,9 @@ where
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
-        loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
-        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
+        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> =
+            (0..a.nvars()).map(|_| E::zero()).collect();
         for var in vars {
             let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
                 vars.iter().filter(|i| *i != var).cloned().collect();
@@ -3666,7 +3651,6 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
         bounds: &mut [E],
-        tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
         let content = a.ring.poly().content().inv();
         let a_integer =
@@ -3681,6 +3665,8 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
         }
 
         let mut primes = PrimeIteratorU64::new(u32::get_large_prime() as u64);
+
+        let mut tight_bounds: SmallVec<[E; INLINED_EXPONENTS]> = bounds.iter().cloned().collect();
 
         'newfirstprime: loop {
             let Some(p) = u32::try_from_integer(primes.next().unwrap().into()) else {
@@ -3716,7 +3702,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
                 &bp,
                 vars,
                 bounds,
-                tight_bounds,
+                &mut tight_bounds,
             ) {
                 Some(x) => x,
                 None => {
@@ -3981,9 +3967,9 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
-        loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
-        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
+        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> =
+            (0..a.nvars()).map(|_| E::zero()).collect();
         let mut primes = PrimeIteratorU64::new(u32::get_large_prime() as u64);
 
         let mut f = Zp::new(primes.next().unwrap() as u32);
@@ -3992,7 +3978,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
         let mut bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
 
         for var in vars.iter() {
-            if loose_bounds[*var] == E::zero() {
+            if a.degree(*var) == E::zero() || b.degree(*var) == E::zero() {
                 continue;
             }
 
@@ -4014,10 +4000,10 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
 
             let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
                 vars.iter().filter(|i| *i != var).cloned().collect();
-            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
+            bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
         }
 
-        tight_bounds
+        bounds
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {

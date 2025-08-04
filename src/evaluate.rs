@@ -1719,7 +1719,9 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             filename += ".cpp";
         }
 
-        let cpp = &self.export_cpp_str(function_name, settings);
+        let cpp = &self
+            .export_cpp_str::<F>(function_name, settings)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
         std::fs::write(&filename, cpp)?;
         Ok(ExportedCode {
@@ -1730,15 +1732,15 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     }
 
     /// Write the evaluation tree to a C++ source string.
-    pub fn export_cpp_str(&self, function_name: &str, settings: ExportSettings) -> String {
-        match settings.inline_asm {
-            InlineASM::X64 => self.export_asm_str(function_name, &settings),
-            InlineASM::AArch64 => self.export_asm_str(function_name, &settings),
-            InlineASM::None => self.export_standard_cpp_str(function_name, &settings),
-        }
+    pub fn export_cpp_str<F: CompiledNumber>(
+        &self,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        F::export_cpp(self, function_name, settings)
     }
 
-    fn export_standard_cpp_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+    fn export_generic_cpp_str(&self, function_name: &str, settings: &ExportSettings) -> String {
         let mut res = String::new();
         if settings.include_header {
             res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
@@ -1772,23 +1774,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += &format!("\tout[{i}] = Z[{r}];\n");
         }
 
-        res += "\treturn;\n}\n";
-
-        if self.stack.iter().all(|x| x.is_real()) {
-            res += &format!(
-                "\nextern \"C\" {{\n\tvoid {function_name}_double(double *params, double *buffer, double *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
-            );
-        } else {
-            res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}"
-            );
-        }
-
-        res += &format!(
-            "\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double> *params, std::complex<double> *buffer,  std::complex<double> *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
-        );
-
-        res
+        res + "\treturn;\n}\n"
     }
 
     fn export_cpp_impl(&self, out: &mut String) {
@@ -1858,7 +1844,57 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         }
     }
 
-    fn export_asm_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+    fn export_asm_real_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+        let mut res = String::new();
+        if settings.include_header {
+            res += "#include <iostream>\n#include <cmath>\n\n";
+        };
+
+        if let Some(header) = &settings.custom_header {
+            res += header;
+        }
+
+        res += &format!(
+            "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
+            function_name,
+            self.stack.len()
+        );
+
+        if self.stack.iter().all(|x| x.is_real()) {
+            res += &format!(
+                "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+                function_name,
+                self.reserved_indices - self.param_count + 1,
+                {
+                    let mut nums = (self.param_count..self.reserved_indices)
+                        .map(|i| format!("double({})", self.stack[i].export()))
+                        .collect::<Vec<_>>();
+                    nums.push("1".to_string()); // used for inversion
+                    nums.join(",")
+                }
+            );
+
+            res += &format!(
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n"
+            );
+
+            self.export_asm_double_impl(
+                &self.instructions,
+                function_name,
+                settings.inline_asm,
+                &mut res,
+            );
+
+            res += "\treturn;\n}\n";
+        } else {
+            res += &format!(
+                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+            );
+        }
+        res
+    }
+
+    fn export_asm_complex_str(&self, function_name: &str, settings: &ExportSettings) -> String {
         let mut res = String::new();
         if settings.include_header {
             res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
@@ -1898,40 +1934,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             &mut res,
         );
 
-        res += "\treturn;\n}\n\n";
-
-        if self.stack.iter().all(|x| x.is_real()) {
-            res += &format!(
-                "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
-                function_name,
-                self.reserved_indices - self.param_count + 1,
-                {
-                    let mut nums = (self.param_count..self.reserved_indices)
-                        .map(|i| format!("double({})", self.stack[i].export()))
-                        .collect::<Vec<_>>();
-                    nums.push("1".to_string()); // used for inversion
-                    nums.join(",")
-                }
-            );
-
-            res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n"
-            );
-
-            self.export_asm_double_impl(
-                &self.instructions,
-                function_name,
-                settings.inline_asm,
-                &mut res,
-            );
-
-            res += "\treturn;\n}\n";
-        } else {
-            res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
-            );
-        }
-        res
+        res + "\treturn;\n}\n\n"
     }
 
     fn export_asm_double_impl(
@@ -4900,11 +4903,15 @@ struct EvaluatorFunctions<'a> {
 }
 
 /// A number type that can be used to call a compiled evaluator.
-pub trait CompiledNumber {
+pub trait CompiledNumber: Sized {
     type Evaluator: EvaluatorLoader;
 
-    /// Return whether to export real and complex assembly code.
-    fn asm_export() -> (bool, bool);
+    /// Export an evaluator to C++ code for this number type.
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String>;
 }
 
 pub trait EvaluatorLoader: Sized {
@@ -4915,16 +4922,44 @@ pub trait EvaluatorLoader: Sized {
 impl CompiledNumber for f64 {
     type Evaluator = CompiledRealEvaluator;
 
-    fn asm_export() -> (bool, bool) {
-        (true, false)
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        if !eval.stack.iter().all(|x| x.is_real()) {
+            return Err(
+                "Cannot create real evaluator with complex coefficients. Use Complex<f64>".into(),
+            );
+        }
+
+        Ok(match settings.inline_asm {
+            InlineASM::X64 => eval.export_asm_real_str(function_name, &settings),
+            InlineASM::AArch64 => eval.export_asm_real_str(function_name, &settings),
+            InlineASM::None => {
+                let r = eval.export_generic_cpp_str(function_name, &settings);
+                r + format!("\nextern \"C\" {{\n\tvoid {function_name}_double(double *params, double *buffer, double *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
+            }
+        })
     }
 }
 
 impl CompiledNumber for Complex<f64> {
     type Evaluator = CompiledComplexEvaluator;
 
-    fn asm_export() -> (bool, bool) {
-        (false, true)
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        Ok(match settings.inline_asm {
+            InlineASM::X64 => eval.export_asm_complex_str(function_name, &settings),
+            InlineASM::AArch64 => eval.export_asm_complex_str(function_name, &settings),
+            InlineASM::None => {
+                let r = eval.export_generic_cpp_str(function_name, &settings);
+                r + format!("\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double> *params, std::complex<double> *buffer, std::complex<double> *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
+            }
+        })
     }
 }
 

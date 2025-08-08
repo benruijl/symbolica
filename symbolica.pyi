@@ -4459,6 +4459,14 @@ class Integer:
         """Check if the 64-bit number `n` is a prime number."""
 
     @classmethod
+    def factor(_cls, n: int) -> Sequence[Tuple[int, int]]:
+        """Factor the 64-bit number `n` into its prime factors and return a list of tuples `(p, e)` where `p` is a prime factor and `e` is its exponent."""
+
+    @classmethod
+    def totient(_cls, n: int) -> int:
+        """Compute the Euler totient function of the number `n`, i.e., the number of integers less than `n` that are coprime to `n`."""
+
+    @classmethod
     def gcd(_cls, a: int, b: int) -> int:
         """Compute the greatest common divisor of the numbers `a` and `b`."""
 

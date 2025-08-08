@@ -2043,13 +2043,17 @@ fn pollard_brent_rho(n: u64) -> u64 {
 }
 
 /// Factorize a 64-bit number into its prime factors.
-pub fn factor(n: u64, out: &mut Vec<u64>) {
+pub fn factor(mut n: u64, out: &mut Vec<u64>) {
     if n < 2 {
         out.push(n);
         return;
     }
 
-    let mut n = n;
+    while n % 2 == 0 {
+        out.push(2);
+        n /= 2;
+    }
+
     while n > 1 {
         let f = pollard_brent_rho(n);
 
@@ -2502,9 +2506,16 @@ mod test {
     #[test]
     fn factor() {
         let mut factors = Vec::new();
-        super::factor(18446744073709551426, &mut factors);
-        factors.sort();
-        assert_eq!(factors, [2, 3, 23, 133672058505141677])
+        for i in 18446744073709541426..18446744073709551426 {
+            super::factor(i, &mut factors);
+            let mut res = 1;
+            for f in &factors {
+                res *= f;
+            }
+
+            assert_eq!(res, i);
+            factors.clear();
+        }
     }
 
     #[test]

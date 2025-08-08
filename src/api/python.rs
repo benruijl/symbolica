@@ -13376,6 +13376,31 @@ impl PythonInteger {
         is_prime_u64(n)
     }
 
+    /// Factor a 64-bit number `n` into primes.
+    #[classmethod]
+    fn factor(_cls: &Bound<'_, PyType>, n: u64) -> Vec<(u64, u64)> {
+        let mut factors = Vec::new();
+        crate::domains::finite_field::factor(n, &mut factors);
+        factors.sort();
+        let mut ff = vec![];
+        ff.push((factors[0], 1));
+        for i in 1..factors.len() {
+            if factors[i] == factors[i - 1] {
+                ff.last_mut().unwrap().1 += 1;
+            } else {
+                ff.push((factors[i], 1));
+            }
+        }
+
+        ff
+    }
+
+    /// Compute the Euler totient function for the number `n`.
+    #[classmethod]
+    fn totient(_cls: &Bound<'_, PyType>, n: u64) -> u64 {
+        crate::domains::finite_field::totient(n)
+    }
+
     /// Compute the greatest common divisor of the numbers `a` and `b`.
     #[classmethod]
     fn gcd(_cls: &Bound<'_, PyType>, n1: Integer, n2: Integer) -> Integer {

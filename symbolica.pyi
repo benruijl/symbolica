@@ -16,7 +16,7 @@ Examples
 
 from __future__ import annotations
 from enum import Enum
-from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
+from typing import Any, Callable, Literal, overload, Iterator, Optional, Sequence, Tuple, List
 from decimal import Decimal
 
 
@@ -4086,18 +4086,72 @@ class Evaluator:
         ```
         """
 
+    @overload
     def compile(
         self,
         function_name: str,
         filename: str,
         library_name: str,
+        number_type: Literal['real'],
         inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
         custom_header: Optional[str] = None,
-    ) -> CompiledEvaluator:
+    ) -> CompiledRealEvaluator:
         """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
-        The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+
+        Parameters
+        ----------
+        function_name : str
+            The name of the function to generate and compile.
+        filename : str
+            The name of the file to generate.
+        library_name : str
+            The name of the shared library to generate.
+        number_type : Literal['real'] | Literal['complex]
+            The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+        inline_asm : str
+            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        optimization_level : int
+            The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        custom_path : Optional[str]
+            The custom path to the compiler executable.
+        custom_header : Optional[str]
+            The custom header to include in the generated code.
+        """
+
+    @overload
+    def compile(
+        self,
+        function_name: str,
+        filename: str,
+        library_name: str,
+        number_type: Literal['complex'],
+        inline_asm: str = 'default',
+        optimization_level: int = 3,
+        compiler_path: Optional[str] = None,
+        custom_header: Optional[str] = None,
+    ) -> CompiledComplexEvaluator:
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+        Parameters
+        ----------
+        function_name : str
+            The name of the function to generate and compile.
+        filename : str
+            The name of the file to generate.
+        library_name : str
+            The name of the shared library to generate.
+        number_type : Literal['real'] | Literal['complex]
+            The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+        inline_asm : str
+            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        optimization_level : int
+            The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        custom_path : Optional[str]
+            The custom path to the compiler executable.
+        custom_header : Optional[str]
+            The custom header to include in the generated code.
         """
 
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
@@ -4115,7 +4169,7 @@ class Evaluator:
         This method has less overhead than `evaluate_complex`."""
 
 
-class CompiledEvaluator:
+class CompiledRealEvaluator:
     """An compiled evaluator of an expression. This will give the highest performance of
     all evaluators."""
 
@@ -4126,7 +4180,7 @@ class CompiledEvaluator:
         function_name: str,
         input_len: int,
         output_len: int,
-    ) -> CompiledEvaluator:
+    ) -> CompiledRealEvaluator:
         """Load a compiled library, previously generated with `Evaluator.compile()`."""
 
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
@@ -4136,12 +4190,27 @@ class CompiledEvaluator:
         """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
         This method has less overhead than `evaluate`."""
 
-    def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
+
+class CompiledComplexEvaluator:
+    """An compiled evaluator of an expression. This will give the highest performance of
+    all evaluators."""
+
+    @classmethod
+    def load(
+        _cls,
+        filename: str,
+        function_name: str,
+        input_len: int,
+        output_len: int,
+    ) -> CompiledComplexEvaluator:
+        """Load a compiled library, previously generated with `Evaluator.compile()`."""
+
+    def evaluate(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_complex_flat(self, inputs: Sequence[complex]) -> List[complex]:
+    def evaluate_flat(self, inputs: Sequence[complex]) -> List[complex]:
         """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-        This method has less overhead than `evaluate_complex`."""
+        This method has less overhead than `evaluate`."""
 
 
 class NumericalIntegrator:

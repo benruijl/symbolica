@@ -7,7 +7,7 @@ use std::{
     os::raw::c_ulong,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -33,6 +33,7 @@ use crate::{
     id::ConditionResult,
     numerical_integration::MonteCarloRng,
     state::State,
+    utils::AbortCheck,
 };
 
 type EvalFnType<A, T> = Box<
@@ -259,13 +260,27 @@ struct Expr {
     body: Atom,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OptimizationSettings {
     pub horner_iterations: usize,
     pub n_cores: usize,
     pub cpe_iterations: Option<usize>,
     pub hot_start: Option<Vec<Expression<Complex<Rational>>>>,
+    pub abort_check: Option<Box<dyn AbortCheck>>,
     pub verbose: bool,
+}
+
+impl std::fmt::Debug for OptimizationSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("OptimizationSettings")
+            .field("horner_iterations", &self.horner_iterations)
+            .field("n_cores", &self.n_cores)
+            .field("cpe_iterations", &self.cpe_iterations)
+            .field("hot_start", &self.hot_start)
+            .field("abort_check", &self.abort_check.is_some())
+            .field("verbose", &self.verbose)
+            .finish()
+    }
 }
 
 impl Default for OptimizationSettings {
@@ -275,6 +290,7 @@ impl Default for OptimizationSettings {
             n_cores: 1,
             cpe_iterations: None,
             hot_start: None,
+            abort_check: None,
             verbose: false,
         }
     }
@@ -1001,10 +1017,26 @@ impl<T: Default> ExpressionEvaluator<T> {
         self.result_indices.len()
     }
 
+    /// Return the total number of additions and multiplications.
+    pub fn count_operations(&self) -> (usize, usize) {
+        let mut add_count = 0;
+        let mut mul_count = 0;
+
+        for instr in &self.instructions {
+            match instr {
+                Instr::Add(_, s) => add_count += s.len() - 1,
+                Instr::Mul(_, s) => mul_count += s.len() - 1,
+                _ => {}
+            }
+        }
+
+        (add_count, mul_count)
+    }
+
     fn remove_common_pairs(&mut self) -> usize {
         let mut pairs: HashMap<_, Vec<usize>> = HashMap::default();
 
-        let mut affected_lines = vec![true; self.instructions.len()];
+        let mut affected_lines = vec![false; self.instructions.len()];
 
         for (p, i) in self.instructions.iter().enumerate() {
             match i {
@@ -1020,20 +1052,17 @@ impl<T: Default> ExpressionEvaluator<T> {
             }
         }
 
-        // for now, ignore pairs with only occurrences on the same line
         let mut to_remove: Vec<_> = pairs.clone().into_iter().collect();
-
         to_remove.retain_mut(|(_, v)| {
+            let keep = v.len() > 1;
             v.dedup();
-            v.len() > 1
+            keep
         });
 
         // sort in other direction since we pop
         to_remove.sort_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| a.cmp(b)));
 
         let total_remove = to_remove.len();
-
-        affected_lines.fill(false);
 
         let old_len = self.instructions.len();
 
@@ -3621,7 +3650,7 @@ impl<T: Clone + PartialEq> EvalTree<T> {
 
 impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(mut self, cpe_rounds: Option<usize>) -> ExpressionEvaluator<T> {
+    pub fn linearize(mut self, cpe_rounds: Option<usize>, verbose: bool) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
@@ -3655,8 +3684,16 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
         };
 
         for _ in 0..cpe_rounds.unwrap_or(usize::MAX) {
-            if e.remove_common_pairs() == 0 {
+            let r = e.remove_common_pairs();
+            if r == 0 {
                 break;
+            }
+            if verbose {
+                let (add_count, mul_count) = e.count_operations();
+                println!(
+                    "Removed {} common pairs: {} + and {} ×",
+                    r, add_count, mul_count
+                );
             }
         }
 
@@ -3830,14 +3867,11 @@ impl EvalTree<Complex<Rational>> {
     /// and `n_cores` cores. Optionally, a starting scheme can be provided.
     pub fn optimize(
         &mut self,
-        iterations: usize,
-        n_cores: usize,
-        start_scheme: Option<Vec<Expression<Complex<Rational>>>>,
-        verbose: bool,
+        settings: &OptimizationSettings,
     ) -> ExpressionEvaluator<Complex<Rational>> {
-        let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme, verbose);
+        let _ = self.optimize_horner_scheme(settings);
         self.common_subexpression_elimination();
-        self.clone().linearize(None)
+        self.clone().linearize(None, settings.verbose)
     }
 
     /// Write the expressions in a Horner scheme where the variables
@@ -3867,13 +3901,10 @@ impl EvalTree<Complex<Rational>> {
     /// and `n_cores` cores. Optionally, a starting scheme can be provided.
     pub fn optimize_horner_scheme(
         &mut self,
-        iterations: usize,
-        n_cores: usize,
-        start_scheme: Option<Vec<Expression<Complex<Rational>>>>,
-        verbose: bool,
+        settings: &OptimizationSettings,
     ) -> Vec<Expression<Complex<Rational>>> {
-        let v = match start_scheme {
-            Some(a) => a,
+        let v = match &settings.hot_start {
+            Some(a) => a.clone(),
             None => {
                 let mut v = HashMap::default();
 
@@ -3894,13 +3925,8 @@ impl EvalTree<Complex<Rational>> {
             }
         };
 
-        let scheme = Expression::optimize_horner_scheme_multiple(
-            &self.expressions.tree,
-            &v,
-            iterations,
-            n_cores,
-            verbose,
-        );
+        let scheme =
+            Expression::optimize_horner_scheme_multiple(&self.expressions.tree, &v, settings);
         for e in &mut self.expressions.tree {
             e.apply_horner_scheme(&scheme);
         }
@@ -3921,9 +3947,7 @@ impl EvalTree<Complex<Rational>> {
             v.sort_by_key(|k| std::cmp::Reverse(k.1));
             let v = v.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
 
-            let scheme = Expression::optimize_horner_scheme_multiple(
-                &e.tree, &v, iterations, n_cores, verbose,
-            );
+            let scheme = Expression::optimize_horner_scheme_multiple(&e.tree, &v, settings);
 
             for t in &mut e.tree {
                 t.apply_horner_scheme(&scheme);
@@ -4217,25 +4241,15 @@ impl Expression<Complex<Rational>> {
     pub fn optimize_horner_scheme(
         &self,
         vars: &[Self],
-        iterations: usize,
-        n_cores: usize,
-        verbose: bool,
+        settings: &OptimizationSettings,
     ) -> Vec<Self> {
-        Self::optimize_horner_scheme_multiple(
-            std::slice::from_ref(self),
-            vars,
-            iterations,
-            n_cores,
-            verbose,
-        )
+        Self::optimize_horner_scheme_multiple(std::slice::from_ref(self), vars, settings)
     }
 
     pub fn optimize_horner_scheme_multiple(
         expressions: &[Self],
         vars: &[Self],
-        iterations: usize,
-        n_cores: usize,
-        verbose: bool,
+        settings: &OptimizationSettings,
     ) -> Vec<Self> {
         if vars.is_empty() {
             return vars.to_vec();
@@ -4256,7 +4270,7 @@ impl Expression<Complex<Rational>> {
             best_ops = (best_ops.0 + ops.0, best_ops.1 + ops.1);
         }
 
-        if verbose {
+        if settings.verbose {
             println!(
                 "Initial ops: {} additions and {} multiplications",
                 best_ops.0, best_ops.1
@@ -4267,22 +4281,25 @@ impl Expression<Complex<Rational>> {
         let best_add = Arc::new(AtomicUsize::new(best_ops.0));
         let best_scheme = Arc::new(Mutex::new(vars.to_vec()));
 
-        let permutations =
-            if vars.len() < 10 && Integer::factorial(vars.len() as u32) <= iterations.max(1) {
-                let v: Vec<_> = (0..vars.len()).collect();
-                Some(unique_permutations(&v).1)
-            } else {
-                None
-            };
+        let permutations = if vars.len() < 10
+            && Integer::factorial(vars.len() as u32) <= settings.horner_iterations.max(1)
+        {
+            let v: Vec<_> = (0..vars.len()).collect();
+            Some(unique_permutations(&v).1)
+        } else {
+            None
+        };
         let p_ref = &permutations;
 
         let n_cores = if LicenseManager::is_licensed() {
-            n_cores
+            settings.n_cores
         } else {
             1
         };
 
         std::thread::scope(|s| {
+            let abort = Arc::new(AtomicBool::new(false));
+
             for i in 0..n_cores {
                 let mut rng = MonteCarloRng::new(0, i);
 
@@ -4292,8 +4309,32 @@ impl Expression<Complex<Rational>> {
                 let best_add = best_add.clone();
                 let mut last_mul = usize::MAX;
                 let mut last_add = usize::MAX;
-                s.spawn(move || {
-                    for j in 0..iterations / n_cores {
+                let abort = abort.clone();
+
+                let mut op = move || {
+                    for j in 0..settings.horner_iterations / n_cores {
+                        if abort.load(Ordering::Relaxed) {
+                            return;
+                        }
+
+                        if i == n_cores - 1 {
+                            if let Some(a) = &settings.abort_check {
+                                if a() {
+                                    abort.store(true, Ordering::Relaxed);
+
+                                    if settings.verbose {
+                                        println!(
+                                            "Aborting Horner optimization at step {}/{}.",
+                                            j,
+                                            settings.horner_iterations / n_cores
+                                        );
+                                    }
+
+                                    return;
+                                }
+                            }
+                        }
+
                         // try a random swap
                         let mut t1 = 0;
                         let mut t2 = 0;
@@ -4330,11 +4371,11 @@ impl Expression<Complex<Rational>> {
 
                         // prefer fewer multiplications
                         if cur_ops.1 <= last_mul || cur_ops.1 == last_mul && cur_ops.0 <= last_add {
-                            if verbose {
+                            if settings.verbose {
                                 println!(
                                     "Accept move at step {}/{}: {} + and {} ×",
                                     j,
-                                    iterations / n_cores,
+                                    settings.horner_iterations / n_cores,
                                     cur_ops.0,
                                     cur_ops.1
                                 );
@@ -4372,11 +4413,19 @@ impl Expression<Complex<Rational>> {
                             cvars.swap(t1, t2);
                         }
                     }
-                });
+                };
+
+                if i + 1 < n_cores {
+                    s.spawn(op);
+                } else {
+                    // execute in the main thread and do the abort check on the main thread
+                    // this helps with catching ctrl-c
+                    op()
+                }
             }
         });
 
-        if verbose {
+        if settings.verbose {
             println!(
                 "Final scheme: {} + and {} ×",
                 best_add.load(Ordering::Relaxed),

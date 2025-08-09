@@ -1731,6 +1731,9 @@ class Expression:
 
         Additionally, external functions can be registered that will call a Python function.
 
+        If `KeyboardInterrupt` is triggered during the optimization, the optimization will stop and will yield the
+        current best result.
+
         Examples
         --------
         >>> from symbolica import *

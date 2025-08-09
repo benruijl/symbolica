@@ -5591,6 +5591,7 @@ impl PythonExpression {
         n_cores: usize,
         verbose: bool,
         external_functions: Option<HashMap<(Variable, String), PyObject>>,
+        py: Python<'_>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
@@ -5636,18 +5637,24 @@ impl PythonExpression {
             }
         }
 
+        let abort_check = Box::new(move || {
+            Python::with_gil(|py| py.check_signals())
+                .map(|_| false)
+                .unwrap_or(true)
+        });
+
         let settings = OptimizationSettings {
             horner_iterations: iterations,
             n_cores,
             verbose,
+            abort_check: Some(abort_check),
             ..OptimizationSettings::default()
         };
 
         let params: Vec<_> = params.iter().map(|x| x.expr.clone()).collect();
 
-        let eval = self
-            .expr
-            .evaluator(&fn_map, &params, settings)
+        let eval = py
+            .allow_threads(move || self.expr.evaluator(&fn_map, &params, settings))
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not create evaluator: {e}"))
             })?;

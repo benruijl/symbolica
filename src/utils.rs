@@ -2,6 +2,8 @@
 
 use std::ops::Deref;
 
+use dyn_clone::DynClone;
+
 /// An enum that contains either an owned value of type `T` or a reference to a value of type `T`.
 ///
 /// Use `Into<BorrowedOrOwned<'b, T>>>` to a accept both owned and borrowed values as arguments.
@@ -64,3 +66,8 @@ impl<T> Deref for BorrowedOrOwned<'_, T> {
         self.borrow()
     }
 }
+
+/// A cloneable function that checks for abort.
+pub trait AbortCheck: Fn() -> bool + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(AbortCheck);
+impl<T: Clone + Send + Sync + Fn() -> bool> AbortCheck for T {}

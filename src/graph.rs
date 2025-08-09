@@ -30,6 +30,7 @@ use std::{
 use crate::{
     combinatorics::{CombinationIterator, unique_permutations},
     domains::integer::Integer,
+    utils::AbortCheck,
 };
 
 /// A node in a graph, with arbitrary data.
@@ -603,10 +604,6 @@ struct GenerationSettingsAndInput<'a, N, E> {
 pub trait FilterFn<N, E>: Fn(&Graph<N, E>, usize) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(<N, E> FilterFn<N,E>);
 impl<N, E, T: Clone + Send + Sync + Fn(&Graph<N, E>, usize) -> bool> FilterFn<N, E> for T {}
-
-pub trait AbortCheck: Fn() -> bool + DynClone + Send + Sync {}
-dyn_clone::clone_trait_object!(AbortCheck);
-impl<T: Clone + Send + Sync + Fn() -> bool> AbortCheck for T {}
 
 #[derive(Clone)]
 pub struct GenerationSettings<N, E> {

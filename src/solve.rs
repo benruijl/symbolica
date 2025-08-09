@@ -9,7 +9,7 @@ use crate::{
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
-    evaluate::FunctionMap,
+    evaluate::{FunctionMap, OptimizationSettings},
     poly::{PositiveExponent, Variable},
     tensors::matrix::Matrix,
 };
@@ -31,12 +31,26 @@ impl AtomView<'_> {
         let f = self
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))
             .unwrap()
-            .optimize(0, 0, None, false);
+            .optimize(&OptimizationSettings {
+                horner_iterations: 0,
+                n_cores: 0,
+                cpe_iterations: None,
+                hot_start: None,
+                abort_check: None,
+                verbose: false,
+            });
         let df = self
             .derivative(x)
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))
             .unwrap()
-            .optimize(0, 0, None, false);
+            .optimize(&OptimizationSettings {
+                horner_iterations: 0,
+                n_cores: 0,
+                cpe_iterations: None,
+                hot_start: None,
+                abort_check: None,
+                verbose: false,
+            });
 
         let mut f_e = f.map_coeff(&|x| init.from_rational(x.to_real().unwrap()));
         let mut df_e = df.map_coeff(&|x| init.from_rational(x.to_real().unwrap()));
@@ -116,7 +130,14 @@ impl AtomView<'_> {
             .map(|a| {
                 a.to_evaluation_tree(&FunctionMap::new(), &avars)
                     .unwrap()
-                    .optimize(0, 0, None, false)
+                    .optimize(&OptimizationSettings {
+                        horner_iterations: 0,
+                        n_cores: 0,
+                        cpe_iterations: None,
+                        hot_start: None,
+                        abort_check: None,
+                        verbose: false,
+                    })
                     .map_coeff(&|x| init[0].from_rational(x.to_real().unwrap()))
             })
             .collect::<Vec<_>>();
@@ -130,7 +151,14 @@ impl AtomView<'_> {
                 let a = deriv
                     .to_evaluation_tree(&FunctionMap::new(), &avars)
                     .unwrap()
-                    .optimize(0, 0, None, false)
+                    .optimize(&OptimizationSettings {
+                        horner_iterations: 0,
+                        n_cores: 0,
+                        cpe_iterations: None,
+                        hot_start: None,
+                        abort_check: None,
+                        verbose: false,
+                    })
                     .map_coeff(&|x| init[0].from_rational(x.to_real().unwrap()));
 
                 row.push(a);

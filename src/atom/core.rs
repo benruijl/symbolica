@@ -704,12 +704,7 @@ pub trait AtomCore {
         optimization_settings: OptimizationSettings,
     ) -> Result<ExpressionEvaluator<Complex<Rational>>, String> {
         let mut tree = self.to_evaluation_tree(fn_map, params)?;
-        Ok(tree.optimize(
-            optimization_settings.horner_iterations,
-            optimization_settings.n_cores,
-            optimization_settings.hot_start.clone(),
-            optimization_settings.verbose,
-        ))
+        Ok(tree.optimize(&optimization_settings))
     }
 
     /// Convert nested expressions to a tree suitable for repeated evaluations with
@@ -746,12 +741,7 @@ pub trait AtomCore {
         optimization_settings: OptimizationSettings,
     ) -> Result<ExpressionEvaluator<Complex<Rational>>, String> {
         let mut tree = AtomView::to_eval_tree_multiple(exprs, fn_map, params)?;
-        Ok(tree.optimize(
-            optimization_settings.horner_iterations,
-            optimization_settings.n_cores,
-            optimization_settings.hot_start.clone(),
-            optimization_settings.verbose,
-        ))
+        Ok(tree.optimize(&optimization_settings))
     }
 
     /// Check if the expression could be 0, using (potentially) numerical sampling with

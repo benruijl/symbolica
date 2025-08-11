@@ -54,9 +54,11 @@ use crate::{
         },
     },
     evaluate::{
-        CompileOptions, CompiledComplexEvaluator, CompiledRealEvaluator, EvaluationFn,
-        ExportSettings, ExpressionEvaluator, ExpressionEvaluatorWithExternalFunctions, FunctionMap,
-        InlineASM, Instruction, OptimizationSettings, Slot,
+        CompileOptions, CompiledComplexEvaluator, CompiledCudaComplexEvaluator,
+        CompiledCudaRealEvaluator, CompiledRealEvaluator, CudaComplexf64, CudaLoadSettings,
+        CudaRealf64, EvaluationFn, EvaluatorLoader, ExportSettings, ExpressionEvaluator,
+        ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM, Instruction,
+        OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -189,6 +191,8 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonExpressionEvaluator>()?;
     m.add_class::<PythonCompiledRealExpressionEvaluator>()?;
     m.add_class::<PythonCompiledComplexExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledCudaRealExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledCudaComplexExpressionEvaluator>()?;
     m.add_class::<PythonRandomNumberGenerator>()?;
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
@@ -11862,7 +11866,10 @@ impl PythonExpressionEvaluator {
         inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
+        compiler_flags = None,
         custom_header = None,
+        cuda_number_of_evaluations = 1,
+        cuda_block_size = 512
     ))]
     fn compile(
         &self,
@@ -11873,7 +11880,10 @@ impl PythonExpressionEvaluator {
         inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
+        compiler_flags: Option<Vec<String>>,
         custom_header: Option<String>,
+        cuda_number_of_evaluations: usize,
+        cuda_block_size: usize,
         py: Python<'_>,
     ) -> PyResult<PyObject> {
         let mut options = CompileOptions {
@@ -11883,6 +11893,20 @@ impl PythonExpressionEvaluator {
 
         if let Some(compiler_path) = compiler_path {
             options.compiler = compiler_path.to_string();
+        } else {
+            if number_type == "cuda_real" || number_type == "cuda_complex" {
+                options.compiler = "nvcc".to_string();
+            } else {
+                options.compiler = "g++".to_string();
+            }
+        }
+
+        if let Some(compiler_flags) = compiler_flags {
+            options.args = compiler_flags;
+        } else {
+            if number_type == "cuda_real" || number_type == "cuda_complex" {
+                options.args = vec!["-x".to_string(), "cu".to_string()];
+            }
         }
 
         let inline_asm = match inline_asm.to_lowercase().as_str() {
@@ -11943,6 +11967,64 @@ impl PythonExpressionEvaluator {
                         exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
                     })?
                     .load()
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                    })?,
+                input_len: self.eval_rat.get_input_len(),
+                output_len: self.eval_rat.get_output_len(),
+            }
+            .into_py_any(py),
+            "cuda_real" => PythonCompiledCudaRealExpressionEvaluator {
+                eval: self
+                    .eval_complex
+                    .export_cpp::<CudaRealf64>(
+                        filename,
+                        function_name,
+                        ExportSettings {
+                            include_header: true,
+                            inline_asm,
+                            custom_header,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                    .compile(library_name, options)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                    })?
+                    .load_with_settings(CudaLoadSettings {
+                        number_of_evaluations: cuda_number_of_evaluations,
+                        block_size: cuda_block_size,
+                    })
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                    })?,
+                input_len: self.eval_rat.get_input_len(),
+                output_len: self.eval_rat.get_output_len(),
+            }
+            .into_py_any(py),
+            "cuda_complex" => PythonCompiledCudaComplexExpressionEvaluator {
+                eval: self
+                    .eval_complex
+                    .export_cpp::<CudaComplexf64>(
+                        filename,
+                        function_name,
+                        ExportSettings {
+                            include_header: true,
+                            inline_asm,
+                            custom_header,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                    .compile(library_name, options)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                    })?
+                    .load_with_settings(CudaLoadSettings {
+                        number_of_evaluations: cuda_number_of_evaluations,
+                        block_size: cuda_block_size,
+                    })
                     .map_err(|e| {
                         exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
                     })?,
@@ -12015,6 +12097,159 @@ impl PythonCompiledRealExpressionEvaluator {
 }
 
 /// A compiled and optimized evaluator for expressions.
+#[pyclass(name = "CompiledCudaRealEvaluator", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonCompiledCudaRealExpressionEvaluator {
+    pub eval: CompiledCudaRealEvaluator,
+    pub input_len: usize,
+    pub output_len: usize,
+}
+
+#[pymethods]
+impl PythonCompiledCudaRealExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[pyo3(signature =
+        (filename, function_name, input_len, output_len, number_of_evaluations, block_size = 512))]
+    #[classmethod]
+    fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        function_name: &str,
+        input_len: usize,
+        output_len: usize,
+        number_of_evaluations: usize,
+        block_size: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledCudaRealEvaluator::load_with_settings(
+                filename,
+                function_name,
+                CudaLoadSettings {
+                    number_of_evaluations,
+                    block_size,
+                },
+            )
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
+            output_len,
+        })
+    }
+
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate`.
+    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> PyResult<Vec<f64>> {
+        let n_inputs = inputs.len() / self.input_len;
+        let mut res = vec![0.; self.output_len * n_inputs];
+
+        self.eval
+            .evaluate(&inputs, &mut res)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
+
+        Ok(res)
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> PyResult<Vec<Vec<f64>>> {
+        let flat_inputs: Vec<f64> = inputs.iter().flatten().cloned().collect();
+        let mut res = vec![0.; self.output_len * inputs.len()];
+
+        self.eval
+            .evaluate(&flat_inputs, &mut res)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
+
+        Ok(res
+            .chunks(self.output_len)
+            .map(|chunk| chunk.to_vec())
+            .collect())
+    }
+}
+
+/// A compiled and optimized evaluator for expressions.
+#[pyclass(name = "CompiledCudaComplexEvaluator", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonCompiledCudaComplexExpressionEvaluator {
+    pub eval: CompiledCudaComplexEvaluator,
+    pub input_len: usize,
+    pub output_len: usize,
+}
+
+#[pymethods]
+impl PythonCompiledCudaComplexExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[pyo3(signature =
+        (filename, function_name, input_len, output_len, number_of_evaluations, block_size = 512))]
+    #[classmethod]
+    fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        function_name: &str,
+        input_len: usize,
+        output_len: usize,
+        number_of_evaluations: usize,
+        block_size: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledCudaComplexEvaluator::load_with_settings(
+                filename,
+                function_name,
+                CudaLoadSettings {
+                    number_of_evaluations,
+                    block_size,
+                },
+            )
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
+            output_len,
+        })
+    }
+
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate_complex`.
+    fn evaluate_flat<'py>(
+        &mut self,
+        py: Python<'py>,
+        inputs: Vec<Complex<f64>>,
+    ) -> PyResult<Vec<Bound<'py, PyComplex>>> {
+        let n_inputs = inputs.len() / self.input_len;
+        let mut res = vec![Complex::new(0., 0.); self.output_len * n_inputs];
+
+        self.eval
+            .evaluate(&inputs, &mut res)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
+
+        Ok(res
+            .into_iter()
+            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+            .collect())
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate<'py>(
+        &mut self,
+        python: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>,
+    ) -> PyResult<Vec<Vec<Bound<'py, PyComplex>>>> {
+        let flat_inputs: Vec<Complex<f64>> = inputs.iter().flatten().cloned().collect();
+        let mut res = vec![Complex::new(0., 0.); self.output_len * inputs.len()];
+
+        self.eval
+            .evaluate(&flat_inputs, &mut res)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
+
+        // split results back into chunks for each original input
+        Ok(res
+            .chunks(self.output_len)
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
+                    .collect()
+            })
+            .collect())
+    }
+}
+
+/// A compiled and optimized evaluator for expressions.
 #[pyclass(name = "CompiledComplexEvaluator", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonCompiledComplexExpressionEvaluator {
@@ -12077,6 +12312,62 @@ impl PythonCompiledComplexExpressionEvaluator {
                 v.iter()
                     .map(|x| PyComplex::from_doubles(python, x.re, x.im))
                     .collect()
+            })
+            .collect()
+    }
+}
+
+/// A compiled and optimized evaluator for expressions.
+#[pyclass(name = "CompiledRealEvaluator", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonCompiledRealCudaExpressionEvaluator {
+    pub eval: CompiledRealEvaluator,
+    pub input_len: usize,
+    pub output_len: usize,
+}
+
+#[pymethods]
+impl PythonCompiledRealCudaExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[classmethod]
+    fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        function_name: &str,
+        input_len: usize,
+        output_len: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledRealEvaluator::load(filename, function_name)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
+            output_len,
+        })
+    }
+
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate`.
+    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
+        let n_inputs = inputs.len() / self.input_len;
+        let mut res = vec![0.; self.output_len * n_inputs];
+        for (r, s) in res
+            .chunks_mut(self.output_len)
+            .zip(inputs.chunks(self.input_len))
+        {
+            self.eval.evaluate(s, r);
+        }
+
+        res
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        inputs
+            .iter()
+            .map(|s| {
+                let mut v = vec![0.; self.output_len];
+                self.eval.evaluate(s, &mut v);
+                v
             })
             .collect()
     }

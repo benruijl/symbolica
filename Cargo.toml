@@ -68,7 +68,7 @@ rand_xoshiro = "0.7"
 pyo3-stub-gen = { version = "0.9", optional = true }
 rayon = "1.8"
 rug = "1.27.0"
-self_cell = "1.0"
+self_cell = "1.2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 smallvec = "1.13"
 smartstring = "1.0"

@@ -1,20 +1,17 @@
 //! Evaluation of expressions.
 //!
 //! The main entry point is through [AtomCore::evaluator].
-
+use ahash::{AHasher, HashMap};
+use rand::Rng;
+use self_cell::self_cell;
 use std::{
     hash::{Hash, Hasher},
-    os::raw::c_ulong,
+    os::raw::{c_ulong, c_void},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
-
-use ahash::{AHasher, HashMap};
-use rand::Rng;
-
-use self_cell::self_cell;
 
 use crate::{
     LicenseManager,
@@ -1650,6 +1647,10 @@ pub trait ExportNumber {
     fn export_wrapped(&self) -> String {
         format!("T({})", self.export())
     }
+    /// Export the number wrapped in a C++ type `wrapper`.
+    fn export_wrapped_with(&self, wrapper: &str) -> String {
+        format!("{wrapper}({})", self.export())
+    }
     /// Check if the number is real.
     fn is_real(&self) -> bool;
 }
@@ -1708,6 +1709,13 @@ impl<T: ExportNumber + SingleFloat> ExportNumber for Complex<T> {
     }
 }
 
+/// The number class used for exporting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumberClass {
+    RealF64,
+    ComplexF64,
+}
+
 /// Settings for exporting the evaluation tree to C++ code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportSettings {
@@ -1753,7 +1761,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
         std::fs::write(&filename, cpp)?;
-        Ok(ExportedCode {
+        Ok(ExportedCode::<F> {
             source_filename: filename,
             function_name: function_name.to_string(),
             _phantom: std::marker::PhantomData,
@@ -1766,18 +1774,223 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         function_name: &str,
         settings: ExportSettings,
     ) -> Result<String, String> {
-        F::export_cpp(self, function_name, settings)
+        let function_name = F::construct_function_name(function_name);
+        F::export_cpp(self, &function_name, settings)
     }
 
-    fn export_generic_cpp_str(&self, function_name: &str, settings: &ExportSettings) -> String {
+    pub fn export_cuda_str(
+        &self,
+        function_name: &str,
+        settings: ExportSettings,
+        number_class: NumberClass,
+    ) -> String {
         let mut res = String::new();
         if settings.include_header {
-            res += "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += &"#include <cuda_runtime.h>\n";
+            res += &"#include <iostream>\n";
+            res += &"#include <stdio.h>\n";
+            if number_class == NumberClass::ComplexF64 {
+                res += &"#include <cuda/std/complex>\n";
+            }
         };
+
+        res += &format!("#define ERRMSG_LEN {}\n", CUDA_ERRMSG_LEN);
 
         if let Some(header) = &settings.custom_header {
             res += header;
             res += "\n\n";
+        }
+        if number_class == NumberClass::ComplexF64 {
+            res += &"typedef cuda::std::complex<double> CudaNumber;\n";
+            res += &"typedef std::complex<double> Number;\n";
+        } else if number_class == NumberClass::RealF64 {
+            res += &"typedef double CudaNumber;\n";
+            res += &"typedef double Number;\n";
+        }
+
+        res += &format!(
+            "\n__device__ void {}(CudaNumber* params, CudaNumber* out, size_t index) {{\n",
+            function_name
+        );
+
+        res += &format!(
+            "\tCudaNumber {};\n",
+            (0..self.stack.len())
+                .map(|x| format!("Z{}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        res += &format!("\tint params_offset = index * {};\n", self.param_count);
+        res += &format!(
+            "\tint out_offset = index * {};\n",
+            self.result_indices.len()
+        );
+
+        self.export_cpp_impl("params_offset + ", "CudaNumber", false, &mut res);
+
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            res += &format!("\tout[out_offset + {}] = Z{};\n", i, r);
+        }
+
+        res += "\treturn;\n}\n";
+
+        res += &format!(
+            r#"
+struct {name}_EvaluationData {{
+    CudaNumber *params;
+    CudaNumber *out;
+    size_t n; // Number of evaluations
+    size_t block_size; // Number of threads per block
+    size_t in_dimension = {in_dimension}; // Number of input parameters
+    size_t out_dimension = {out_dimension}; // Number of output parameters
+    int last_error = 0; // Last error code
+    char last_error_msg[ERRMSG_LEN]; // error string buffer
+}};
+
+#define gpuErrchk(ans, data, context) gpuAssert((ans), data, __FILE__, __LINE__, context)
+inline int gpuAssert(cudaError_t code, {name}_EvaluationData* data, const char *file, int line, const char *context)
+{{
+   if (code != cudaSuccess) 
+   {{
+       const char* msg = cudaGetErrorString(code);
+       if (msg) {{
+           snprintf(
+               data->last_error_msg,
+               ERRMSG_LEN,
+               "%s:%d:%s: CUDA error: %s",
+                file,
+                line,
+                context,
+                msg
+            );
+        }} else {{
+            snprintf(
+                data->last_error_msg,
+                ERRMSG_LEN,
+                "%s:%d:%s: CUDA error: unkown",
+                file,
+                line,
+                context
+            );
+        }}
+    }}
+    // should always be 0
+    if (data->last_error != 0) {{
+        fprintf(stderr,
+                "%s:%d:%s: CUDA fatal: previous error was not resolved",
+                file,
+                line,
+                context
+        );
+        // flush output
+        fflush(stderr);
+        // we crash the evaluation since previous failure was not sanitized
+        exit(-1);
+    }}
+    data->last_error = (int)code;
+    return data->last_error;
+}}
+
+
+
+extern "C" {{
+
+{name}_EvaluationData* {name}_init_data(size_t n, size_t block_size) {{
+    {name}_EvaluationData* data = ({name}_EvaluationData*)malloc(sizeof({name}_EvaluationData));
+    size_t in_dimension = {in_dimension};
+    size_t out_dimension = {out_dimension};
+    data->n = n;
+    data->in_dimension = in_dimension;
+    data->out_dimension = out_dimension;
+    data->block_size = block_size;
+    data->last_error = 0;
+    // return data early since second failure => abort/crash code
+    if(gpuErrchk(cudaMalloc((void**)&data->params, n*in_dimension * sizeof(CudaNumber)),data, "init_data_params")) return data;
+    if(gpuErrchk(cudaMalloc((void**)&data->out, n*out_dimension*sizeof(CudaNumber)),data, "init_data_out")) return data;
+    return data;
+}}
+
+int {name}_destroy_data({name}_EvaluationData* data) {{
+    // since we free the evaluationData no error can be returned through it
+    // neither a Result<(),String> return would make sense in rust drop
+    cudaError_t error;
+    error = cudaFree(data->params);
+    if (error != cudaSuccess) return (int)error;
+    error = cudaFree(data->out);
+    if (error != cudaSuccess) return (int)error;
+    free(data);
+    return 0;
+}}
+}}
+       "#,
+            name = function_name,
+            in_dimension = self.param_count,
+            out_dimension = self.result_indices.len()
+        );
+
+        res += &format!(
+            r#"
+extern "C" {{
+    __global__ void {name}_cuda(CudaNumber *params, CudaNumber *out, size_t n) {{
+        int index = blockIdx.x * blockDim.x + threadIdx.x;
+        if(index < n) {name}(params, out, index);
+        return;
+    }}
+}}
+"#,
+            name = function_name
+        );
+
+        res += &format!(
+            r#"
+extern "C" {{
+    void {name}_vec(Number *params, Number *out, {name}_EvaluationData* data) {{
+        size_t n = data->n;
+        size_t in_dimension = {in_dimension};
+        size_t out_dimension = {out_dimension};
+
+        if(gpuErrchk(cudaMemcpy(data->params, params, n*in_dimension * sizeof(CudaNumber), cudaMemcpyHostToDevice),data, "copy_data_params")) return;
+
+        int blockSize = data->block_size; // Number of threads per block
+        int gridSize = (n + blockSize - 1) / blockSize; // Number of blocks
+        {name}_cuda<<<gridSize,blockSize>>>(data->params, data->out,n);
+        // Collect launch errors
+        if(gpuErrchk(cudaPeekAtLastError(), data, "launch")) return;
+        // Collect runtime errors
+        if(gpuErrchk(cudaDeviceSynchronize(), data, "runtime")) return;
+
+        if(gpuErrchk(cudaMemcpy(out, data->out, n*out_dimension*sizeof(CudaNumber), cudaMemcpyDeviceToHost),data, "copy_data_out")) return;
+        return;
+    }}
+}}
+"#,
+            name = function_name,
+            in_dimension = self.param_count,
+            out_dimension = self.result_indices.len()
+        );
+
+        res
+    }
+
+    fn export_generic_cpp_str(
+        &self,
+        function_name: &str,
+        settings: &ExportSettings,
+        number_class: NumberClass,
+    ) -> String {
+        let mut res = String::new();
+        if settings.include_header {
+            res += "#include <iostream>\n#include <cmath>\n\n";
+            if number_class == NumberClass::ComplexF64 {
+                res += "#include <complex>\n";
+            }
+        };
+
+        if number_class == NumberClass::ComplexF64 {
+            res += &"typedef std::complex<double> Number;\n";
+        } else if number_class == NumberClass::RealF64 {
+            res += &"typedef double Number;\n";
         }
 
         res += &format!(
@@ -1786,88 +1999,123 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             self.stack.len()
         );
 
-        res +=
-            &format!("\ntemplate<typename T>\nvoid {function_name}(T* params, T* Z, T* out) {{\n");
+        res += &format!(
+            "\ntemplate<typename T>\nvoid {function_name}_gen(T* params, T* Z, T* out) {{\n"
+        );
 
-        for i in 0..self.param_count {
-            res += &format!("\tZ[{i}] = params[{i}];\n");
-        }
-
-        for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ[{}] = {};\n", i, self.stack[i].export_wrapped());
-        }
-
-        self.export_cpp_impl(&mut res);
+        self.export_cpp_impl("", "T", true, &mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
             res += &format!("\tout[{i}] = Z[{r}];\n");
         }
 
-        res + "\treturn;\n}\n"
+        res += "\treturn;\n}\n";
+
+        // if there are non-reals we can not use double evaluation
+        assert!(
+            !(!self.stack.iter().all(|x| x.is_real()) && number_class == NumberClass::RealF64),
+            "Cannot export complex function with real numbers"
+        );
+
+        res
     }
 
-    fn export_cpp_impl(&self, out: &mut String) {
+    fn export_cpp_impl(
+        &self,
+        param_offset: &str,
+        number_wrapper: &str,
+        tmp_array: bool,
+        out: &mut String,
+    ) {
+        macro_rules! get_input {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("params[{}{}]", param_offset, $i)
+                } else if $i < self.reserved_indices {
+                    self.stack[$i].export_wrapped_with(number_wrapper)
+                } else {
+                    // TODO: subtract reserved indices
+                    if tmp_array {
+                        format!("Z[{}]", $i)
+                    } else {
+                        format!("Z{}", $i)
+                    }
+                }
+            };
+        }
+
+        macro_rules! get_output {
+            ($i:expr) => {
+                if tmp_array {
+                    format!("Z[{}]", $i)
+                } else {
+                    format!("Z{}", $i)
+                }
+            };
+        }
+
         for ins in &self.instructions {
             match ins {
                 Instr::Add(o, a) => {
                     let args = a
                         .iter()
-                        .map(|x| format!("Z[{x}]"))
+                        .map(|x| get_input!(*x))
                         .collect::<Vec<_>>()
                         .join("+");
 
-                    *out += format!("\tZ[{o}] = {args};\n").as_str();
+                    *out += format!("\t{} = {args};\n", get_output!(o)).as_str();
                 }
                 Instr::Mul(o, a) => {
                     let args = a
                         .iter()
-                        .map(|x| format!("Z[{x}]"))
+                        .map(|x| get_input!(*x))
                         .collect::<Vec<_>>()
                         .join("*");
 
-                    *out += format!("\tZ[{o}] = {args};\n").as_str();
+                    *out += format!("\t{} = {args};\n", get_output!(o)).as_str();
                 }
                 Instr::Pow(o, b, e) => {
-                    let base = format!("Z[{b}]");
+                    let base = get_input!(*b);
                     if *e == -1 {
-                        *out += format!("\tZ[{o}] = T(1) / {base};\n").as_str();
+                        *out += format!("\t{} = T(1) / {base};\n", get_output!(o)).as_str();
                     } else {
-                        *out += format!("\tZ[{o}] = pow({base}, {e});\n").as_str();
+                        *out += format!("\t{} = pow({base}, {e});\n", get_output!(o)).as_str();
                     }
                 }
                 Instr::Powf(o, b, e) => {
-                    let base = format!("Z[{b}]");
-                    let exp = format!("Z[{e}]");
-                    *out += format!("\tZ[{o}] = pow({base}, {exp});\n").as_str();
+                    let base = get_input!(*b);
+                    let exp = get_input!(*e);
+                    *out += format!("\t{} = pow({base}, {exp});\n", get_output!(o)).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => match s.0 {
                     Symbol::EXP => {
-                        let arg = format!("Z[{a}]");
-                        *out += format!("\tZ[{o}] = exp({arg});\n").as_str();
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = exp({arg});\n", get_output!(o)).as_str();
                     }
                     Symbol::LOG => {
-                        let arg = format!("Z[{a}]");
-                        *out += format!("\tZ[{o}] = log({arg});\n").as_str();
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = log({arg});\n", get_output!(o)).as_str();
                     }
                     Symbol::SIN => {
-                        let arg = format!("Z[{a}]");
-                        *out += format!("\tZ[{o}] = sin({arg});\n").as_str();
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = sin({arg});\n", get_output!(o)).as_str();
                     }
                     Symbol::COS => {
-                        let arg = format!("Z[{a}]");
-                        *out += format!("\tZ[{o}] = cos({arg});\n").as_str();
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = cos({arg});\n", get_output!(o)).as_str();
                     }
                     Symbol::SQRT => {
-                        let arg = format!("Z[{a}]");
-                        *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = sqrt({arg});\n", get_output!(o)).as_str();
                     }
                     _ => unreachable!(),
                 },
                 Instr::ExternalFun(o, s, a) => {
                     let name = &self.external_fns[*s];
-                    let args = a.iter().map(|x| format!("Z[{x}]")).collect::<Vec<_>>();
+                    let args = a.iter().map(|x| get_input!(*x)).collect::<Vec<_>>();
 
-                    *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
+                    *out +=
+                        format!("\t{} = {}({});\n", get_output!(o), name, args.join(", ")).as_str();
                 }
             }
         }
@@ -1904,7 +2152,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             );
 
             res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n"
+                "extern \"C\" void {function_name}(const double *params, double* Z, double *out)\n{{\n"
             );
 
             self.export_asm_double_impl(
@@ -1917,7 +2165,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += "\treturn;\n}\n";
         } else {
             res += &format!(
-                "extern \"C\" void {function_name}_double(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
+                "extern \"C\" void {function_name}(const double *params, double* Z, double *out)\n{{\n\tstd::cout << \"Cannot evaluate complex function with doubles\" << std::endl;\n\treturn; \n}}",
             );
         }
         res
@@ -1953,7 +2201,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "extern \"C\" void {function_name}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n"
+            "extern \"C\" void {function_name}(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n"
         );
 
         self.export_asm_complex_impl(
@@ -4911,14 +5159,58 @@ impl<T: Real> EvalTree<T> {
 pub struct ExportedCode<T: CompiledNumber> {
     source_filename: String,
     function_name: String,
-    //mode: T,
     _phantom: std::marker::PhantomData<T>,
 }
 pub struct CompiledCode<T: CompiledNumber> {
     library_filename: String,
     function_name: String,
-    //mode: T,
     _phantom: std::marker::PhantomData<T>,
+}
+
+/// Maximum length stored in the error message buffer
+const CUDA_ERRMSG_LEN: usize = 256;
+/// Struct representing the data created for the CUDA evaluation.
+#[repr(C)]
+pub struct CudaEvaluationData {
+    pub params: *mut c_void,
+    pub out: *mut c_void,
+    pub n: usize,             // Number of evaluations
+    pub block_size: usize,    // Number of threads per block
+    pub in_dimension: usize,  // Number of input parameters
+    pub out_dimension: usize, // Number of output parameters
+    pub last_error: i32,
+    pub errmsg: [std::os::raw::c_char; CUDA_ERRMSG_LEN],
+}
+
+impl CudaEvaluationData {
+    pub fn check_for_error(&self) -> Result<(), String> {
+        unsafe {
+            if self.last_error != 0 {
+                let err_msg = std::ffi::CStr::from_ptr(self.errmsg.as_ptr())
+                    .to_string_lossy()
+                    .into_owned();
+                return Err(format!("CUDA error: {}", err_msg));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Settings for CUDA.
+#[derive(Clone)]
+pub struct CudaLoadSettings {
+    pub number_of_evaluations: usize,
+    /// The number of threads per block for CUDA evaluation.
+    pub block_size: usize,
+}
+
+impl Default for CudaLoadSettings {
+    fn default() -> Self {
+        CudaLoadSettings {
+            number_of_evaluations: 1,
+            block_size: 256, // default CUDA block size
+        }
+    }
 }
 
 impl<T: CompiledNumber> CompiledCode<T> {
@@ -4926,34 +5218,174 @@ impl<T: CompiledNumber> CompiledCode<T> {
     pub fn load(&self) -> Result<T::Evaluator, String> {
         T::Evaluator::load(&self.library_filename, &self.function_name)
     }
+
+    /// Load the evaluator from the compiled shared library.
+    pub fn load_with_settings(&self, settings: T::Settings) -> Result<T::Evaluator, String> {
+        T::Evaluator::load_with_settings(&self.library_filename, &self.function_name, settings)
+    }
+}
+
+type EvalTypeWithBuffer<'a, T> =
+    libloading::Symbol<'a, unsafe extern "C" fn(params: *const T, buffer: *mut T, out: *mut T)>;
+type CudaEvalType<'a, T> = libloading::Symbol<
+    'a,
+    unsafe extern "C" fn(params: *const T, out: *mut T, data: *const CudaEvaluationData),
+>;
+type CudaInitDataType<'a> = libloading::Symbol<
+    'a,
+    unsafe extern "C" fn(n: usize, block_size: usize) -> *const CudaEvaluationData,
+>;
+type CudaDestroyDataType<'a> =
+    libloading::Symbol<'a, unsafe extern "C" fn(data: *const CudaEvaluationData) -> i32>;
+type GetBufferLenType<'a> = libloading::Symbol<'a, unsafe extern "C" fn() -> c_ulong>;
+
+struct EvaluatorFunctionsRealf64<'lib> {
+    eval: EvalTypeWithBuffer<'lib, f64>,
+    get_buffer_len: GetBufferLenType<'lib>,
+}
+
+impl<'lib> EvaluatorFunctionsRealf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = f64::construct_function_name(function_name);
+        unsafe {
+            let eval: EvalTypeWithBuffer<'lib, f64> = lib
+                .get(format!("{}", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let get_buffer_len: GetBufferLenType<'lib> = lib
+                .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsRealf64 {
+                eval,
+                get_buffer_len,
+            })
+        }
+    }
 }
 
 type L = std::sync::Arc<libloading::Library>;
 
-/// All known functions that may exist in the shared library.
-struct EvaluatorFunctions<'a> {
-    eval_double: Option<
-        libloading::Symbol<
-            'a,
-            unsafe extern "C" fn(params: *const f64, buffer: *mut f64, out: *mut f64),
-        >,
-    >,
-    eval_complex: Option<
-        libloading::Symbol<
-            'a,
-            unsafe extern "C" fn(
-                params: *const Complex<f64>,
-                buffer: *mut Complex<f64>,
-                out: *mut Complex<f64>,
-            ),
-        >,
-    >,
-    get_buffer_len: libloading::Symbol<'a, unsafe extern "C" fn() -> c_ulong>,
+self_cell!(
+    struct LibraryRealf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsRealf64,
+    }
+);
+
+struct EvaluatorFunctionsComplexf64<'lib> {
+    eval: EvalTypeWithBuffer<'lib, Complex<f64>>,
+    get_buffer_len: GetBufferLenType<'lib>,
 }
+
+impl<'lib> EvaluatorFunctionsComplexf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = Complex::<f64>::construct_function_name(function_name);
+        unsafe {
+            let eval: EvalTypeWithBuffer<'lib, Complex<f64>> = lib
+                .get(format!("{}", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let get_buffer_len: GetBufferLenType<'lib> = lib
+                .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsComplexf64 {
+                eval,
+                get_buffer_len,
+            })
+        }
+    }
+}
+
+self_cell!(
+    struct LibraryComplexf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsComplexf64,
+    }
+);
+
+struct EvaluatorFunctionsCudaRealf64<'lib> {
+    eval: CudaEvalType<'lib, f64>,
+    init_data: CudaInitDataType<'lib>,
+    destroy_data: CudaDestroyDataType<'lib>,
+}
+
+impl<'lib> EvaluatorFunctionsCudaRealf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = CudaRealf64::construct_function_name(function_name);
+        unsafe {
+            let eval: CudaEvalType<'lib, f64> = lib
+                .get(format!("{}_vec", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let init_data: CudaInitDataType<'lib> = lib
+                .get(format!("{}_init_data", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let destroy_data: CudaDestroyDataType<'lib> = lib
+                .get(format!("{}_destroy_data", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsCudaRealf64 {
+                eval,
+                init_data,
+                destroy_data,
+            })
+        }
+    }
+}
+
+self_cell!(
+    struct LibraryCudaRealf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsCudaRealf64,
+    }
+);
+
+struct EvaluatorFunctionsCudaComplexf64<'lib> {
+    eval: CudaEvalType<'lib, Complex<f64>>,
+    init_data: CudaInitDataType<'lib>,
+    destroy_data: CudaDestroyDataType<'lib>,
+}
+
+impl<'lib> EvaluatorFunctionsCudaComplexf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = CudaComplexf64::construct_function_name(function_name);
+        unsafe {
+            let eval: CudaEvalType<'lib, Complex<f64>> = lib
+                .get(format!("{}_vec", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let init_data: CudaInitDataType<'lib> = lib
+                .get(format!("{}_init_data", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let destroy_data: CudaDestroyDataType<'lib> = lib
+                .get(format!("{}_destroy_data", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsCudaComplexf64 {
+                eval,
+                init_data,
+                destroy_data,
+            })
+        }
+    }
+}
+
+self_cell!(
+    struct LibraryCudaComplexf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsCudaComplexf64,
+    }
+);
 
 /// A number type that can be used to call a compiled evaluator.
 pub trait CompiledNumber: Sized {
-    type Evaluator: EvaluatorLoader;
+    type Evaluator: EvaluatorLoader<Self>;
+    type Settings: Default;
+    /// A unique suffix for the evaluation function for this particular number type.
+    // NOTE: a rename of any suffix will prevent loading older libraries.
+    const SUFFIX: &'static str;
 
     /// Export an evaluator to C++ code for this number type.
     fn export_cpp<T: ExportNumber + SingleFloat>(
@@ -4961,15 +5393,28 @@ pub trait CompiledNumber: Sized {
         function_name: &str,
         settings: ExportSettings,
     ) -> Result<String, String>;
+
+    fn construct_function_name(function_name: &str) -> String {
+        format!("{}_{}", function_name, Self::SUFFIX)
+    }
 }
 
-pub trait EvaluatorLoader: Sized {
+pub trait EvaluatorLoader<T: CompiledNumber>: Sized {
     /// Load a compiled evaluator from a shared library.
-    fn load(file: &str, function_name: &str) -> Result<Self, String>;
+    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+        Self::load_with_settings(file, function_name, T::Settings::default())
+    }
+    fn load_with_settings(
+        file: &str,
+        function_name: &str,
+        settings: T::Settings,
+    ) -> Result<Self, String>;
 }
 
 impl CompiledNumber for f64 {
     type Evaluator = CompiledRealEvaluator;
+    type Settings = ();
+    const SUFFIX: &'static str = "realf64";
 
     fn export_cpp<T: ExportNumber + SingleFloat>(
         eval: &ExpressionEvaluator<T>,
@@ -4986,8 +5431,8 @@ impl CompiledNumber for f64 {
             InlineASM::X64 => eval.export_asm_real_str(function_name, &settings),
             InlineASM::AArch64 => eval.export_asm_real_str(function_name, &settings),
             InlineASM::None => {
-                let r = eval.export_generic_cpp_str(function_name, &settings);
-                r + format!("\nextern \"C\" {{\n\tvoid {function_name}_double(double *params, double *buffer, double *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
+                let r = eval.export_generic_cpp_str(function_name, &settings, NumberClass::RealF64);
+                r + format!("\nextern \"C\" {{\n\tvoid {function_name}(double *params, double *buffer, double *out) {{\n\t\t{function_name}_gen(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
             }
         })
     }
@@ -4995,6 +5440,8 @@ impl CompiledNumber for f64 {
 
 impl CompiledNumber for Complex<f64> {
     type Evaluator = CompiledComplexEvaluator;
+    type Settings = ();
+    const SUFFIX: &'static str = "complexf64";
 
     fn export_cpp<T: ExportNumber + SingleFloat>(
         eval: &ExpressionEvaluator<T>,
@@ -5005,42 +5452,31 @@ impl CompiledNumber for Complex<f64> {
             InlineASM::X64 => eval.export_asm_complex_str(function_name, &settings),
             InlineASM::AArch64 => eval.export_asm_complex_str(function_name, &settings),
             InlineASM::None => {
-                let r = eval.export_generic_cpp_str(function_name, &settings);
-                r + format!("\nextern \"C\" {{\n\tvoid {function_name}_complex(std::complex<double> *params, std::complex<double> *buffer, std::complex<double> *out) {{\n\t\t{function_name}(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
+                let r =
+                    eval.export_generic_cpp_str(function_name, &settings, NumberClass::ComplexF64);
+                r + format!("\nextern \"C\" {{\n\tvoid {function_name}(std::complex<double> *params, std::complex<double> *buffer, std::complex<double> *out) {{\n\t\t{function_name}_gen(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
             }
         })
     }
 }
 
 pub struct CompiledRealEvaluator {
+    library: LibraryRealf64,
     fn_name: String,
-    library: Library,
     buffer_double: Vec<f64>,
 }
 
-impl EvaluatorLoader for CompiledRealEvaluator {
-    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+impl EvaluatorLoader<f64> for CompiledRealEvaluator {
+    fn load_with_settings(file: &str, function_name: &str, _settings: ()) -> Result<Self, String> {
         CompiledRealEvaluator::load(file, function_name)
     }
 }
 
 impl CompiledRealEvaluator {
-    /// Load a new function from the same library.
     pub fn load_new_function(&self, function_name: &str) -> Result<CompiledRealEvaluator, String> {
-        let library = unsafe {
-            Library::try_new::<String>(self.library.borrow_owner().clone(), |lib| {
-                Ok(EvaluatorFunctions {
-                    eval_double: Some(
-                        lib.get(format!("{function_name}_double").as_bytes())
-                            .map_err(|e| e.to_string())?,
-                    ),
-                    eval_complex: None,
-                    get_buffer_len: lib
-                        .get(format!("{function_name}_get_buffer_len").as_bytes())
-                        .map_err(|e| e.to_string())?,
-                })
-            })
-        }?;
+        let library = LibraryRealf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsRealf64::new(lib, function_name)
+        })?;
 
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
@@ -5050,8 +5486,6 @@ impl CompiledRealEvaluator {
             library,
         })
     }
-
-    /// Load a compiled evaluator from a shared library.
     pub fn load(file: &str, function_name: &str) -> Result<CompiledRealEvaluator, String> {
         unsafe {
             let lib = match libloading::Library::new(file) {
@@ -5060,18 +5494,8 @@ impl CompiledRealEvaluator {
                     libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
                 }
             };
-
-            let library = Library::try_new::<String>(std::sync::Arc::new(lib), |lib| {
-                Ok(EvaluatorFunctions {
-                    eval_double: Some(
-                        lib.get(format!("{}_double", function_name).as_bytes())
-                            .map_err(|e| e.to_string())?,
-                    ),
-                    eval_complex: None,
-                    get_buffer_len: lib
-                        .get(format!("{function_name}_get_buffer_len").as_bytes())
-                        .map_err(|e| e.to_string())?,
-                })
+            let library = LibraryRealf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsRealf64::new(lib, function_name)
             })?;
 
             let len = (library.borrow_dependent().get_buffer_len)() as usize;
@@ -5083,17 +5507,11 @@ impl CompiledRealEvaluator {
             })
         }
     }
-
     /// Evaluate the compiled code with double-precision floating point numbers.
     #[inline(always)]
     pub fn evaluate(&mut self, args: &[f64], out: &mut [f64]) {
         unsafe {
-            (self
-                .library
-                .borrow_dependent()
-                .eval_double
-                .as_ref()
-                .unwrap_unchecked())(
+            (self.library.borrow_dependent().eval)(
                 args.as_ptr(),
                 self.buffer_double.as_mut_ptr(),
                 out.as_mut_ptr(),
@@ -5118,12 +5536,12 @@ impl Clone for CompiledRealEvaluator {
 
 pub struct CompiledComplexEvaluator {
     fn_name: String,
-    library: Library,
+    library: LibraryComplexf64,
     buffer_complex: Vec<Complex<f64>>,
 }
 
-impl EvaluatorLoader for CompiledComplexEvaluator {
-    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+impl EvaluatorLoader<Complex<f64>> for CompiledComplexEvaluator {
+    fn load_with_settings(file: &str, function_name: &str, _settings: ()) -> Result<Self, String> {
         CompiledComplexEvaluator::load(file, function_name)
     }
 }
@@ -5134,20 +5552,9 @@ impl CompiledComplexEvaluator {
         &self,
         function_name: &str,
     ) -> Result<CompiledComplexEvaluator, String> {
-        let library = unsafe {
-            Library::try_new::<String>(self.library.borrow_owner().clone(), |lib| {
-                Ok(EvaluatorFunctions {
-                    eval_double: None,
-                    eval_complex: Some(
-                        lib.get(format!("{}_complex", function_name).as_bytes())
-                            .map_err(|e| e.to_string())?,
-                    ),
-                    get_buffer_len: lib
-                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
-                        .map_err(|e| e.to_string())?,
-                })
-            })
-        }?;
+        let library = LibraryComplexf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsComplexf64::new(lib, function_name)
+        })?;
 
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
@@ -5168,39 +5575,24 @@ impl CompiledComplexEvaluator {
                 }
             };
 
-            let library = Library::try_new::<String>(std::sync::Arc::new(lib), |lib| {
-                Ok(EvaluatorFunctions {
-                    eval_double: None,
-                    eval_complex: Some(
-                        lib.get(format!("{}_complex", function_name).as_bytes())
-                            .map_err(|e| e.to_string())?,
-                    ),
-                    get_buffer_len: lib
-                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
-                        .map_err(|e| e.to_string())?,
-                })
+            let library = LibraryComplexf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsComplexf64::new(lib, function_name)
             })?;
 
             let len = (library.borrow_dependent().get_buffer_len)() as usize;
 
             Ok(CompiledComplexEvaluator {
                 fn_name: function_name.to_string(),
-                buffer_complex: vec![Complex::new_zero(); len],
+                buffer_complex: vec![Complex::default(); len],
                 library,
             })
         }
     }
-
-    /// Evaluate the compiled code with complex numbers.
+    /// Evaluate the compiled code.
     #[inline(always)]
     pub fn evaluate(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
         unsafe {
-            (self
-                .library
-                .borrow_dependent()
-                .eval_complex
-                .as_ref()
-                .unwrap_unchecked())(
+            (self.library.borrow_dependent().eval)(
                 args.as_ptr(),
                 self.buffer_complex.as_mut_ptr(),
                 out.as_mut_ptr(),
@@ -5223,14 +5615,322 @@ impl Clone for CompiledComplexEvaluator {
     }
 }
 
-self_cell!(
-    struct Library {
-        owner: L,
+/// CUDA real number type.
+pub struct CudaRealf64 {}
 
-        #[covariant]
-        dependent: EvaluatorFunctions,
+impl CompiledNumber for CudaRealf64 {
+    type Evaluator = CompiledCudaRealEvaluator;
+    type Settings = CudaLoadSettings;
+    const SUFFIX: &'static str = "cuda_realf64";
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        if !eval.stack.iter().all(|x| x.is_real()) {
+            return Err(
+                "Cannot create real evaluator with complex coefficients. Use Complex<f64>".into(),
+            );
+        }
+
+        Ok(eval.export_cuda_str(function_name, settings, NumberClass::RealF64))
     }
-);
+}
+
+/// CUDA complex number type.
+pub struct CudaComplexf64 {}
+
+impl CompiledNumber for CudaComplexf64 {
+    type Evaluator = CompiledCudaComplexEvaluator;
+    type Settings = CudaLoadSettings;
+    const SUFFIX: &'static str = "cuda_complexf64";
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        Ok(eval.export_cuda_str(function_name, settings, NumberClass::ComplexF64))
+    }
+}
+
+pub struct CompiledCudaRealEvaluator {
+    fn_name: String,
+    library: LibraryCudaRealf64,
+    settings: CudaLoadSettings,
+    data: *const CudaEvaluationData,
+}
+
+impl EvaluatorLoader<CudaRealf64> for CompiledCudaRealEvaluator {
+    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+        CompiledCudaRealEvaluator::load_with_settings(
+            file,
+            function_name,
+            CudaLoadSettings::default(),
+        )
+    }
+
+    fn load_with_settings(
+        file: &str,
+        function_name: &str,
+        settings: CudaLoadSettings,
+    ) -> Result<Self, String> {
+        CompiledCudaRealEvaluator::load(file, function_name, settings)
+    }
+}
+
+impl CompiledCudaRealEvaluator {
+    pub fn load_new_function(
+        &self,
+        function_name: &str,
+    ) -> Result<CompiledCudaRealEvaluator, String> {
+        let library = LibraryCudaRealf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsCudaRealf64::new(lib, function_name)
+        })?;
+        let data = unsafe {
+            let data = (library.borrow_dependent().init_data)(
+                self.settings.number_of_evaluations,
+                self.settings.block_size,
+            );
+            (*data).check_for_error()?;
+            data
+        };
+
+        Ok(CompiledCudaRealEvaluator {
+            fn_name: function_name.to_string(),
+            library,
+            settings: self.settings.clone(),
+            data,
+        })
+    }
+
+    pub fn load(
+        file: &str,
+        function_name: &str,
+        settings: CudaLoadSettings,
+    ) -> Result<CompiledCudaRealEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(file) {
+                Ok(lib) => lib,
+                Err(_) => {
+                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
+                }
+            };
+            let library = LibraryCudaRealf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsCudaRealf64::new(lib, function_name)
+            })?;
+
+            let data = (library.borrow_dependent().init_data)(
+                settings.number_of_evaluations,
+                settings.block_size,
+            );
+            (*data).check_for_error()?;
+
+            Ok(CompiledCudaRealEvaluator {
+                fn_name: function_name.to_string(),
+                library,
+                settings,
+                data,
+            })
+        }
+    }
+
+    /// Evaluate the compiled code with double-precision floating point numbers.
+    /// The `args` must be of length `number_of_evaluations * input`, where `input` is the number of inputs to the function.
+    /// The `out` must be of length `number_of_evaluations * output`,
+    /// where `output` is the number of outputs of the function.
+    #[inline(always)]
+    pub fn evaluate(&mut self, args: &[f64], out: &mut [f64]) -> Result<(), String> {
+        unsafe {
+            if args.len() != (*self.data).in_dimension * (*self.data).n {
+                return Err(format!(
+                    "CUDA args length (={}) does not match the expected input dimension (={}*{}).",
+                    args.len(),
+                    (*self.data).in_dimension,
+                    (*self.data).n
+                ));
+            }
+            if out.len() != (*self.data).out_dimension * (*self.data).n {
+                return Err(format!(
+                    "CUDA out length (={}) does not match the expected output dimension (={}*{}).",
+                    out.len(),
+                    (*self.data).out_dimension,
+                    (*self.data).n
+                ));
+            }
+            (self.library.borrow_dependent().eval)(args.as_ptr(), out.as_mut_ptr(), self.data);
+            (*self.data).check_for_error()?;
+        }
+        Ok(())
+    }
+}
+
+pub struct CompiledCudaComplexEvaluator {
+    fn_name: String,
+    library: LibraryCudaComplexf64,
+    settings: CudaLoadSettings,
+    data: *const CudaEvaluationData,
+}
+
+impl EvaluatorLoader<CudaComplexf64> for CompiledCudaComplexEvaluator {
+    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+        CompiledCudaComplexEvaluator::load_with_settings(
+            file,
+            function_name,
+            CudaLoadSettings::default(),
+        )
+    }
+
+    fn load_with_settings(
+        file: &str,
+        function_name: &str,
+        settings: CudaLoadSettings,
+    ) -> Result<Self, String> {
+        CompiledCudaComplexEvaluator::load(file, function_name, settings)
+    }
+}
+
+impl CompiledCudaComplexEvaluator {
+    pub fn load_new_function(
+        &self,
+        function_name: &str,
+    ) -> Result<CompiledCudaComplexEvaluator, String> {
+        let library = LibraryCudaComplexf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsCudaComplexf64::new(lib, function_name)
+        })?;
+
+        let data = unsafe {
+            let data = (library.borrow_dependent().init_data)(
+                self.settings.number_of_evaluations,
+                self.settings.block_size,
+            );
+            (*data).check_for_error()?;
+            data
+        };
+        Ok(CompiledCudaComplexEvaluator {
+            fn_name: function_name.to_string(),
+            library,
+            settings: self.settings.clone(),
+            data,
+        })
+    }
+
+    pub fn load(
+        file: &str,
+        function_name: &str,
+        settings: CudaLoadSettings,
+    ) -> Result<CompiledCudaComplexEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(file) {
+                Ok(lib) => lib,
+                Err(_) => {
+                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
+                }
+            };
+            let library = LibraryCudaComplexf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsCudaComplexf64::new(lib, function_name)
+            })?;
+
+            let data = (library.borrow_dependent().init_data)(
+                settings.number_of_evaluations,
+                settings.block_size,
+            );
+            (*data).check_for_error()?;
+
+            Ok(CompiledCudaComplexEvaluator {
+                fn_name: function_name.to_string(),
+                library,
+                settings,
+                data,
+            })
+        }
+    }
+
+    /// Evaluate the compiled code with complex numbers.
+    /// The `args` must be of length `number_of_evaluations * input`, where `input` is the number of inputs to the function.
+    /// The `out` must be of length `number_of_evaluations * output`,
+    /// where `output` is the number of outputs of the function.
+    #[inline(always)]
+    pub fn evaluate(
+        &mut self,
+        args: &[Complex<f64>],
+        out: &mut [Complex<f64>],
+    ) -> Result<(), String> {
+        unsafe {
+            if args.len() != (*self.data).in_dimension * (*self.data).n {
+                return Err(format!(
+                    "CUDA args length (={}) does not match the expected input dimension (={}*{}).",
+                    args.len(),
+                    (*self.data).in_dimension,
+                    (*self.data).n
+                ));
+            }
+            if out.len() != (*self.data).out_dimension * (*self.data).n {
+                return Err(format!(
+                    "CUDA out length (={}) does not match the expected output dimension (={}*{}).",
+                    out.len(),
+                    (*self.data).out_dimension,
+                    (*self.data).n
+                ));
+            }
+            (self.library.borrow_dependent().eval)(args.as_ptr(), out.as_mut_ptr(), self.data);
+            (*self.data).check_for_error()?;
+        }
+        Ok(())
+    }
+}
+
+unsafe impl Send for CompiledCudaRealEvaluator {}
+unsafe impl Send for CompiledCudaComplexEvaluator {}
+unsafe impl Sync for CompiledCudaRealEvaluator {}
+unsafe impl Sync for CompiledCudaComplexEvaluator {}
+
+impl std::fmt::Debug for CompiledCudaRealEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledCudaRealEvaluator({})", self.fn_name)
+    }
+}
+
+impl Drop for CompiledCudaRealEvaluator {
+    fn drop(&mut self) {
+        unsafe {
+            let result = (self.library.borrow_dependent().destroy_data)(self.data);
+            if result != 0 {
+                eprintln!("Warning: failed to free CUDA memory: {}", result);
+            }
+        }
+    }
+}
+
+impl Clone for CompiledCudaRealEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+impl std::fmt::Debug for CompiledCudaComplexEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledCudaComplexEvaluator({})", self.fn_name)
+    }
+}
+
+impl Drop for CompiledCudaComplexEvaluator {
+    fn drop(&mut self) {
+        unsafe {
+            let result = (self.library.borrow_dependent().destroy_data)(self.data);
+            if result != 0 {
+                eprintln!("Warning: failed to free CUDA memory: {}", result);
+            }
+        }
+    }
+}
+
+impl Clone for CompiledCudaComplexEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
 
 /// Options for compiling exported code.
 #[derive(Clone)]
@@ -5239,7 +5939,11 @@ pub struct CompileOptions {
     pub fast_math: bool,
     pub unsafe_math: bool,
     pub compiler: String,
-    pub custom: Vec<String>,
+    /// Arguments for the compiler call. Arguments with spaces
+    /// must be split into a separate strings.
+    ///
+    /// For CUDA, the argument `-x cu` is required.
+    pub args: Vec<String>,
 }
 
 impl Default for CompileOptions {
@@ -5250,7 +5954,20 @@ impl Default for CompileOptions {
             fast_math: true,
             unsafe_math: true,
             compiler: "g++".to_string(),
-            custom: vec![],
+            args: vec![],
+        }
+    }
+}
+
+impl CompileOptions {
+    /// CUDA compile options: `nvcc -O3 -Xcompiler -fPIC -x cu`.
+    pub fn cuda() -> Self {
+        CompileOptions {
+            optimization_level: 3,
+            fast_math: false,
+            unsafe_math: false,
+            compiler: "nvcc".to_string(),
+            args: vec!["-x".to_string(), "cu".to_string()],
         }
     }
 }
@@ -5266,6 +5983,9 @@ impl<T: CompiledNumber> ExportedCode<T> {
     }
 
     /// Compile the code to a shared library.
+    ///
+    /// For CUDA, you may have to specify `-code=sm_XY` for your architecture `XY` in the compiler flags to prevent a potentially long
+    /// JIT compilation upon the first evaluation.
     pub fn compile(
         &self,
         out: &str,
@@ -5274,16 +5994,22 @@ impl<T: CompiledNumber> ExportedCode<T> {
         let mut builder = std::process::Command::new(&options.compiler);
         builder
             .arg("-shared")
-            .arg("-fPIC")
             .arg(format!("-O{}", options.optimization_level));
-        if options.fast_math {
+        if !options.compiler.contains("nvcc") {
+            builder.arg("-fPIC");
+        } else {
+            // order is important here for nvcc
+            builder.arg("-Xcompiler");
+            builder.arg("-fPIC");
+        }
+        if options.fast_math && !options.compiler.contains("nvcc") {
             builder.arg("-ffast-math");
         }
-        if options.unsafe_math {
+        if options.unsafe_math && !options.compiler.contains("nvcc") {
             builder.arg("-funsafe-math-optimizations");
         }
 
-        for c in &options.custom {
+        for c in &options.args {
             builder.arg(c);
         }
 
@@ -5294,10 +6020,19 @@ impl<T: CompiledNumber> ExportedCode<T> {
             .output()?;
 
         if !r.status.success() {
-            return Err(std::io::Error::other(format!(
-                "Could not compile code: {}",
-                String::from_utf8_lossy(&r.stderr)
-            )));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Could not compile code: {} {}\n{}",
+                    builder.get_program().to_string_lossy(),
+                    builder
+                        .get_args()
+                        .map(|arg| arg.to_string_lossy().to_string())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    String::from_utf8_lossy(&r.stderr)
+                ),
+            ));
         }
 
         Ok(CompiledCode {
@@ -5306,6 +6041,13 @@ impl<T: CompiledNumber> ExportedCode<T> {
             _phantom: std::marker::PhantomData,
         })
     }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum FormatCPP {
+    CPP,
+    ASM,
+    CUDA,
 }
 
 /// The inline assembly mode used to generate fast

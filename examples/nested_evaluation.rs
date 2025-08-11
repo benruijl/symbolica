@@ -55,7 +55,7 @@ fn main() {
     .unwrap();
 
     let mut e_f64 = evaluator.map_coeff(&|x| x.to_real().unwrap().into());
-    let mut out = vec![0.];
+    let mut out = vec![0., 0.];
     e_f64.evaluate(&[5.], &mut out);
     println!("{}", out[0]);
 

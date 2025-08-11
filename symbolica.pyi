@@ -4115,6 +4115,7 @@ class Evaluator:
         inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
+        compiler_flags: Optional[Sequence[str]] = None,
         custom_header: Optional[str] = None,
     ) -> CompiledRealEvaluator:
         """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
@@ -4127,14 +4128,17 @@ class Evaluator:
             The name of the file to generate.
         library_name : str
             The name of the shared library to generate.
-        number_type : Literal['real'] | Literal['complex]
+        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
             The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
         inline_asm : str
             The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
-        custom_path : Optional[str]
+        compiler_path : Optional[str]
             The custom path to the compiler executable.
+        compiler_flags : Optional[Sequence[str]]
+            The custom flags to pass to the compiler.
         custom_header : Optional[str]
             The custom header to include in the generated code.
         """
@@ -4149,6 +4153,7 @@ class Evaluator:
         inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
+        compiler_flags: Optional[Sequence[str]] = None,
         custom_header: Optional[str] = None,
     ) -> CompiledComplexEvaluator:
         """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
@@ -4161,16 +4166,115 @@ class Evaluator:
             The name of the file to generate.
         library_name : str
             The name of the shared library to generate.
-        number_type : Literal['real'] | Literal['complex]
+        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
             The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
         inline_asm : str
             The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
-        custom_path : Optional[str]
+        compiler_path : Optional[str]
             The custom path to the compiler executable.
+        compiler_flags : Optional[Sequence[str]]
+            The custom flags to pass to the compiler.
         custom_header : Optional[str]
             The custom header to include in the generated code.
+        """
+
+    @overload
+    def compile(
+        self,
+        function_name: str,
+        filename: str,
+        library_name: str,
+        number_type: Literal['cuda_real'],
+        inline_asm: str = 'default',
+        optimization_level: int = 3,
+        compiler_path: Optional[str] = None,
+        compiler_flags: Optional[Sequence[str]] = None,
+        custom_header: Optional[str] = None,
+        cuda_number_of_evaluations: Optional[int] = None,
+        cuda_block_size: Optional[int] = 256
+    ) -> CompiledCudaRealEvaluator:
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+        You may have to specify `-code=sm_XY` for your architecture `XY` in the compiler flags to prevent a potentially long
+        JIT compilation upon the first evaluation.
+
+        Parameters
+        ----------
+        function_name : str
+            The name of the function to generate and compile.
+        filename : str
+            The name of the file to generate.
+        library_name : str
+            The name of the shared library to generate.
+        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
+            The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+        inline_asm : str
+            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        optimization_level : int
+            The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        compiler_path : Optional[str]
+            The custom path to the compiler executable.
+        compiler_flags : Optional[Sequence[str]]
+            The custom flags to pass to the compiler.
+        custom_header : Optional[str]
+            The custom header to include in the generated code.
+        cuda_number_of_evaluations: Optional[int]
+            The number of parallel evaluations to perform on the CUDA device. The input to evaluate must 
+            have the length `cuda_number_of_evaluations * arg_len`.
+        cuda_block_size: Optional[int]
+            The block size to use for CUDA kernel launches.
+        """
+
+    @overload
+    def compile(
+        self,
+        function_name: str,
+        filename: str,
+        library_name: str,
+        number_type: Literal['cuda_complex'],
+        inline_asm: str = 'default',
+        optimization_level: int = 3,
+        compiler_path: Optional[str] = None,
+        compiler_flags: Optional[Sequence[str]] = None,
+        custom_header: Optional[str] = None,
+        cuda_number_of_evaluations: Optional[int] = None,
+        cuda_block_size: Optional[int] = 256
+    ) -> CompiledCudaComplexEvaluator:
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+        You may have to specify `-code=sm_XY` for your architecture `XY` in the compiler flags to prevent a potentially long
+        JIT compilation upon the first evaluation.
+
+        Parameters
+        ----------
+        function_name : str
+            The name of the function to generate and compile.
+        filename : str
+            The name of the file to generate.
+        library_name : str
+            The name of the shared library to generate.
+        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
+            The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+        inline_asm : str
+            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        optimization_level : int
+            The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        compiler_path : Optional[str]
+            The custom path to the compiler executable.
+        compiler_flags : Optional[Sequence[str]]
+            The custom flags to pass to the compiler.
+        custom_header : Optional[str]
+            The custom header to include in the generated code.
+        cuda_number_of_evaluations: Optional[int]
+            The number of parallel evaluations to perform on the CUDA device. The input to evaluate must 
+            have the length `cuda_number_of_evaluations * arg_len`.
+        cuda_block_size: Optional[int]
+            The block size to use for CUDA kernel launches.
         """
 
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
@@ -4222,6 +4326,54 @@ class CompiledComplexEvaluator:
         input_len: int,
         output_len: int,
     ) -> CompiledComplexEvaluator:
+        """Load a compiled library, previously generated with `Evaluator.compile()`."""
+
+    def evaluate(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+    def evaluate_flat(self, inputs: Sequence[complex]) -> List[complex]:
+        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+        This method has less overhead than `evaluate`."""
+
+
+class CompiledCudaRealEvaluator:
+    """An compiled evaluator of an expression. This will give the highest performance of
+    all evaluators."""
+
+    @classmethod
+    def load(
+        _cls,
+        filename: str,
+        function_name: str,
+        input_len: int,
+        output_len: int,
+        cuda_number_of_evaluations: int,
+        cuda_block_size: Optional[int] = 256
+    ) -> CompiledCudaRealEvaluator:
+        """Load a compiled library, previously generated with `Evaluator.compile()`."""
+
+    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+    def evaluate_flat(self, inputs: Sequence[float]) -> List[float]:
+        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+        This method has less overhead than `evaluate`."""
+
+
+class CompiledCudaComplexEvaluator:
+    """An compiled evaluator of an expression. This will give the highest performance of
+    all evaluators."""
+
+    @classmethod
+    def load(
+        _cls,
+        filename: str,
+        function_name: str,
+        input_len: int,
+        output_len: int,
+        cuda_number_of_evaluations: int,
+        cuda_block_size: Optional[int] = 256
+    ) -> CompiledCudaComplexEvaluator:
         """Load a compiled library, previously generated with `Evaluator.compile()`."""
 
     def evaluate(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:

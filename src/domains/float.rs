@@ -3172,6 +3172,12 @@ impl<T: InternalOrdering> InternalOrdering for Complex<T> {
     }
 }
 
+impl<T> From<(T, T)> for Complex<T> {
+    fn from((re, im): (T, T)) -> Self {
+        Complex { re, im }
+    }
+}
+
 impl<T: ConstructibleFloat> ConstructibleFloat for Complex<T> {
     fn new_from_i64(a: i64) -> Self {
         Complex {
@@ -3204,7 +3210,7 @@ impl<T: ConstructibleFloat> ConstructibleFloat for Complex<T> {
 
 impl<T: NumericalFloatLike> Complex<T> {
     #[inline]
-    pub fn new(re: T, im: T) -> Complex<T> {
+    pub const fn new(re: T, im: T) -> Complex<T> {
         Complex { re, im }
     }
 

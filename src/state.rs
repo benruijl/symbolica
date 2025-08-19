@@ -926,8 +926,8 @@ mod tests {
     #[test]
     fn custom_normalization() {
         let _real_log = symbol!(
-            "custom_normalization_real_log";;
-            |input, out| {
+            "custom_normalization_real_log",
+            norm = |input, out| {
                 if let AtomView::Fun(f) = input {
                     if f.get_nargs() == 1 {
                         let arg = f.iter().next().unwrap();

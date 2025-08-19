@@ -1318,8 +1318,7 @@ mod test {
         let a = parse!("15 x^2 / ((1+x)(x+2))")
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{a}") == "15*x^2/((1+x)*(2+x))"
-                || format!("{a}") == "15*x^2/((2+x)*(1+x))"
+            format!("{a}") == "15*x^2/((1+x)*(2+x))" || format!("{a}") == "15*x^2/((2+x)*(1+x))"
         );
 
         let a = parse!("(15 x^2 + 6) / ((1+x)(x+2))")
@@ -1365,29 +1364,32 @@ mod test {
 
     #[test]
     fn custom_print() {
-        let _ = symbol!("mu";;;|a, opt| {
-            if !opt.mode.is_latex() {
-                return None; // use default printer
-            }
-
-            let mut fmt = String::new();
-            fmt.push_str("\\mu");
-            if let AtomView::Fun(f) = a {
-                fmt.push_str("_{");
-                let n_args = f.get_nargs();
-
-                for (i, a) in f.iter().enumerate() {
-                    a.format(&mut fmt, opt, PrintState::new()).unwrap();
-                    if i < n_args - 1 {
-                        fmt.push(',');
-                    }
+        let _ = symbol!(
+            "mu",
+            print = |a, opt| {
+                if !opt.mode.is_latex() {
+                    return None; // use default printer
                 }
 
-                fmt.push('}');
-            }
+                let mut fmt = String::new();
+                fmt.push_str("\\mu");
+                if let AtomView::Fun(f) = a {
+                    fmt.push_str("_{");
+                    let n_args = f.get_nargs();
 
-            Some(fmt)
-        });
+                    for (i, a) in f.iter().enumerate() {
+                        a.format(&mut fmt, opt, PrintState::new()).unwrap();
+                        if i < n_args - 1 {
+                            fmt.push(',');
+                        }
+                    }
+
+                    fmt.push('}');
+                }
+
+                Some(fmt)
+            }
+        );
 
         let e = crate::parse!("mu^2 + mu(1) + mu(1,2)");
         let s = format!("{}", e.printer(PrintOptions::latex()));

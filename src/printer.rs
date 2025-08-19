@@ -1374,29 +1374,32 @@ mod test {
 
     #[test]
     fn custom_print() {
-        let _ = symbol!("mu";;;|a, opt| {
-            if !opt.mode.is_latex() {
-                return None; // use default printer
-            }
-
-            let mut fmt = String::new();
-            fmt.push_str("\\mu");
-            if let AtomView::Fun(f) = a {
-                fmt.push_str("_{");
-                let n_args = f.get_nargs();
-
-                for (i, a) in f.iter().enumerate() {
-                    a.format(&mut fmt, opt, PrintState::new()).unwrap();
-                    if i < n_args - 1 {
-                        fmt.push(',');
-                    }
+        let _ = symbol!(
+            "mu",
+            print = |a, opt| {
+                if !opt.mode.is_latex() {
+                    return None; // use default printer
                 }
 
-                fmt.push('}');
-            }
+                let mut fmt = String::new();
+                fmt.push_str("\\mu");
+                if let AtomView::Fun(f) = a {
+                    fmt.push_str("_{");
+                    let n_args = f.get_nargs();
 
-            Some(fmt)
-        });
+                    for (i, a) in f.iter().enumerate() {
+                        a.format(&mut fmt, opt, PrintState::new()).unwrap();
+                        if i < n_args - 1 {
+                            fmt.push(',');
+                        }
+                    }
+
+                    fmt.push('}');
+                }
+
+                Some(fmt)
+            }
+        );
 
         let e = crate::parse!("mu^2 + mu(1) + mu(1,2)");
         let s = format!("{}", e.printer(PrintOptions::latex()));

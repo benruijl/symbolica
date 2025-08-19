@@ -202,6 +202,7 @@ impl DefaultNamespace<'_> {
     }
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! wrap_input {
     ($e:expr) => {
@@ -214,6 +215,7 @@ macro_rules! wrap_input {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! with_default_namespace {
     ($e:expr, $namespace: expr) => {
@@ -1688,12 +1690,15 @@ macro_rules! function {
 /// will panic if the symbol was previously defined with attributes. Use
 /// [try_symbol!] for a fallible version.
 ///
-/// You can specify a normalization function for the symbol, following its
-/// attributes with a `;`.
+/// Special settings can be defined for a single symbol by following
+/// the symbol name with a `,` as shown next.
+///
+/// You can specify a normalization function for the symbol using the `norm` flag:
+///
 /// ```no_run
 /// use symbolica::symbol;
 /// use symbolica::atom::AtomView;
-/// let x = symbol!("f";; |f, out| {
+/// let x = symbol!("f", norm = |f, out| {
 ///     if let AtomView::Fun(ff) = f {
 ///         if ff.get_nargs() % 2 == 1 {
 ///            out.to_num(0.into());
@@ -1704,12 +1709,12 @@ macro_rules! function {
 /// });
 /// ```
 ///
-/// You can also define a custom printing function by adding another `;`:
+/// You can also define a custom printing function using the `print` flag:
 /// ```no_run
 /// use symbolica::symbol;
 /// use symbolica::atom::{AtomCore, AtomView};
 /// use symbolica::printer::PrintState;
-/// let _ = symbol!("mu";;;|a, opt| {
+/// let _ = symbol!("mu", print = |a, opt| {
 ///     if !opt.mode.is_latex() {
 ///         return None; // use default printer
 ///     }
@@ -1731,6 +1736,14 @@ macro_rules! function {
 /// });
 /// ```
 /// which renders the symbol/function as `\mu_{...}` in LaTeX.
+///
+/// To set special settings together with attributes, separate the attributes with another
+/// `;`:
+///
+/// ```no_run
+/// use symbolica::symbol;
+/// let _ = symbol!("gamma"; Symmetric, Linear; print = |_, _| { None });
+/// ```
 #[macro_export]
 macro_rules! symbol {
     ($id: expr) => {
@@ -1739,14 +1752,27 @@ macro_rules! symbol {
     ($id: expr; $($attr: ident),*) => {
         $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build().unwrap()
     };
-    ($id: expr; $($attr: ident),*; $norm: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).build().unwrap()
+    ($id: expr, $($a: tt = $value: expr),*) => {
+        {
+            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id));
+
+            $(
+                b = $crate::symbol_set_attr!(b, $a = $value);
+            )+
+
+            b.build().unwrap()
+        }
     };
-    ($id: expr; $($attr: ident),*;; $print: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_print_function($print).build().unwrap()
-    };
-    ($id: expr; $($attr: ident),*; $norm: expr; $print: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).with_print_function($print).build().unwrap()
+    ($id: expr; $($attr: ident),+; $($a: ident = $value: expr),*) => {
+        {
+            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]);
+
+            $(
+                b = $crate::symbol_set_attr!(b, $a = $value);
+            )+
+
+            b.build().unwrap()
+        }
     };
     ($($id: expr),*) => {
         {
@@ -1774,6 +1800,16 @@ macro_rules! symbol {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! symbol_set_attr {
+    () => {{}};
+    ($b: expr, norm = $norm: expr) => {
+        $b.with_normalization_function($norm)
+    };
+    ($b: expr, print = $print: expr) => {{ $b.with_print_function($print) }};
+}
+
 /// Try to create a new symbol or fetch the existing one with the same name.
 /// This is a fallible version of the [symbol!] macro.
 #[macro_export]
@@ -1784,14 +1820,27 @@ macro_rules! try_symbol {
     ($id: expr; $($attr: ident),*) => {
         $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build()
     };
-    ($id: expr; $($attr: ident),*; $norm: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).build()
+    ($id: expr, $($a: tt = $value: expr),*) => {
+        {
+            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id));
+
+            $(
+                b = $crate::symbol_set_attr!(b, $a = $value);
+            )+
+
+            b.build()
+        }
     };
-    ($id: expr; $($attr: ident),*;; $print: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_print_function($print).build()
-    };
-    ($id: expr; $($attr: ident),*; $norm: expr; $print: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).with_normalization_function($norm).with_print_function($print).build()
+    ($id: expr; $($attr: ident),+; $($a: ident = $value: expr),*) => {
+        {
+            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]);
+
+            $(
+                b = $crate::symbol_set_attr!(b, $a = $value);
+            )+
+
+            b.build()
+        }
     };
     ($($id: expr),*) => {
         {
@@ -1867,6 +1916,8 @@ macro_rules! parse {
     };
 }
 
+/// Try to parse an atom from a string.
+/// This is a fallible version of the [parse!](crate::parse) macro.
 #[macro_export]
 macro_rules! try_parse {
     ($s: expr) => {

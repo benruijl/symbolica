@@ -32,9 +32,12 @@ faster_alloc = ["tikv-jemallocator"]
 # sort functions based on an argument-by-argument comparison
 full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
-python_api = ["pyo3", "bincode"]
-# do not create a Python module but allow other crates to do so
-python_no_module = ["python_api"]
+# create a Python module
+python_api = ["pyo3/extension-module", "bincode", "pyo3-stub-gen"]
+# export the Python API
+python_export = ["pyo3", "bincode", "pyo3-stub-gen"]
+# generate stubs for Python API
+python_stubgen = ["python_export"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 tracing_only_warnings = ["tracing/release_max_level_warn"]
@@ -42,11 +45,10 @@ tracing_only_warnings = ["tracing/release_max_level_warn"]
 serde = ["dep:serde", "rug/serde"]
 # allow importing/exporting of atoms with a state map using bincode
 bincode = ["dep:bincode", "dep:bincode-trait-derive"]
-python_stubgen = ["dep:pyo3-stub-gen"]
 experimental_poly_gcd = []
 
 [dependencies.pyo3]
-features = ["extension-module", "abi3", "py-clone"]
+features = ["abi3", "py-clone"]
 optional = true
 version = "0.25"
 
@@ -66,7 +68,7 @@ libloading = "0.8.4"
 once_cell = "1.19"
 rand = "0.9"
 rand_xoshiro = "0.7"
-pyo3-stub-gen = { version = "0.9", optional = true }
+pyo3-stub-gen = { version = "0.13", default-features = false, optional = true }
 rayon = "1.8"
 rug = "1.27.0"
 self_cell = "1.2.0"

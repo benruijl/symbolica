@@ -20,7 +20,7 @@ use pyo3::{
     pybacked::PyBackedStr,
     pyclass::CompareOp,
     pyfunction, pymethods,
-    sync::GILOnceCell,
+    sync::PyOnceLock,
     types::{
         IntoPyDict, PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyDict, PyInt, PyModule,
         PyTuple, PyTupleMethods, PyType, PyTypeMethods,
@@ -32,9 +32,13 @@ use pyo3::{pyclass, types::PyModuleMethods};
 #[cfg(feature = "python_stubgen")]
 use pyo3_stub_gen::{
     PyStubType, TypeInfo,
-    derive::{gen_stub_pyclass, gen_stub_pyclass_enum},
+    derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pyfunction, gen_stub_pymethods},
     impl_stub_type,
+    inventory::submit,
+    type_info::{ArgInfo, MethodInfo, MethodType, PyFunctionInfo, PyMethodsInfo, SignatureArg},
 };
+#[cfg(not(feature = "python_stubgen"))]
+use pyo3_stub_gen_derive::remove_gen_stub;
 
 use rug::Complete;
 use self_cell::self_cell;
@@ -91,6 +95,9 @@ use crate::{
     try_parse,
     utils::Settable,
 };
+
+#[cfg(feature = "python_stubgen")]
+static NONE_ARG: fn() -> String = || "None".into();
 
 const DEFAULT_PRINT_OPTIONS: PrintOptions = PrintOptions {
     hide_namespace: Some("python"),
@@ -309,18 +316,30 @@ fn use_custom_logger() {
 }
 
 /// Get the current Symbolica version.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn get_version() -> String {
     LicenseManager::get_version().to_string()
 }
 
 /// Check if the current Symbolica instance has a valid license key set.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn is_licensed() -> bool {
     LicenseManager::is_licensed()
 }
 
 /// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn set_license_key(key: String) -> PyResult<()> {
     LicenseManager::set_license_key(&key).map_err(exceptions::PyException::new_err)
@@ -328,6 +347,10 @@ fn set_license_key(key: String) -> PyResult<()> {
 
 /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
 /// `email`.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn request_hobbyist_license(name: String, email: String) -> PyResult<()> {
     LicenseManager::request_hobbyist_license(&name, &email)
@@ -337,6 +360,10 @@ fn request_hobbyist_license(name: String, email: String) -> PyResult<()> {
 
 /// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
 /// `email`.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn request_trial_license(name: String, email: String, company: String) -> PyResult<()> {
     LicenseManager::request_trial_license(&name, &email, &company)
@@ -346,6 +373,10 @@ fn request_trial_license(name: String, email: String, company: String) -> PyResu
 
 /// Request a sublicense key for the user `name` working at `company` that has the site-wide license `super_license`.
 /// The key will be sent to the e-mail address `email`.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn request_sublicense(
     name: String,
@@ -359,6 +390,10 @@ fn request_sublicense(
 }
 
 /// Get the license key for the account registered with the provided email address.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction]
 fn get_license_key(email: String) -> PyResult<()> {
     LicenseManager::get_license_key(&email)
@@ -403,6 +438,293 @@ fn symbol_shorthand(
     )
 }
 
+#[cfg(feature = "python_stubgen")]
+submit! {
+PyFunctionInfo {
+            name: "S",
+            args: &[
+                ArgInfo {
+                    name: "names:str",
+                    signature: Some(SignatureArg::Args),
+                    r#type: || Vec::<&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_symmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_antisymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_cyclesymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_linear",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                                ArgInfo {
+                    name: "is_scalar",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_real",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_integer",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_positive",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "tags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+            ],
+            r#return: || Vec::<PythonExpression>::type_output(),
+            doc:
+r#"Create new symbols from `names`. Symbols can have attributes,
+such as symmetries. If no attributes
+are specified and the symbol was previously defined, the attributes are inherited.
+Once attributes are defined on a symbol, they cannot be redefined later.
+
+Examples
+--------
+Define a regular symbol and use it as a variable:
+>>> x = S('x')
+>>> e = x**2 + 5
+>>> print(e)
+x**2 + 5
+
+Define a regular symbol and use it as a function:
+>>> f = S('f')
+>>> e = f(1,2)
+>>> print(e)
+f(1,2)
+
+
+Define a symmetric function:
+>>> f = S('f', is_symmetric=True)
+>>> e = f(2,1)
+>>> print(e)
+f(1,2)
+
+
+Define a linear and symmetric function:
+>>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+>>> dot = S('dot', is_symmetric=True, is_linear=True)
+>>> e = dot(p2+2*p3,p1+3*p2-p3)
+dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
+
+Parameters
+----------
+name : str
+    The name of the symbol
+is_symmetric : Optional[bool]
+    Set to true if the symbol is symmetric.
+is_antisymmetric : Optional[bool]
+    Set to true if the symbol is antisymmetric.
+is_cyclesymmetric : Optional[bool]
+    Set to true if the symbol is cyclesymmetric.
+is_linear : Optional[bool]
+    Set to true if the symbol is linear.
+is_scalar : Optional[bool]
+    Set to true if the symbol is a scalar. It will be moved out of linear functions.
+is_real : Optional[bool]
+    Set to true if the symbol is a real number.
+is_integer : Optional[bool]
+    Set to true if the symbol is an integer.
+is_positive : Optional[bool]
+    Set to true if the symbol is a positive number.
+tags: Optional[Sequence[str]]
+    A list of tags to associate with the symbol."#,
+            module: Some("symbolica.core"),
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        }
+    }
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+PyFunctionInfo {
+            name: "S",
+            args: &[
+                ArgInfo {
+                    name: "name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_symmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_antisymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_cyclesymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_linear",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_scalar",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_real",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_integer",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_positive",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "tags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_normalization",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<PythonTransformer>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_print",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[..., typing.Optional[str]]]"),
+                },
+                ArgInfo {
+                    name: "custom_derivative",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[[Expression, int], Expression]]"),
+                },
+            ],
+            r#return: || PythonExpression::type_output(),
+            doc:
+r#"Create new symbols from `names`. Symbols can have attributes,
+such as symmetries. If no attributes
+are specified and the symbol was previously defined, the attributes are inherited.
+Once attributes are defined on a symbol, they cannot be redefined later.
+
+Examples
+--------
+Define a regular symbol and use it as a variable:
+>>> x = S('x')
+>>> e = x**2 + 5
+>>> print(e)
+x**2 + 5
+
+Define a regular symbol and use it as a function:
+>>> f = S('f')
+>>> e = f(1,2)
+>>> print(e)
+f(1,2)
+
+
+Define a symmetric function:
+>>> f = S('f', is_symmetric=True)
+>>> e = f(2,1)
+>>> print(e)
+f(1,2)
+
+
+Define a linear and symmetric function:
+>>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+>>> dot = S('dot', is_symmetric=True, is_linear=True)
+>>> e = dot(p2+2*p3,p1+3*p2-p3)
+dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
+
+Define a custom normalization function:
+>>> e = S('real_log', custom_normalization=T().replace(E("x_(exp(x1_))"), E("x1_")))
+>>> E("real_log(exp(x)) + real_log(5)")
+
+Define a custom print function:
+>>> def print_mu(mu: Expression, mode: PrintMode, **kwargs) -> str | None:
+>>>     if mode == PrintMode.Latex:
+>>>         if mu.get_type() == AtomType.Fn:
+>>>             return "\\mu_{" + ",".join(a.format() for a in mu) + "}"
+>>>         else:
+>>>             return "\\mu"
+>>> mu = S("mu", custom_print=print_mu)
+>>> expr = E("mu + mu(1,2)")
+>>> print(expr.to_latex())
+
+If the function returns `None`, the default print function is used.
+
+Define a custom derivative function:
+>>> tag = S('tag', custom_derivative=lambda f, index: f)
+>>> x = S('x')
+>>> tag(3, x).derivative(x)
+
+Parameters
+----------
+name : str
+    The name of the symbol
+is_symmetric : Optional[bool]
+    Set to true if the symbol is symmetric.
+is_antisymmetric : Optional[bool]
+    Set to true if the symbol is antisymmetric.
+is_cyclesymmetric : Optional[bool]
+    Set to true if the symbol is cyclesymmetric.
+is_linear : Optional[bool]
+    Set to true if the symbol is linear.
+is_scalar : Optional[bool]
+    Set to true if the symbol is a scalar. It will be moved out of linear functions.
+is_real : Optional[bool]
+    Set to true if the symbol is a real number.
+is_integer : Optional[bool]
+    Set to true if the symbol is an integer.
+is_positive : Optional[bool]
+    Set to true if the symbol is a positive number.
+tags: Optional[Sequence[str]]
+    A list of tags to associate with the symbol.
+custom_normalization : Optional[Transformer]
+    A transformer that is called after every normalization. Note that the symbol
+    name cannot be used in the transformer as this will lead to a definition of the
+    symbol. Use a wildcard with the same attributes instead.
+custom_print : Optional[Callable[..., Optional[str]]]:
+    A function that is called when printing the variable/function, which is provided as its first argument.
+    This function should return a string, or `None` if the default print function should be used.
+    The custom print function takes in keyword arguments that are the same as the arguments of the `format` function.
+custom_derivative: Optional[Callable[[Expression, int], Expression]]:
+    A function that is called when computing the derivative of a function in a given argument."#,
+            module: Some("symbolica.core"),
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        }
+    }
+
 /// Create a new Symbolica number from an int, a float, or a string.
 /// A floating point number is kept as a float with the same precision as the input,
 /// but it can also be converted to the smallest rational number given a `relative_error`.
@@ -421,8 +743,14 @@ fn symbol_shorthand(
 /// 1/3
 /// 3.33e-1
 /// 1.2340e-1
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pyfunction(name = "N", signature = (num,relative_error=None))]
 fn number_shorthand(
+    #[gen_stub(override_type(type_repr = "int | float | complex | str | decimal.Decimal", imports = ("decimal")))]
     num: Py<PyAny>,
     relative_error: Option<f64>,
     py: Python<'_>,
@@ -447,7 +775,10 @@ fn number_shorthand(
 /// ------
 /// ValueError
 ///     If the input is not a valid Symbolica expression.
-
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction(name = "E", signature = (expr,default_namespace="python"))]
 fn expression_shorthand(
     expr: &str,
@@ -458,7 +789,10 @@ fn expression_shorthand(
 }
 
 /// Create a new transformer that maps an expression.
-
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyfunction(module = "symbolica.core")
+)]
 #[pyfunction(name = "T")]
 fn transformer_shorthand() -> PythonTransformer {
     PythonTransformer::new()
@@ -655,7 +989,11 @@ impl PyStubType for ReplaceFunction {
     fn type_output() -> TypeInfo {
         TypeInfo {
             name: "typing.Callable[[dict[Expression, Expression]], Expression] | int | float | complex | decimal.Decimal".into(),
-            import: std::collections::HashSet::default(),
+            import: {
+                let mut h = std::collections::HashSet::default();
+                h.insert("decimal".into());
+                h
+            },
         }
     }
 }
@@ -674,7 +1012,7 @@ impl ConvertibleToReplaceWith {
                     .map(|x| (Atom::var(x.0).into(), x.1.to_atom().into()))
                     .collect();
 
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     m.call(py, (match_stack,), None)
                         .expect("Bad callback function")
                         .extract::<PythonExpression>(py)
@@ -718,6 +1056,8 @@ impl From<Pattern> for PythonHeldExpression {
     }
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonHeldExpression {
     /// Execute a bound transformer. If the transformer is unbound,
@@ -734,7 +1074,7 @@ impl PythonHeldExpression {
         let mut out = Atom::default();
 
         // TODO: pass a transformer state?
-        py.allow_threads(|| {
+        py.detach(|| {
             Workspace::get_local()
                 .with(|workspace| {
                     self.expr.replace_wildcards_with_matches_impl(
@@ -966,6 +1306,8 @@ impl PythonTransformer {
     }
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonTransformer {
     /// Create a new transformer.
@@ -1013,7 +1355,7 @@ impl PythonTransformer {
             TransformerState::default()
         };
 
-        let _ = py.allow_threads(|| {
+        let _ = py.detach(|| {
             Workspace::get_local()
                 .with(|ws| {
                     Transformer::execute_chain(e.as_view(), &self.chain, ws, &state, &mut out)
@@ -1412,13 +1754,19 @@ impl PythonTransformer {
     /// >>> f = S('f')
     /// >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
-    pub fn map(&self, f: Py<PyAny>) -> PyResult<PythonTransformer> {
+    pub fn map(
+        &self,
+        #[gen_stub(override_type(
+            type_repr = "typing.Callable[[Expression], Expression | int | float | complex | decimal.Decimal]"
+        ))]
+        f: Py<PyAny>,
+    ) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, _state, out| {
             let expr = PythonExpression {
                 expr: expr.to_owned(),
             };
 
-            let res = Python::with_gil(|py| {
+            let res = Python::attach(|py| {
                 f.call(py, (expr,), None)
                     .map_err(|e| {
                         TransformerError::ValueError(format!("Bad callback function: {e}"))
@@ -1516,7 +1864,7 @@ impl PythonTransformer {
     pub fn check_interrupt(&self) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, _state, out| {
             out.set_from_view(&expr);
-            Python::with_gil(|py| py.check_signals()).map_err(|_| TransformerError::Interrupt)
+            Python::attach(|py| py.check_signals()).map_err(|_| TransformerError::Interrupt)
         }));
 
         self.append_transformer(transformer)
@@ -2244,6 +2592,8 @@ impl From<Condition<PatternRestriction>> for PythonPatternRestriction {
     }
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonPatternRestriction {
     /// Create a new pattern restriction that is the logical 'and' operation between two restrictions (i.e., both should hold).
@@ -2292,6 +2642,9 @@ impl PythonPatternRestriction {
     #[classmethod]
     pub fn req_matches(
         _cls: &Bound<'_, PyType>,
+        #[gen_stub(override_type(
+            type_repr = "typing.Callable[[dict[Expression, Expression]], int]"
+        ))]
         match_fn: Py<PyAny>,
     ) -> PyResult<PythonPatternRestriction> {
         Ok(PythonPatternRestriction {
@@ -2302,7 +2655,7 @@ impl PythonPatternRestriction {
                     .map(|(s, t)| (Atom::var(*s).into(), t.to_atom().into()))
                     .collect();
 
-                let r = Python::with_gil(|py| {
+                let r = Python::attach(|py| {
                     match_fn
                         .call(py, (matches,), None)
                         .expect("Bad callback function")
@@ -2340,6 +2693,8 @@ impl From<Condition<Relation>> for PythonCondition {
     }
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCondition {
     /// Return a string representation of the condition.
@@ -2698,7 +3053,7 @@ impl From<Float> for PythonMultiPrecisionFloat {
     }
 }
 
-static PYDECIMAL: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+static PYDECIMAL: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
 fn get_decimal(py: Python<'_>) -> &Py<PyType> {
     PYDECIMAL.get_or_init(py, || {
@@ -2908,6 +3263,8 @@ macro_rules! req_wc_cmp {
     }};
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonExpression {
     /// Create a new symbol from a `name`. Symbols carry information about their attributes.
@@ -2951,6 +3308,7 @@ impl PythonExpression {
     /// Define a custom normalization function:
     /// >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     /// >>> E("real_log(exp(x)) + real_log(5)")
+    #[gen_stub(skip)]
     #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,is_scalar=None,is_real=None,is_integer=None,is_positive=None,tags=None,custom_normalization=None, custom_print=None, custom_derivative=None))]
     #[classmethod]
     pub fn symbol(
@@ -3091,7 +3449,7 @@ impl PythonExpression {
             if let Some(f) = custom_print {
                 symbol = symbol.with_print_function(Box::new(
                     move |input: AtomView<'_>, opts: &PrintOptions| {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             let kwargs = opts.into_py_dict(py).unwrap();
                             f.call(
                                 py,
@@ -3109,7 +3467,7 @@ impl PythonExpression {
             if let Some(f) = custom_derivative {
                 symbol = symbol.with_derivative_function(Box::new(
                     move |input: AtomView<'_>, arg: usize, out: &mut Settable<Atom>| {
-                        **out = Python::with_gil(|py| {
+                        **out = Python::attach(|py| {
                             f.call1(py, (PythonExpression::from(input.to_owned()), arg))
                                 .unwrap()
                                 .extract::<PythonExpression>(py)
@@ -3214,6 +3572,10 @@ impl PythonExpression {
     pub fn num(
         _cls: &Bound<'_, PyType>,
         py: Python,
+        #[gen_stub(override_type(
+            type_repr = "int | float | complex | str | decimal.Decimal",
+            imports = ("decimal")
+        ))]
         num: Py<PyAny>,
         relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
@@ -3594,6 +3956,7 @@ impl PythonExpression {
     pub fn load(
         _cls: &Bound<'_, PyType>,
         filename: &str,
+        #[gen_stub(override_type(type_repr = "typing.Optional[typing.Callable[[str], str]]"))]
         conflict_fn: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let f = File::open(filename)
@@ -3604,7 +3967,7 @@ impl PythonExpression {
             &mut reader,
             match conflict_fn {
                 Some(f) => Some(Box::new(move |name: &str| -> SmartString<LazyCompact> {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         f.call1(py, (name,)).unwrap().extract::<String>(py).unwrap()
                     })
                     .into()
@@ -3851,6 +4214,7 @@ impl PythonExpression {
     /// >>> e = f(3,x)
     /// >>> print(e)
     /// f(3,x)
+    #[gen_stub(skip)]
     #[pyo3(signature = (*args,))]
     pub fn __call__(&self, args: &Bound<'_, PyTuple>, py: Python) -> PyResult<Py<PyAny>> {
         let id = match self.expr.as_view() {
@@ -4389,7 +4753,11 @@ impl PythonExpression {
     /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
-    pub fn req(&self, filter_fn: Py<PyAny>) -> PyResult<PythonPatternRestriction> {
+    pub fn req(
+        &self,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[Expression], bool | Condition]"))]
+        filter_fn: Py<PyAny>,
+    ) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_symbol();
@@ -4413,7 +4781,7 @@ impl PythonExpression {
                 WildcardRestriction::Filter(Box::new(move |m| {
                     let data: PythonExpression = m.to_atom().into();
 
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         filter_fn
                             .call(py, (data,), None)
                             .expect("Bad callback function")
@@ -4531,6 +4899,9 @@ impl PythonExpression {
     pub fn req_cmp(
         &self,
         other: PythonExpression,
+        #[gen_stub(override_type(
+            type_repr = "typing.Callable[[Expression, Expression], bool | Condition]"
+        ))]
         cmp_fn: Py<PyAny>,
     ) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
@@ -4576,7 +4947,7 @@ impl PythonExpression {
                         let data1: PythonExpression = m1.to_atom().into();
                         let data2: PythonExpression = m2.to_atom().into();
 
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             cmp_fn
                                 .call(py, (data1, data2), None)
                                 .expect("Bad callback function")
@@ -4638,7 +5009,7 @@ impl PythonExpression {
 
         // release the GIL as Python functions may be called from
         // within the term mapper
-        let r = py.allow_threads(move || {
+        let r = py.detach(move || {
             self.expr.as_view().map_terms(
                 |x| {
                     let mut out = Atom::default();
@@ -4767,7 +5138,13 @@ impl PythonExpression {
     pub fn collect(
         &self,
         x: &Bound<'_, PyTuple>,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[typing.Callable[[Expression], Expression]]"
+        ))]
         key_map: Option<Py<PyAny>>,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[typing.Callable[[Expression], Expression]]"
+        ))]
         coeff_map: Option<Py<PyAny>>,
     ) -> PyResult<PythonExpression> {
         if x.is_empty() {
@@ -4797,7 +5174,7 @@ impl PythonExpression {
             &Arc::new(xs),
             if let Some(key_map) = key_map {
                 Some(Box::new(move |key, out| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         let key: PythonExpression = key.to_owned().into();
 
                         out.set_from_view(
@@ -4816,7 +5193,7 @@ impl PythonExpression {
             },
             if let Some(coeff_map) = coeff_map {
                 Some(Box::new(move |coeff, out| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         let coeff: PythonExpression = coeff.to_owned().into();
 
                         out.set_from_view(
@@ -4862,7 +5239,13 @@ impl PythonExpression {
     pub fn collect_symbol(
         &self,
         x: PythonExpression,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[typing.Callable[[Expression], Expression]]"
+        ))]
         key_map: Option<Py<PyAny>>,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[typing.Callable[[Expression], Expression]]"
+        ))]
         coeff_map: Option<Py<PyAny>>,
     ) -> PyResult<PythonExpression> {
         let Some(x) = x.expr.get_symbol() else {
@@ -4875,7 +5258,7 @@ impl PythonExpression {
             x,
             if let Some(key_map) = key_map {
                 Some(Box::new(move |key, out| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         let key: PythonExpression = key.to_owned().into();
 
                         out.set_from_view(
@@ -4894,7 +5277,7 @@ impl PythonExpression {
             },
             if let Some(coeff_map) = coeff_map {
                 Some(Box::new(move |coeff, out| {
-                    Python::with_gil(|py| {
+                    Python::attach(|py| {
                         let coeff: PythonExpression = coeff.to_owned().into();
 
                         out.set_from_view(
@@ -5173,6 +5556,7 @@ impl PythonExpression {
     /// If a `minimal_poly` is provided, the polynomial will be converted to a number field with the given minimal polynomial.
     /// The minimal polynomial must be a monic, irreducible univariate polynomial. If a `modulus` is provided as well,
     /// the Galois field will be created with `minimal_poly` as the minimal polynomial.
+    #[gen_stub(skip)]
     #[pyo3(signature = (modulus = None, extension = None, minimal_poly = None, vars = None))]
     pub fn to_polynomial(
         &self,
@@ -5718,6 +6102,7 @@ impl PythonExpression {
     /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
+    #[gen_stub(override_return_type(type_repr = "decimal.Decimal", imports = ("decimal")))]
     #[pyo3(signature =
         (variable,
         init,
@@ -5770,6 +6155,7 @@ impl PythonExpression {
     /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
+    #[gen_stub(override_return_type(type_repr = "decimal.Decimal", imports = ("decimal")))]
     #[pyo3(signature =
         (system,
         variables,
@@ -5844,6 +6230,9 @@ impl PythonExpression {
     pub fn evaluate(
         &self,
         constants: HashMap<PythonExpression, f64>,
+        #[gen_stub(override_type(
+            type_repr = "dict[Expression, typing.Callable[[typing.Sequence[float]], float]]"
+        ))]
         functions: HashMap<Variable, Py<PyAny>>,
     ) -> PyResult<f64> {
         let constants = constants
@@ -5865,7 +6254,7 @@ impl PythonExpression {
                 Ok((
                     id,
                     EvaluationFn::new(Box::new(move |args, _, _, _| {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             v.call(py, (args.to_vec(),), None)
                                 .expect("Bad callback function")
                                 .extract::<f64>(py)
@@ -5897,9 +6286,13 @@ impl PythonExpression {
     /// >>> getcontext().prec = 100
     /// >>> a = e.evaluate_with_prec({x: Decimal('1.123456789')}, {
     /// >>>                         f: lambda args: args[0] + args[1]}, 100)
+    #[gen_stub(override_return_type(type_repr = "decimal.Decimal", imports = ("decimal")))]
     pub fn evaluate_with_prec(
         &self,
         constants: HashMap<PythonExpression, PythonMultiPrecisionFloat>,
+        #[gen_stub(override_type(
+            type_repr = "dict[Expression, typing.Callable[[typing.Sequence[decimal.Decimal]], float | str | decimal.Decimal]]"
+        ))]
         functions: HashMap<Variable, Py<PyAny>>,
         decimal_digit_precision: u32,
         py: Python,
@@ -5931,7 +6324,7 @@ impl PythonExpression {
                 Ok((
                     id,
                     EvaluationFn::new(Box::new(move |args: &[Float], _, _, _| {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             let mut vv = v
                                 .call(
                                     py,
@@ -5981,6 +6374,9 @@ impl PythonExpression {
         &self,
         py: Python<'py>,
         constants: HashMap<PythonExpression, Complex<f64>>,
+        #[gen_stub(override_type(
+            type_repr = "dict[Expression, typing.Callable[[typing.Sequence[float | complex]], float | complex]]"
+        ))]
         functions: HashMap<Variable, Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyComplex>> {
         let constants = constants
@@ -6002,7 +6398,7 @@ impl PythonExpression {
                 Ok((
                     id,
                     EvaluationFn::new(Box::new(move |args: &[Complex<f64>], _, _, _| {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             v.call(
                                 py,
                                 (args
@@ -6066,6 +6462,10 @@ impl PythonExpression {
         iterations: usize,
         n_cores: usize,
         verbose: bool,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[dict[tuple[Expression, str], typing.Callable[[
+            typing.Sequence[float | complex]], float | complex]]]"
+        ))]
         external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
         py: Python<'_>,
     ) -> PyResult<PythonExpressionEvaluator> {
@@ -6114,7 +6514,7 @@ impl PythonExpression {
         }
 
         let abort_check = Box::new(move || {
-            Python::with_gil(|py| py.check_signals())
+            Python::attach(|py| py.check_signals())
                 .map(|_| false)
                 .unwrap_or(true)
         });
@@ -6130,7 +6530,7 @@ impl PythonExpression {
         let params: Vec<_> = params.iter().map(|x| x.expr.clone()).collect();
 
         let eval = py
-            .allow_threads(move || self.expr.evaluator(&fn_map, &params, settings))
+            .detach(move || self.expr.evaluator(&fn_map, &params, settings))
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not create evaluator: {e}"))
             })?;
@@ -6141,7 +6541,7 @@ impl PythonExpression {
                     .into_iter()
                     .map(move |((_, name), f)| {
                         let ff: Box<dyn Fn(&[f64]) -> f64 + Send + Sync> = Box::new(move |args| {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 f.call1(py, (args,)).unwrap().extract::<f64>(py).unwrap()
                             })
                         });
@@ -6176,7 +6576,7 @@ impl PythonExpression {
                 .map(move |((_, name), f)| {
                     let ff: Box<dyn Fn(&[Complex<f64>]) -> Complex<f64> + Send + Sync> =
                         Box::new(move |args| {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let arg_map: Vec<_> = args
                                     .iter()
                                     .map(|x| PyComplex::from_doubles(py, x.re, x.im))
@@ -6244,6 +6644,10 @@ impl PythonExpression {
         iterations: usize,
         n_cores: usize,
         verbose: bool,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[dict[tuple[Expression, str], typing.Callable[[
+            typing.Sequence[float | complex]], float | complex]]]"
+        ))]
         external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
@@ -6311,7 +6715,7 @@ impl PythonExpression {
                     .into_iter()
                     .map(move |((_, name), f)| {
                         let ff: Box<dyn Fn(&[f64]) -> f64 + Send + Sync> = Box::new(move |args| {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 f.call1(py, (args,)).unwrap().extract::<f64>(py).unwrap()
                             })
                         });
@@ -6346,7 +6750,7 @@ impl PythonExpression {
                 .map(move |((_, name), f)| {
                     let ff: Box<dyn Fn(&[Complex<f64>]) -> Complex<f64> + Send + Sync> =
                         Box::new(move |args| {
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let arg_map: Vec<_> = args
                                     .into_iter()
                                     .map(|x| PyComplex::from_doubles(py, x.re, x.im))
@@ -6432,6 +6836,8 @@ pub struct PythonReplacement {
     replacement: Replacement,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonReplacement {
     #[pyo3(signature = (pattern, rhs, cond=None, non_greedy_wildcards=None, level_range=None, level_is_tree_depth=None, allow_new_wildcards_on_rhs=None, rhs_cache_size=None))]
@@ -6503,6 +6909,453 @@ impl PythonReplacement {
     }
 }
 
+#[cfg(feature = "python_stubgen")]
+submit! {
+PyMethodsInfo {
+        struct_id: std::any::TypeId::of::<PythonExpression>,
+        attrs: &[],
+        getters: &[],
+        setters: &[],
+        methods: &[
+            MethodInfo {
+            name: "symbol",
+            args: &[
+                ArgInfo {
+                    name: "name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_symmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_antisymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_cyclesymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_linear",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_scalar",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_real",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_integer",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_positive",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "tags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_normalization",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<PythonTransformer>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_print",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[..., typing.Optional[str]]]"),
+                },
+                ArgInfo {
+                    name: "custom_derivative",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[[Expression, int], Expression]]"),
+                },
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonExpression::type_output(),
+            doc:
+r#"Create new symbols from `names`. Symbols can have attributes,
+such as symmetries. If no attributes
+are specified and the symbol was previously defined, the attributes are inherited.
+Once attributes are defined on a symbol, they cannot be redefined later.
+
+Examples
+--------
+Define a regular symbol and use it as a variable:
+>>> x = S('x')
+>>> e = x**2 + 5
+>>> print(e)
+x**2 + 5
+
+Define a regular symbol and use it as a function:
+>>> f = S('f')
+>>> e = f(1,2)
+>>> print(e)
+f(1,2)
+
+
+Define a symmetric function:
+>>> f = S('f', is_symmetric=True)
+>>> e = f(2,1)
+>>> print(e)
+f(1,2)
+
+
+Define a linear and symmetric function:
+>>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+>>> dot = S('dot', is_symmetric=True, is_linear=True)
+>>> e = dot(p2+2*p3,p1+3*p2-p3)
+dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
+
+Define a custom normalization function:
+>>> e = S('real_log', custom_normalization=T().replace(E("x_(exp(x1_))"), E("x1_")))
+>>> E("real_log(exp(x)) + real_log(5)")
+
+Define a custom print function:
+>>> def print_mu(mu: Expression, mode: PrintMode, **kwargs) -> str | None:
+>>>     if mode == PrintMode.Latex:
+>>>         if mu.get_type() == AtomType.Fn:
+>>>             return "\\mu_{" + ",".join(a.format() for a in mu) + "}"
+>>>         else:
+>>>             return "\\mu"
+>>> mu = S("mu", custom_print=print_mu)
+>>> expr = E("mu + mu(1,2)")
+>>> print(expr.to_latex())
+
+If the function returns `None`, the default print function is used.
+
+Define a custom derivative function:
+>>> tag = S('tag', custom_derivative=lambda f, index: f)
+>>> x = S('x')
+>>> tag(3, x).derivative(x)
+
+Parameters
+----------
+name : str
+    The name of the symbol
+is_symmetric : Optional[bool]
+    Set to true if the symbol is symmetric.
+is_antisymmetric : Optional[bool]
+    Set to true if the symbol is antisymmetric.
+is_cyclesymmetric : Optional[bool]
+    Set to true if the symbol is cyclesymmetric.
+is_linear : Optional[bool]
+    Set to true if the symbol is linear.
+is_scalar : Optional[bool]
+    Set to true if the symbol is a scalar. It will be moved out of linear functions.
+is_real : Optional[bool]
+    Set to true if the symbol is a real number.
+is_integer : Optional[bool]
+    Set to true if the symbol is an integer.
+is_positive : Optional[bool]
+    Set to true if the symbol is a positive number.
+tags: Optional[Sequence[str]]
+    A list of tags to associate with the symbol.
+custom_normalization : Optional[Transformer]
+    A transformer that is called after every normalization. Note that the symbol
+    name cannot be used in the transformer as this will lead to a definition of the
+    symbol. Use a wildcard with the same attributes instead.
+custom_print : Optional[Callable[..., Optional[str]]]:
+    A function that is called when printing the variable/function, which is provided as its first argument.
+    This function should return a string, or `None` if the default print function should be used.
+    The custom print function takes in keyword arguments that are the same as the arguments of the `format` function.
+custom_derivative: Optional[Callable[[Expression, int], Expression]]:
+    A function that is called when computing the derivative of a function in a given argument."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        },
+            MethodInfo {
+            name: "symbol",
+            args: &[
+                ArgInfo {
+                    name: "names:str",
+                    signature: Some(SignatureArg::Args),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_symmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_antisymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_cyclesymmetric",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_linear",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_scalar",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_real",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_integer",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "is_positive",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<bool>::type_input(),
+                },
+                ArgInfo {
+                    name: "tags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+            ],
+            r#type: MethodType::Class,
+            r#return: || TypeInfo::unqualified("typing.Sequence[Expression]"),
+            doc:
+r#"Create new symbols from `names`. Symbols can have attributes,
+such as symmetries. If no attributes
+are specified and the symbol was previously defined, the attributes are inherited.
+Once attributes are defined on a symbol, they cannot be redefined later.
+
+Examples
+--------
+Define a regular symbol and use it as a variable:
+>>> x = S('x')
+>>> e = x**2 + 5
+>>> print(e)
+x**2 + 5
+
+Define a regular symbol and use it as a function:
+>>> f = S('f')
+>>> e = f(1,2)
+>>> print(e)
+f(1,2)
+
+
+Define a symmetric function:
+>>> f = S('f', is_symmetric=True)
+>>> e = f(2,1)
+>>> print(e)
+f(1,2)
+
+
+Define a linear and symmetric function:
+>>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+>>> dot = S('dot', is_symmetric=True, is_linear=True)
+>>> e = dot(p2+2*p3,p1+3*p2-p3)
+dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
+
+Parameters
+----------
+name : str
+    The name of the symbol
+is_symmetric : Optional[bool]
+    Set to true if the symbol is symmetric.
+is_antisymmetric : Optional[bool]
+    Set to true if the symbol is antisymmetric.
+is_cyclesymmetric : Optional[bool]
+    Set to true if the symbol is cyclesymmetric.
+is_linear : Optional[bool]
+    Set to true if the symbol is linear.
+is_scalar : Optional[bool]
+    Set to true if the symbol is a scalar. It will be moved out of linear functions.
+is_real : Optional[bool]
+    Set to true if the symbol is a real number.
+is_integer : Optional[bool]
+    Set to true if the symbol is an integer.
+is_positive : Optional[bool]
+    Set to true if the symbol is a positive number.
+tags: Optional[Sequence[str]]
+    A list of tags to associate with the symbol."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        }
+
+          ],
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+    PyMethodsInfo {
+        struct_id: std::any::TypeId::of::<PythonExpression>,
+        attrs: &[],
+        getters: &[],
+        setters: &[],
+        methods: &[
+            MethodInfo {
+                name: "to_polynomial",
+                args: &[
+                    ArgInfo {
+                        name: "vars",
+                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Sequence[Expression]]"),
+                    },
+                ],
+                r#type: MethodType::Instance,
+                r#return: || PythonPolynomial::type_output(),
+                doc:"
+Convert the expression to a polynomial, optionally, with the variable ordering specified in `vars`.
+All non-polynomial parts will be converted to new, independent variables.",
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+            },
+            MethodInfo {
+                name: "to_polynomial",
+                args: &[
+                    ArgInfo {
+                        name: "minimal_poly",
+                        signature: None,
+                        r#type: || PythonExpression::type_input(),
+                    },
+                    ArgInfo {
+                        name: "vars",
+                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Sequence[Expression]]"),
+                    },
+                ],
+                r#type: MethodType::Instance,
+                r#return: || PythonNumberFieldPolynomial::type_output(),
+                doc: "
+Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+All non-polynomial elements will be converted to new independent variables.
+
+The coefficients will be converted to a number field with the minimal polynomial `minimal_poly`.
+The minimal polynomial must be a monic, irreducible univariate polynomial.",
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+            },
+             MethodInfo {
+                name: "to_polynomial",
+                args: &[
+                    ArgInfo {
+                        name: "modulus",
+                        signature: None,
+                        r#type: || usize::type_input(),
+                    },
+                    ArgInfo {
+                        name: "power",
+                        signature: None,
+                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Tuple[int, Expression]]"),
+                    },
+                    ArgInfo {
+                        name: "minimal_poly",
+                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                        r#type: || Option::<PythonExpression>::type_input(),
+                    },
+                    ArgInfo {
+                        name: "vars",
+                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Sequence[Expression]]"),
+                    },
+                ],
+                r#type: MethodType::Instance,
+                r#return: || PythonFiniteFieldPolynomial::type_output(),
+                doc: "
+Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+All non-polynomial elements will be converted to new independent variables.
+
+The coefficients will be converted to finite field elements modulo `modulus`.
+If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+`GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
+
+If a `minimal_poly` is provided, the Galois field will be created with `minimal_poly` as the minimal polynomial.",
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+            }
+        ],
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+    PyMethodsInfo {
+        struct_id: std::any::TypeId::of::<PythonExpression>,
+        attrs: &[],
+        getters: &[],
+        setters: &[],
+        methods: &[
+            MethodInfo {
+                name: "__call__",
+                args: &[
+                    ArgInfo {
+                        name: "*args",
+                        signature: None,
+                        r#type: || ConvertibleToExpression::type_input(),
+                    },
+                ],
+                r#type: MethodType::Instance,
+                r#return: || PythonExpression::type_output(),
+                doc:"
+Create a Symbolica expression by calling the function with appropriate arguments.
+
+Examples
+-------
+>>> x, f = S('x', 'f')
+>>> e = f(3,x)
+>>> print(e)
+f(3,x)",
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+            },
+            MethodInfo {
+                name: "__call__",
+                args: &[
+                    ArgInfo {
+                        name: "*args",
+                        signature: None,
+                        r#type: || PythonHeldExpression::type_input() | ConvertibleToExpression::type_input(),
+                    },
+                ],
+                r#type: MethodType::Instance,
+                r#return: || PythonHeldExpression::type_output(),
+                doc: "
+Create a Symbolica held expression by calling the function with appropriate arguments.
+
+Examples
+-------
+>>> x, f = S('x', 'f')
+>>> e = f(3,x)
+>>> print(e)
+f(3,x)",
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+            }
+        ],
+    }
+}
+
 #[derive(FromPyObject)]
 pub enum SeriesOrExpression {
     Series(PythonSeries),
@@ -6532,6 +7385,8 @@ pub struct PythonSeries {
     pub series: Series<AtomField>,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonSeries {
     /// Add this series to `rhs`, returning the result.
@@ -6844,6 +7699,8 @@ pub struct PythonTermStreamer {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonTermStreamer = PythonTermStreamer);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonTermStreamer {
     /// Create a new term streamer with a given path for its files,
@@ -6890,7 +7747,12 @@ impl PythonTermStreamer {
     /// A term stream can be exported using `TermStreamer.save`.
 
     #[pyo3(signature = (filename, conflict_fn=None))]
-    pub fn load(&mut self, filename: &str, conflict_fn: Option<Py<PyAny>>) -> PyResult<u64> {
+    pub fn load(
+        &mut self,
+        filename: &str,
+        #[gen_stub(override_type(type_repr = "typing.Optional[typing.Callable[[str], str]]"))]
+        conflict_fn: Option<Py<PyAny>>,
+    ) -> PyResult<u64> {
         let f = File::open(filename)
             .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))?;
         let reader = brotli::Decompressor::new(BufReader::new(f), 4096);
@@ -6900,7 +7762,7 @@ impl PythonTermStreamer {
                 reader,
                 match conflict_fn {
                     Some(f) => Some(Box::new(move |name: &str| -> SmartString<LazyCompact> {
-                        Python::with_gil(|py| {
+                        Python::attach(|py| {
                             f.call1(py, (name,)).unwrap().extract::<String>(py).unwrap()
                         })
                         .into()
@@ -6979,7 +7841,7 @@ impl PythonTermStreamer {
 
         // release the GIL as Python functions may be called from
         // within the term mapper
-        py.allow_threads(move || {
+        py.detach(move || {
             // map every term in the expression
             let m = self.stream.map(|x| {
                 let mut out = Atom::default();
@@ -7065,6 +7927,8 @@ impl PythonAtomIterator {
     }
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonAtomIterator {
     /// Create the iterator.
@@ -7072,6 +7936,7 @@ impl PythonAtomIterator {
         slf
     }
 
+    #[gen_stub(override_return_type(type_repr = "Expression"))]
     fn __next__(&mut self) -> Option<PythonExpression> {
         self.with_dependent_mut(|_, i| {
             i.next().map(|e| {
@@ -7100,6 +7965,8 @@ self_cell!(
     }
 );
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonMatchIterator {
     /// Create the iterator.
@@ -7108,6 +7975,7 @@ impl PythonMatchIterator {
     }
 
     /// Return the next match.
+    #[gen_stub(override_return_type(type_repr = "builtins.dict[Expression, Expression]"))]
     fn __next__(&mut self) -> Option<HashMap<PythonExpression, PythonExpression>> {
         self.with_dependent_mut(|_, i| {
             i.next().map(|m| {
@@ -7142,6 +8010,8 @@ self_cell!(
     }
 );
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonReplaceIterator {
     /// Create the iterator.
@@ -7150,6 +8020,7 @@ impl PythonReplaceIterator {
     }
 
     /// Return the next replacement.
+    #[gen_stub(override_return_type(type_repr = "Expression"))]
     fn __next__(&mut self) -> PyResult<Option<PythonExpression>> {
         self.with_dependent_mut(|_, i| Ok(i.next().map(|x| x.into())))
     }
@@ -7187,6 +8058,8 @@ impl_stub_type!(&mut PythonPolynomial = PythonPolynomial);
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(OneOrMultiple<PythonExpression> = PythonExpression | Vec<PythonExpression>);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonPolynomial {
     /// Compare two polynomials.
@@ -8260,6 +9133,8 @@ pub struct PythonFiniteFieldPolynomial {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonFiniteFieldPolynomial = PythonFiniteFieldPolynomial);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonFiniteFieldPolynomial {
     /// Compare two polynomials.
@@ -9154,6 +10029,8 @@ pub struct PythonPrimeTwoPolynomial {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonPrimeTwoPolynomial = PythonPrimeTwoPolynomial);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonPrimeTwoPolynomial {
     /// Compare two polynomials.
@@ -9928,6 +10805,8 @@ pub struct PythonGaloisFieldPrimeTwoPolynomial {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonGaloisFieldPrimeTwoPolynomial = PythonGaloisFieldPrimeTwoPolynomial);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonGaloisFieldPrimeTwoPolynomial {
     /// Compare two polynomials.
@@ -10768,6 +11647,8 @@ pub struct PythonGaloisFieldPolynomial {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonGaloisFieldPolynomial = PythonGaloisFieldPolynomial);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonGaloisFieldPolynomial {
     /// Compare two polynomials.
@@ -11547,6 +12428,8 @@ pub struct PythonNumberFieldPolynomial {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonNumberFieldPolynomial = PythonNumberFieldPolynomial);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonNumberFieldPolynomial {
     /// Compare two polynomials.
@@ -12362,6 +13245,8 @@ pub struct PythonRationalPolynomial {
     pub poly: RationalPolynomial<IntegerRing, u16>,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonRationalPolynomial {
     /// Copy the rational polynomial.
@@ -12725,6 +13610,8 @@ pub struct PythonFiniteFieldRationalPolynomial {
     pub poly: RationalPolynomial<Zp, u16>,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonFiniteFieldRationalPolynomial {
     /// Copy the rational polynomial.
@@ -13064,6 +13951,8 @@ pub struct PythonExpressionEvaluator {
     pub eval_complex_ext: ExpressionEvaluatorWithExternalFunctions<Complex<f64>>,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonExpressionEvaluator {
     /// Return the instructions for efficiently evaluating the expression, the length of the list
@@ -13213,8 +14102,16 @@ impl PythonExpressionEvaluator {
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate`.
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.float64]",
+        imports = ("numpy.typing", "numpy")
+    ))]
     fn evaluate<'py>(
         &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
@@ -13247,9 +14144,17 @@ impl PythonExpressionEvaluator {
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate_complex`.
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.complex128]",
+        imports = ("numpy.typing", "numpy")
+    ))]
     fn evaluate_complex<'py>(
         &mut self,
         py: Python<'py>,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
     ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
         let arr = inputs.as_array();
@@ -13280,6 +14185,7 @@ impl PythonExpressionEvaluator {
     }
 
     /// Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+    #[gen_stub(skip)]
     #[pyo3(signature =
         (function_name,
         filename,
@@ -13525,6 +14431,548 @@ impl PythonExpressionEvaluator {
     }
 }
 
+#[cfg(feature = "python_stubgen")]
+static ONE: fn() -> String = || "1".into();
+#[cfg(feature = "python_stubgen")]
+static THREE: fn() -> String = || "3".into();
+#[cfg(feature = "python_stubgen")]
+static CUDA_BLOCK_DEFAULT: fn() -> String = || "256".into();
+#[cfg(feature = "python_stubgen")]
+static DEFAULT: fn() -> String = || "\"default\"".into();
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+PyMethodsInfo {
+        struct_id: std::any::TypeId::of::<PythonExpressionEvaluator>,
+        attrs: &[],
+        getters: &[],
+        setters: &[],
+        methods: &[
+            MethodInfo {
+            name: "compile",
+            args: &[
+                ArgInfo {
+                    name: "function_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "filename",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "library_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "number_type",
+                    signature: None,
+                    r#type: || TypeInfo::unqualified("typing.Literal['real']"),
+                },
+                ArgInfo {
+                    name: "inline_asm",
+                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "optimization_level",
+                    signature: Some(SignatureArg::Assign{ default: THREE}),
+                    r#type: || Option::<u8>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_path",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_flags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_header",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonCompiledRealExpressionEvaluator::type_output(),
+            doc:
+r#"Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+Parameters
+----------
+function_name : str
+    The name of the function to generate and compile.
+filename : str
+    The name of the file to generate.
+library_name : str
+    The name of the shared library to generate.
+number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+    The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+    For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+    For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+inline_asm : str
+    The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+optimization_level : int
+    The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+compiler_path : Optional[str]
+    The custom path to the compiler executable.
+compiler_flags : Optional[Sequence[str]]
+    The custom flags to pass to the compiler.
+custom_header : Optional[str]
+    The custom header to include in the generated code."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        },
+        MethodInfo {
+            name: "compile",
+            args: &[
+                ArgInfo {
+                    name: "function_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "filename",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "library_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "number_type",
+                    signature: None,
+                    r#type: || TypeInfo::unqualified("typing.Literal['complex']"),
+                },
+                ArgInfo {
+                    name: "inline_asm",
+                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "optimization_level",
+                    signature: Some(SignatureArg::Assign{ default: THREE}),
+                    r#type: || Option::<u8>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_path",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_flags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_header",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonCompiledComplexExpressionEvaluator::type_output(),
+            doc:
+r#"Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+Parameters
+----------
+function_name : str
+    The name of the function to generate and compile.
+filename : str
+    The name of the file to generate.
+library_name : str
+    The name of the shared library to generate.
+number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+    The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+    For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+    For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+inline_asm : str
+    The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+optimization_level : int
+    The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+compiler_path : Optional[str]
+    The custom path to the compiler executable.
+compiler_flags : Optional[Sequence[str]]
+    The custom flags to pass to the compiler.
+custom_header : Optional[str]
+    The custom header to include in the generated code."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        },
+        MethodInfo {
+            name: "compile",
+            args: &[
+                ArgInfo {
+                    name: "function_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "filename",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "library_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "number_type",
+                    signature: None,
+                    r#type: || TypeInfo::unqualified("typing.Literal['real_4x']"),
+                },
+                ArgInfo {
+                    name: "inline_asm",
+                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "optimization_level",
+                    signature: Some(SignatureArg::Assign{ default: THREE}),
+                    r#type: || Option::<u8>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_path",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_flags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_header",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonCompiledSimdRealExpressionEvaluator::type_output(),
+            doc:
+r#"Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+Parameters
+----------
+function_name : str
+    The name of the function to generate and compile.
+filename : str
+    The name of the file to generate.
+library_name : str
+    The name of the shared library to generate.
+number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+    The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+    For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+    For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+inline_asm : str
+    The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+optimization_level : int
+    The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+compiler_path : Optional[str]
+    The custom path to the compiler executable.
+compiler_flags : Optional[Sequence[str]]
+    The custom flags to pass to the compiler.
+custom_header : Optional[str]
+    The custom header to include in the generated code."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        },
+        MethodInfo {
+            name: "compile",
+            args: &[
+                ArgInfo {
+                    name: "function_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "filename",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "library_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "number_type",
+                    signature: None,
+                    r#type: || TypeInfo::unqualified("typing.Literal['complex_4x']"),
+                },
+                ArgInfo {
+                    name: "inline_asm",
+                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "optimization_level",
+                    signature: Some(SignatureArg::Assign{ default: THREE}),
+                    r#type: || Option::<u8>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_path",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_flags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_header",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonCompiledSimdComplexExpressionEvaluator::type_output(),
+            doc:
+r#"Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+Parameters
+----------
+function_name : str
+    The name of the function to generate and compile.
+filename : str
+    The name of the file to generate.
+library_name : str
+    The name of the shared library to generate.
+number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+    The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+    For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+    For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+inline_asm : str
+    The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+optimization_level : int
+    The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+compiler_path : Optional[str]
+    The custom path to the compiler executable.
+compiler_flags : Optional[Sequence[str]]
+    The custom flags to pass to the compiler.
+custom_header : Optional[str]
+    The custom header to include in the generated code."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        },
+        MethodInfo {
+            name: "compile",
+            args: &[
+                ArgInfo {
+                    name: "function_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "filename",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "library_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "number_type",
+                    signature: None,
+                    r#type: || TypeInfo::unqualified("typing.Literal['cuda_real']"),
+                },
+                ArgInfo {
+                    name: "inline_asm",
+                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "optimization_level",
+                    signature: Some(SignatureArg::Assign{ default: THREE}),
+                    r#type: || Option::<u8>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_path",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_flags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_header",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "cuda_number_of_evaluations",
+                    signature:Some(SignatureArg::Assign{ default: ONE}),
+                    r#type: || Option::<usize>::type_input(),
+                },
+                ArgInfo {
+                    name: "cuda_block_size",
+                    signature:Some(SignatureArg::Assign{ default: CUDA_BLOCK_DEFAULT}),
+                    r#type: || Option::<usize>::type_input(),
+                },
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonCompiledCudaRealExpressionEvaluator::type_output(),
+            doc:
+r#"Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+You may have to specify `-code=sm_XY` for your architecture `XY` in the compiler flags to prevent a potentially long
+JIT compilation upon the first evaluation.
+
+Parameters
+----------
+function_name : str
+    The name of the function to generate and compile.
+filename : str
+    The name of the file to generate.
+library_name : str
+    The name of the shared library to generate.
+number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+    The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+    For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+    For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+inline_asm : str
+    The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+optimization_level : int
+    The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+compiler_path : Optional[str]
+    The custom path to the compiler executable.
+compiler_flags : Optional[Sequence[str]]
+    The custom flags to pass to the compiler.
+custom_header : Optional[str]
+    The custom header to include in the generated code.
+cuda_number_of_evaluations: Optional[int]
+    The number of parallel evaluations to perform on the CUDA device. The input to evaluate must 
+    have the length `cuda_number_of_evaluations * arg_len`.
+cuda_block_size: Optional[int]
+    The block size to use for CUDA kernel launches."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        },
+        MethodInfo {
+            name: "compile",
+            args: &[
+                ArgInfo {
+                    name: "function_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "filename",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "library_name",
+                    signature: None,
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "number_type",
+                    signature: None,
+                    r#type: || TypeInfo::unqualified("typing.Literal['cuda_complex']"),
+                },
+                ArgInfo {
+                    name: "inline_asm",
+                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
+                    r#type: || <&str>::type_input(),
+                },
+                ArgInfo {
+                    name: "optimization_level",
+                    signature: Some(SignatureArg::Assign{ default: THREE}),
+                    r#type: || Option::<u8>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_path",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "compiler_flags",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<Vec<String>>::type_input(),
+                },
+                ArgInfo {
+                    name: "custom_header",
+                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                    r#type: || Option::<String>::type_input(),
+                },
+                ArgInfo {
+                    name: "cuda_number_of_evaluations",
+                    signature:Some(SignatureArg::Assign{ default: ONE}),
+                    r#type: || Option::<usize>::type_input(),
+                },
+                ArgInfo {
+                    name: "cuda_block_size",
+                    signature:Some(SignatureArg::Assign{ default: CUDA_BLOCK_DEFAULT}),
+                    r#type: || Option::<usize>::type_input(),
+                },
+            ],
+            r#type: MethodType::Class,
+            r#return: || PythonCompiledCudaComplexExpressionEvaluator::type_output(),
+            doc:
+r#"Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+
+You may have to specify `-code=sm_XY` for your architecture `XY` in the compiler flags to prevent a potentially long
+JIT compilation upon the first evaluation.
+
+Parameters
+----------
+function_name : str
+    The name of the function to generate and compile.
+filename : str
+    The name of the file to generate.
+library_name : str
+    The name of the shared library to generate.
+number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+    The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+    For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+    For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+inline_asm : str
+    The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+optimization_level : int
+    The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+compiler_path : Optional[str]
+    The custom path to the compiler executable.
+compiler_flags : Optional[Sequence[str]]
+    The custom flags to pass to the compiler.
+custom_header : Optional[str]
+    The custom header to include in the generated code.
+cuda_number_of_evaluations: Optional[int]
+    The number of parallel evaluations to perform on the CUDA device. The input to evaluate must 
+    have the length `cuda_number_of_evaluations * arg_len`.
+cuda_block_size: Optional[int]
+    The block size to use for CUDA kernel launches."#,
+            is_async: false,
+            deprecated: None,
+            type_ignored: None,
+        }
+
+          ],
+    }
+}
+
 /// A compiled and optimized evaluator for expressions.
 #[cfg_attr(
     feature = "python_stubgen",
@@ -13538,6 +14986,8 @@ pub struct PythonCompiledRealExpressionEvaluator {
     pub output_len: usize,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCompiledRealExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
@@ -13558,8 +15008,16 @@ impl PythonCompiledRealExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.float64]",
+        imports = ("numpy.typing", "numpy")
+    ))]
     fn evaluate<'py>(
         &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
@@ -13592,7 +15050,7 @@ impl PythonCompiledRealExpressionEvaluator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledRealEvaluator")]
+#[pyclass(name = "CompiledSimdRealEvaluator")]
 #[derive(Clone)]
 pub struct PythonCompiledSimdRealExpressionEvaluator {
     pub eval: CompiledSimdRealEvaluator,
@@ -13600,6 +15058,8 @@ pub struct PythonCompiledSimdRealExpressionEvaluator {
     pub output_len: usize,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCompiledSimdRealExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
@@ -13620,8 +15080,16 @@ impl PythonCompiledSimdRealExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.float64]",
+        imports = ("numpy.typing", "numpy")
+    ))]
     fn evaluate<'py>(
         &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
@@ -13664,6 +15132,8 @@ pub struct PythonCompiledCudaRealExpressionEvaluator {
     pub output_len: usize,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCompiledCudaRealExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
@@ -13695,8 +15165,16 @@ impl PythonCompiledCudaRealExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.float64]",
+        imports = ("numpy.typing", "numpy")
+    ))]
     fn evaluate<'py>(
         &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
@@ -13738,6 +15216,8 @@ pub struct PythonCompiledCudaComplexExpressionEvaluator {
     pub output_len: usize,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCompiledCudaComplexExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
@@ -13769,8 +15249,16 @@ impl PythonCompiledCudaComplexExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.complex128]",
+        imports = ("numpy.typing", "numpy")
+    ))]
     fn evaluate<'py>(
         &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
@@ -13818,6 +15306,8 @@ pub struct PythonCompiledComplexExpressionEvaluator {
     pub output_len: usize,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCompiledComplexExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
@@ -13838,10 +15328,18 @@ impl PythonCompiledComplexExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate_complex<'py>(
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.complex128]",
+        imports = ("numpy.typing", "numpy")
+    ))]
+    fn evaluate<'py>(
         &mut self,
-        py: Python<'py>,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
+        py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
         let arr = inputs.as_array();
 
@@ -13884,6 +15382,8 @@ pub struct PythonCompiledSimdComplexExpressionEvaluator {
     pub output_len: usize,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonCompiledSimdComplexExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
@@ -13904,10 +15404,18 @@ impl PythonCompiledSimdComplexExpressionEvaluator {
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate_complex<'py>(
+    #[gen_stub(override_return_type(
+        type_repr = "numpy.typing.NDArray[numpy.complex128]",
+        imports = ("numpy.typing", "numpy")
+    ))]
+    fn evaluate<'py>(
         &mut self,
-        py: Python<'py>,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
         inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
+        py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
         let arr = inputs.as_array();
 
@@ -14017,6 +15525,8 @@ impl PythonMatrix {
     }
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonMatrix {
     /// Create a new zeroed matrix with `nrows` rows and `ncols` columns.
@@ -14286,7 +15796,13 @@ impl PythonMatrix {
     }
 
     /// Apply a function `f` to every entry of the matrix.
-    pub fn map(&self, f: Py<PyAny>) -> PyResult<PythonMatrix> {
+    pub fn map(
+        &self,
+        #[gen_stub(override_type(
+            type_repr = "typing.Callable[[RationalPolynomial], RationalPolynomial]"
+        ))]
+        f: Py<PyAny>,
+    ) -> PyResult<PythonMatrix> {
         let data = self
             .matrix
             .data
@@ -14294,7 +15810,7 @@ impl PythonMatrix {
             .map(|x| {
                 let expr = PythonRationalPolynomial { poly: x.clone() };
 
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     Ok(f.call1(py, (expr,))?
                         .extract::<ConvertibleToRationalPolynomial>(py)?
                         .to_rational_polynomial()?
@@ -14595,6 +16111,8 @@ pub struct PythonRandomNumberGenerator {
     state: MonteCarloRng,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonRandomNumberGenerator {
     /// Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
@@ -14620,6 +16138,8 @@ pub struct PythonNumericalIntegrator {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(&mut PythonRandomNumberGenerator = PythonRandomNumberGenerator);
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonNumericalIntegrator {
     /// Create a new continuous grid for the numerical integrator.
@@ -14857,6 +16377,9 @@ impl PythonNumericalIntegrator {
     pub fn integrate(
         &mut self,
         py: Python,
+        #[gen_stub(override_type(
+            type_repr = "typing.Callable[[typing.Sequence[Sample]], list[float]]"
+        ))]
         integrand: Py<PyAny>,
         max_n_iter: usize,
         min_error: f64,
@@ -14921,6 +16444,8 @@ pub struct PythonHalfEdge {
     half_edge: HalfEdge<Atom>,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonHalfEdge {
     /// Create a new half-edge. The `data` can be any expression, and the `direction` can be `True` (outgoing),
@@ -14968,6 +16493,8 @@ pub struct PythonGraph {
     graph: Graph<Atom, Atom>,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonGraph {
     /// Create an empty graph.
@@ -15082,7 +16609,11 @@ impl PythonGraph {
         max_bridges: Option<usize>,
         allow_self_loops: Option<bool>,
         allow_zero_flow_edges: Option<bool>,
+        #[gen_stub(override_type(
+            type_repr = "typing.Optional[typing.Callable[[Graph, int], bool]]"
+        ))]
         filter_fn: Option<Py<PyAny>>,
+        #[gen_stub(override_type(type_repr = "typing.Optional[typing.Callable[[Graph], bool]]"))]
         progress_fn: Option<Py<PyAny>>,
     ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
         if max_vertices.is_none() && max_loops.is_none() {
@@ -15126,7 +16657,7 @@ impl PythonGraph {
         if let Some(filter_fn) = filter_fn {
             let abort = abort.clone();
             settings = settings.filter_fn(Box::new(move |g, v| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     match filter_fn.call(py, (Self { graph: g.clone() }, v), None) {
                         Ok(r) => r
                             .is_truthy(py)
@@ -15146,7 +16677,7 @@ impl PythonGraph {
 
         if let Some(progress_fn) = progress_fn {
             settings = settings.progress_fn(Box::new(move |g| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     match progress_fn.call(py, (Self { graph: g.clone() },), None) {
                         Ok(r) => r.is_truthy(py).unwrap_or(true),
                         Err(e) => {
@@ -15162,7 +16693,7 @@ impl PythonGraph {
             if abort.load(std::sync::atomic::Ordering::Relaxed) {
                 true
             } else {
-                Python::with_gil(|py| py.check_signals())
+                Python::attach(|py| py.check_signals())
                     .map(|_| false)
                     .unwrap_or(true)
             }
@@ -15396,6 +16927,8 @@ impl PythonGraph {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonInteger {}
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonInteger {
     /// Create an iterator over all 64-bit prime numbers starting from `start`.
@@ -15534,6 +17067,8 @@ pub struct PythonPrimeIterator {
     cur: PrimeIteratorU64,
 }
 
+#[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PythonPrimeIterator {
     /// Create the iterator.
@@ -15542,6 +17077,7 @@ impl PythonPrimeIterator {
     }
 
     /// Return the next prime.
+    #[gen_stub(override_return_type(type_repr = "int"))]
     fn __next__(&mut self) -> Option<u64> {
         self.cur.next()
     }

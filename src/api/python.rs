@@ -24,14 +24,20 @@ use pyo3::{
     wrap_pyfunction,
 };
 use pyo3::{pyclass, types::PyModuleMethods};
+
 #[cfg(feature = "python_stubgen")]
-use pyo3_stub_gen::{PyStubType, TypeInfo, impl_stub_type};
+use pyo3_stub_gen::{
+    PyStubType, TypeInfo,
+    derive::{gen_stub_pyclass, gen_stub_pyclass_enum},
+    impl_stub_type,
+};
+
 use rug::Complete;
 use self_cell::self_cell;
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
-#[cfg(not(feature = "python_no_module"))]
+#[cfg(not(feature = "python_export"))]
 use pyo3::pymodule;
 
 use crate::{
@@ -95,14 +101,59 @@ const LATEX_PRINT_OPTIONS: PrintOptions = PrintOptions {
     ..PrintOptions::latex()
 };
 
+/// Trait for registering Python submodules for Symbolica, which enables
+/// multiple crates to use the same Symbolica kernel.
+///
+/// You must create a global variable called `CommunityModule`:
+/// ```rust
+/// pub struct CommunityModule;
+///
+/// impl SymbolicaCommunityModule for CommunityModule {
+///     fn get_name() -> String {
+///         "NAME".to_string()
+///     }
+///
+///     fn register_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+///         // add your functions and classes
+///         Ok(())
+///     }
+/// }
+/// ```
+///
+/// And you must set the modules of your functions and classes to
+/// `symbolica.community.NAME`, .i.e,
+/// ```  
+/// #[pyclass(module = "symbolica.community.NAME")]
+/// struct MyPythonStruct {}
+/// ```
+#[cfg(feature = "python_export")]
+pub trait SymbolicaCommunityModule {
+    /// The name of the submodule. Must be used in all defined Python structures, such as:
+    /// ```
+    /// #[pyclass(module = "symbolica.community.NAME")]
+    /// struct MyPythonStruct {}
+    /// ```
+    fn get_name() -> String;
+
+    /// Register all classes, functions and methods in the submodule `m`.
+    fn register_module(m: &Bound<'_, PyModule>) -> PyResult<()>;
+}
+
 /// Specifies the print mode.
-#[derive(Clone, Copy)]
-#[pyclass(name = "PrintMode", module = "symbolica", eq, eq_int)]
-#[derive(PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass_enum(module = "symbolica.core")
+)]
+#[pyclass(name = "PrintMode", eq, eq_int)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PythonPrintMode {
+    /// Print using Symbolica notation.
     Symbolica,
+    /// Print using LaTeX notation.
     Latex,
+    /// Print using Mathematica notation.
     Mathematica,
+    /// Print using Sympy notation.
     Sympy,
 }
 
@@ -231,7 +282,7 @@ pub fn create_symbolica_module<'a, 'b>(
 /// >>> e = E('x^2*log(2*x + y) + exp(3*x)')
 /// >>> a = e.derivative(S('x'))
 /// >>> print("d/dx {} = {}".format(e, a))
-#[cfg(not(feature = "python_no_module"))]
+#[cfg(feature = "python_api")]
 #[pymodule]
 fn symbolica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     create_symbolica_module(m).map(|_| ())
@@ -322,7 +373,24 @@ fn symbol_shorthand(
     )
 }
 
-/// Shorthand notation for :func:`Expression.symbol`.
+/// Create a new Symbolica number from an int, a float, or a string.
+/// A floating point number is kept as a float with the same precision as the input,
+/// but it can also be converted to the smallest rational number given a `relative_error`.
+///
+/// Examples
+/// --------
+/// >>> e = N(1) / 2
+/// >>> print(e)
+/// 1/2
+///
+/// >>> print(N(1/3))
+/// >>> print(N(0.33, 0.1))
+/// >>> print(N('0.333`3'))
+/// >>> print(N(Decimal('0.1234')))
+/// 3.3333333333333331e-1
+/// 1/3
+/// 3.33e-1
+/// 1.2340e-1
 #[pyfunction(name = "N", signature = (num,relative_error=None))]
 fn number_shorthand(
     num: PyObject,
@@ -332,7 +400,24 @@ fn number_shorthand(
     PythonExpression::num(&PythonExpression::type_object(py), py, num, relative_error)
 }
 
-/// Shorthand notation for :func:`Expression.parse`.
+/// Parse a Symbolica expression from a string.
+///
+/// Parameters
+/// ----------
+/// input: str
+///     An input string. UTF-8 characters are allowed.
+///
+/// Examples
+/// --------
+/// >>> e = E('x^2+y+y*4')
+/// >>> print(e)
+/// x^2+5*y
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the input is not a valid Symbolica expression.
+
 #[pyfunction(name = "E", signature = (expr,default_namespace="python"))]
 fn expression_shorthand(
     expr: &str,
@@ -343,29 +428,32 @@ fn expression_shorthand(
 }
 
 /// Create a new transformer that maps an expression.
+
 #[pyfunction(name = "T")]
 fn transformer_shorthand() -> PythonTransformer {
     PythonTransformer::new()
 }
 
-#[derive(Clone, Copy)]
-#[pyclass(name = "AtomType", module = "symbolica", eq, eq_int)]
-#[derive(PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass_enum(module = "symbolica.core")
+)]
+#[pyclass(name = "AtomType", eq, eq_int)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 /// Specifies the type of the atom.
 pub enum PythonAtomType {
+    /// The expression is a number.
     Num,
+    /// The expression is a variable.
     Var,
+    /// The expression is a function.
     Fn,
+    /// The expression is a sum.
     Add,
+    /// The expression is a product.
     Mul,
+    /// The expression is a power.
     Pow,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonAtomType {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("AtomType", "symbolica".into())
-    }
 }
 
 /// A Python representation of a Symbolica expression.
@@ -383,7 +471,11 @@ impl PyStubType for PythonAtomType {
 /// - the base and exponent for type `Pow`
 /// - the function arguments for type `Fn`
 #[derive(Clone)]
-#[pyclass(name = "AtomTree", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "AtomTree")]
 pub struct PythonAtomTree {
     /// The type of this atom.
     #[pyo3(get)]
@@ -394,13 +486,6 @@ pub struct PythonAtomTree {
     /// The list of child atoms of this atom.
     #[pyo3(get)]
     pub tail: Vec<PythonAtomTree>,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonAtomTree {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("AtomTree", "symbolica".into())
-    }
 }
 
 impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
@@ -492,7 +577,20 @@ pub enum ConvertibleToReplaceWith {
 }
 
 #[cfg(feature = "python_stubgen")]
-impl_stub_type!(ConvertibleToReplaceWith = ConvertibleToPattern | PyObject);
+pub struct ReplaceFunction;
+
+#[cfg(feature = "python_stubgen")]
+impl PyStubType for ReplaceFunction {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "typing.Callable[[dict[Expression, Expression]], Expression] | int | float | complex | decimal.Decimal".into(),
+            import: std::collections::HashSet::default(),
+        }
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(ConvertibleToReplaceWith = ConvertibleToPattern | ReplaceFunction);
 
 impl ConvertibleToReplaceWith {
     pub fn to_replace_with(self) -> PyResult<ReplaceWith<'static>> {
@@ -533,17 +631,14 @@ impl<T> OneOrMultiple<T> {
 }
 
 /// Operations that transform an expression.
-#[pyclass(name = "HeldExpression", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "HeldExpression", subclass)]
 #[derive(Clone)]
 pub struct PythonHeldExpression {
     pub expr: Pattern,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonHeldExpression {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("HeldExpression", "symbolica".into())
-    }
 }
 
 impl From<Pattern> for PythonHeldExpression {
@@ -560,7 +655,7 @@ impl PythonHeldExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
+    /// >>> x = S('x')
     /// >>> e = (x+1)**5
     /// >>> e = e.transform().expand().execute()
     /// >>> print(e)
@@ -728,17 +823,18 @@ impl PythonHeldExpression {
     /// Take `self` to power `exp`, returning the result.
     pub fn __pow__(
         &self,
-        rhs: ConvertibleToPattern,
-        number: Option<i64>,
+        exponent: ConvertibleToPattern,
+        modulo: Option<i64>,
     ) -> PyResult<PythonHeldExpression> {
-        if number.is_some() {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
-        let res = Workspace::get_local()
-            .with(|workspace| Ok::<_, PyErr>(self.expr.pow(&rhs.to_pattern()?.expr, workspace)));
+        let res = Workspace::get_local().with(|workspace| {
+            Ok::<_, PyErr>(self.expr.pow(&exponent.to_pattern()?.expr, workspace))
+        });
 
         Ok(res?.into())
     }
@@ -746,11 +842,11 @@ impl PythonHeldExpression {
     /// Take `base` to power `self`, returning the result.
     pub fn __rpow__(
         &self,
-        rhs: ConvertibleToPattern,
-        number: Option<i64>,
+        base: ConvertibleToPattern,
+        modulo: Option<i64>,
     ) -> PyResult<PythonHeldExpression> {
-        rhs.to_pattern()?
-            .__pow__(ConvertibleToPattern::Held(self.clone()), number)
+        base.to_pattern()?
+            .__pow__(ConvertibleToPattern::Held(self.clone()), modulo)
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
@@ -777,17 +873,14 @@ impl PythonHeldExpression {
 }
 
 /// Operations that transform an expression.
-#[pyclass(name = "Transformer", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Transformer", subclass)]
 #[derive(Clone)]
 pub struct PythonTransformer {
     pub chain: Vec<Transformer>,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonTransformer {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("Transformer", "symbolica".into())
-    }
 }
 
 impl PythonTransformer {
@@ -815,8 +908,15 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> x = Expression.symbol('x')
-    /// >>> e = Transformer().expand()((1+x)**2)
+    /// >>> x = S('x')
+    /// >>> e = T().expand()((1+x)**2)
+    ///
+    /// Parameters
+    /// ----------
+    /// expr: Expression
+    ///     The expression to transform.
+    /// stats_to_file: str, optional
+    ///     If set, the output of the `stats` transformer will be written to a file in JSON format.
     #[pyo3(signature = (expr, stats_to_file = None))]
     pub fn __call__(
         &self,
@@ -948,8 +1048,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x_ = Expression.symbol('x', 'x_')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, x_ = S('x', 'x_')
+    /// >>> f = S('f')
     /// >>> e = f((x+1)**2).replace(f(x_), x_.transform().expand())
     /// >>> print(e)
     #[pyo3(signature = (var = None, via_poly = None))]
@@ -982,7 +1082,7 @@ impl PythonTransformer {
     /// --------
     ///
     /// >>> from symbolica import *
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = 3*(x+y)*(4*x+5*y)
     /// >>> print(Transformer().expand_num()(e))
     ///
@@ -1000,8 +1100,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.symbol('x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x__ = S('x__')
+    /// >>> f = S('f')
     /// >>> e = f(2,3).replace(f(x__), x__.transform().prod())
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonTransformer> {
@@ -1013,8 +1113,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.symbol('x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x__ = S('x__')
+    /// >>> f = S('f')
     /// >>> e = f(2,3).replace(f(x__), x__.transform().sum())
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonTransformer> {
@@ -1033,8 +1133,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.symbol('x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x__ = S('x__')
+    /// >>> f = S('f')
     /// >>> e = f(2,3,4).replace(f(x__), x__.transform().nargs())
     /// >>> print(e)
     #[pyo3(signature = (only_for_arg_fun = false))]
@@ -1048,7 +1148,7 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, y, z, w, f, x__ = Expression.symbol('x', 'y', 'z', 'w', 'f', 'x__')
+    /// >>> x, y, z, w, f, x__ = S('x', 'y', 'z', 'w', 'f', 'x__')
     /// >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).transform().linearize([z]))
     /// >>> print(e)
     ///
@@ -1080,8 +1180,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.symbol('x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_ = S('x__')
+    /// >>> f = S('f')
     /// >>> e = f(3,2,1).replace(f(x__), x__.transform().sort())
     /// >>> print(e)
     pub fn sort(&self) -> PyResult<PythonTransformer> {
@@ -1093,8 +1193,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.symbol('x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_ = S('x__')
+    /// >>> f = S('f')
     /// >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.transform().cycle_symmetrize())
     /// >>> print(e)
     ///
@@ -1109,8 +1209,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.symbol('x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x__ = S('x__')
+    /// >>> f = S('f')
     /// >>> e = f(1,2,1,2).replace(f(x__), x__.transform().deduplicate())
     /// >>> print(e)
     ///
@@ -1135,8 +1235,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x__ = Expression.symbol('x', 'x__')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, x__ = S('x', 'x__')
+    /// >>> f = S('f')
     /// >>> e = (x + 1).replace(x__, f(x__.transform().split()))
     /// >>> print(e)
     pub fn split(&self) -> PyResult<PythonTransformer> {
@@ -1157,8 +1257,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id, g_id = Expression.symbol('x__', 'f', 'g')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_, f_id, g_id = S('x__', 'f', 'g')
+    /// >>> f = S('f')
     /// >>> e = f(1,2,1,3).replace(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
     /// >>> print(e)
     ///
@@ -1203,8 +1303,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id = Expression.symbol('x__', 'f')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_, f_id = S('x__', 'f')
+    /// >>> f = S('f')
     /// >>> e = f(1,2,1,2).replace(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
     ///
@@ -1237,8 +1337,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_ = S('x_')
+    /// >>> f = S('f')
     /// >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
     pub fn map(&self, f: PyObject) -> PyResult<PythonTransformer> {
@@ -1317,8 +1417,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x = S('x')
+    /// >>> f = S('f')
     /// >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
     #[pyo3(signature = (*transformers))]
     pub fn for_each(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
@@ -1338,8 +1438,8 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_ = S('x_')
+    /// >>> f = S('f')
     /// >>> f(10).transform().repeat(Transformer().replace(
     /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
     pub fn check_interrupt(&self) -> PyResult<PythonTransformer> {
@@ -1356,9 +1456,9 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol('f')
-    /// >>> e = Expression.parse("f(5)")
+    /// >>> x_ = S('x_')
+    /// >>> f = S('f')
+    /// >>> e = E("f(5)")
     /// >>> e = e.transform().repeat(
     /// >>>     Transformer().expand(),
     /// >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
@@ -1448,9 +1548,9 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol('f')
-    /// >>> e = Expression.parse("f(5)")
+    /// >>> x_ = S('x_')
+    /// >>> f = S('f')
+    /// >>> e = E("f(5)")
     /// >>> e = e.transform().repeat(
     /// >>>     Transformer().expand(),
     /// >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
@@ -1504,7 +1604,7 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> print(e.transform().collect(x).execute())
@@ -1512,7 +1612,7 @@ impl PythonTransformer {
     /// yields `x^2+x*(y+5)+5`.
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y, x_, var, coeff = Expression.symbol('x', 'y', 'x_', 'var', 'coeff')
+    /// >>> x, y, x_, var, coeff = S('x', 'y', 'x_', 'var', 'coeff')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>> print(e.collect(x, key_map=Transformer().replace(x_, var(x_)),
     ///         coeff_map=Transformer().replace(x_, coeff(x_))))
@@ -1574,7 +1674,7 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, f = Expression.symbol('x', 'f')
+    /// >>> x, f = S('x', 'f')
     /// >>> e = f(1,2) + x*f(1,2)
     /// >>>
     /// >>> print(e.transform().collect_symbol(x).execute())
@@ -1645,7 +1745,7 @@ impl PythonTransformer {
     ///
     /// >>> from symbolica import *
     /// >>>
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = (-3*x+6*y)(2*x+2*y)
     /// >>> print(Transformer().collect_num()(e))
     ///
@@ -1756,6 +1856,19 @@ impl PythonTransformer {
     }
 
     /// Create a transformer that series expands in `x` around `expansion_point` to depth `depth`.
+    ///
+    /// Examples
+    /// -------
+    /// >>> from symbolica import *
+    /// >>> x, y = S('x', 'y')
+    /// >>> f = S('f')
+    /// >>>
+    /// >>> e = 2* x**2 * y + f(x)
+    /// >>> e = e.series(x, 0, 2)
+    /// >>>
+    /// >>> print(e)
+    ///
+    /// yields `f(0)+x*der(1,f(0))+1/2*x^2*(der(2,f(0))+4*y)`.
     #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1, depth_is_absolute = true))]
     pub fn series(
         &self,
@@ -1781,26 +1894,36 @@ impl PythonTransformer {
         ))
     }
 
-    /// Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
-    /// Restrictions on pattern can be supplied through `cond`. The settings `non_greedy_wildcards` can be used to specify
-    /// wildcards that try to match as little as possible. The settings `allow_new_wildcards_on_rhs` can be used to allow
-    /// wildcards that do not appear in the pattern on the right-hand side.
-    ///
-    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
-    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
-    /// depending on `level_is_tree_depth`.
-    ///
-    /// For efficiency, the first `rhs_cache_size` substituted patterns are cached.
-    /// If set to `None`, an internally determined cache size is used.
-    /// Caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
+    /// Create a transformer that replaces all subexpressions matching the pattern `pat` by the right-hand side `rhs`.
     ///
     /// Examples
     /// --------
     ///
-    /// >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
-    /// >>> f = Expression.symbol('f')
-    /// >>> e = f(3,x)
-    /// >>> r = e.transform().replace(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+    /// >>> x, w1_, w2_ = S('x','w1_','w2_')
+    /// >>> f = S('f')
+    /// >>> t = T().replace(f(w1_, w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
+    /// >>> r = t(f(3,x))
+    /// >>> print(r)
+    ///
+    /// Parameters
+    /// ----------
+    /// pat:
+    ///     The pattern to match.
+    /// rhs:
+    ///     The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
+    /// cond:
+    ///     Conditions on the pattern.
+    /// non_greedy_wildcards:
+    ///     Wildcards that try to match as little as possible.
+    /// level_range:
+    ///     Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+    /// level_is_tree_depth:
+    ///     If set to `True`, the level is increased when going one level deeper in the expression tree.
+    /// allow_new_wildcards_on_rhs:
+    ///     If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
+    /// rhs_cache_size: int, optional
+    ///     Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
+    ///     **Warning**: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
     #[pyo3(signature = (lhs, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None))]
     pub fn replace(
         &self,
@@ -1860,7 +1983,7 @@ impl PythonTransformer {
     /// Examples
     /// --------
     ///
-    /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
+    /// >>> x, y, f = S('x', 'y', 'f')
     /// >>> e = f(x,y)
     /// >>> r = e.transform().replace_multiple([Replacement(x, y), Replacement(y, x)])
     pub fn replace_multiple(
@@ -1876,7 +1999,7 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> Expression.parse('f(10)').transform().print(terms_on_new_line = True).execute()
+    /// >>> E('f(10)').transform().print(terms_on_new_line = True).execute()
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
             terms_on_new_line = false,
@@ -1942,9 +2065,9 @@ impl PythonTransformer {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol('f')
-    /// >>> e = Expression.parse("f(5)")
+    /// >>> x_ = S('x_')
+    /// >>> f = S('f')
+    /// >>> e = E("f(5)")
     /// >>> e = e.transform().stats('replace', Transformer().replace(f(x_), 1)).execute()
     ///
     /// yields
@@ -1956,8 +2079,8 @@ impl PythonTransformer {
     #[pyo3(signature =
         (tag,
             transformer,
-            color_medium_change_threshold = 10.,
-            color_large_change_threshold = 100.)
+            color_medium_change_threshold = Some(10.),
+            color_large_change_threshold = Some(100.))
         )]
     pub fn stats(
         &self,
@@ -1984,7 +2107,7 @@ impl PythonTransformer {
 ///
 /// Examples
 /// --------
-/// >>> x = Expression.symbol('x')
+/// >>> x = S('x')
 /// >>> e = x**2 + 2 - x + 1 / x**4
 /// >>> print(e)
 ///
@@ -2006,17 +2129,14 @@ impl PythonTransformer {
 ///     The built-in exponential function.
 /// LOG: Expression
 ///     The built-in logarithm function.
-#[pyclass(name = "Expression", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Expression", subclass)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
     pub expr: Atom,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonExpression {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("Expression", "symbolica".into())
-    }
 }
 
 impl From<Atom> for PythonExpression {
@@ -2034,17 +2154,14 @@ impl Deref for PythonExpression {
 }
 
 /// A restriction on wildcards.
-#[pyclass(name = "PatternRestriction", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "PatternRestriction")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
     pub condition: Condition<PatternRestriction>,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonPatternRestriction {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("PatternRestriction", "symbolica".into())
-    }
 }
 
 impl From<Condition<PatternRestriction>> for PythonPatternRestriction {
@@ -2078,6 +2195,26 @@ impl PythonPatternRestriction {
     ///
     /// If your pattern restriction cannot decide if it holds since not all the required variables
     /// have been matched, it should return inclusive (0).
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> f, x_, y_, z_ = S('f', 'x_', 'y_', 'z_')
+    /// >>>
+    /// >>> def filter(m: dict[Expression, Expression]) -> int:
+    /// >>>    if x_ in m and y_ in m:
+    /// >>>        if m[x_] > m[y_]:
+    /// >>>            return -1  # no match
+    /// >>>        if z_ in m:
+    /// >>>            if m[y_] > m[z_]:
+    /// >>>                return -1
+    /// >>>            return 1  # match
+    /// >>>
+    /// >>>    return 0  # inconclusive
+    /// >>>
+    /// >>>
+    /// >>> e = f(1, 2, 3).replace(f(x_, y_, z_), 1,
+    /// >>>         PatternRestriction.req_matches(filter))
     #[classmethod]
     pub fn req_matches(
         _cls: &Bound<'_, PyType>,
@@ -2113,17 +2250,14 @@ impl PythonPatternRestriction {
 }
 
 /// A restriction on wildcards.
-#[pyclass(name = "Condition", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Condition")]
 #[derive(Clone)]
 pub struct PythonCondition {
     pub condition: Condition<Relation>,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonCondition {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("Condition", "symbolica".into())
-    }
 }
 
 impl From<Condition<Relation>> for PythonCondition {
@@ -2134,14 +2268,17 @@ impl From<Condition<Relation>> for PythonCondition {
 
 #[pymethods]
 impl PythonCondition {
+    /// Return a string representation of the condition.
     pub fn __repr__(&self) -> String {
         format!("{:?}", self.condition)
     }
 
+    /// Return a string representation of the condition.
     pub fn __str__(&self) -> String {
         format!("{}", self.condition)
     }
 
+    /// Evaluate the condition.
     pub fn eval(&self) -> PyResult<bool> {
         Ok(self
             .condition
@@ -2150,6 +2287,7 @@ impl PythonCondition {
             == ConditionResult::True)
     }
 
+    /// Return the boolean value of the condition.
     pub fn __bool__(&self) -> PyResult<bool> {
         self.eval()
     }
@@ -2377,14 +2515,20 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
 }
 
 #[cfg(feature = "python_stubgen")]
-impl PyStubType for ConvertibleToExpression {
-    fn type_output() -> pyo3_stub_gen::TypeInfo {
-        PythonExpression::type_output()
-            | TypeInfo::builtin("int")
-            | TypeInfo::builtin("str")
-            | TypeInfo::builtin("float")
+struct ComplexStub;
+
+#[cfg(feature = "python_stubgen")]
+impl PyStubType for ComplexStub {
+    fn type_output() -> TypeInfo {
+        TypeInfo::builtin("complex")
     }
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(
+    ConvertibleToExpression =
+        PythonExpression | PyInt | PyBackedStr | pyo3::types::PyFloat | ComplexStub
+);
 
 impl<'a> FromPyObject<'a> for Symbol {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
@@ -2402,11 +2546,7 @@ impl<'a> FromPyObject<'a> for Symbol {
 }
 
 #[cfg(feature = "python_stubgen")]
-impl PyStubType for Symbol {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("Symbol", "symbolica".into())
-    }
-}
+impl_stub_type!(Symbol = PythonExpression);
 
 impl<'a> FromPyObject<'a> for Variable {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
@@ -2415,11 +2555,10 @@ impl<'a> FromPyObject<'a> for Variable {
 }
 
 #[cfg(feature = "python_stubgen")]
-impl PyStubType for Variable {
-    fn type_output() -> pyo3_stub_gen::TypeInfo {
-        TypeInfo::with_module("Variable", "symbolica".into())
-    }
-}
+impl_stub_type!(Variable = PythonExpression);
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(Integer = PyInt);
 
 impl<'a> FromPyObject<'a> for Integer {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
@@ -2468,6 +2607,26 @@ impl ConvertibleToExpression {
 }
 
 pub struct PythonMultiPrecisionFloat(Float);
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(PythonMultiPrecisionFloat = f64 | Decimal);
+
+#[cfg(feature = "python_stubgen")]
+pub struct Decimal;
+
+#[cfg(feature = "python_stubgen")]
+impl PyStubType for Decimal {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "decimal.Decimal".to_string(),
+            import: {
+                let mut h = std::collections::HashSet::default();
+                h.insert("decimal".into());
+                h
+            },
+        }
+    }
+}
 
 impl From<Float> for PythonMultiPrecisionFloat {
     fn from(f: Float) -> Self {
@@ -2558,18 +2717,7 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
 }
 
 #[cfg(feature = "python_stubgen")]
-impl PyStubType for Complex<f64> {
-    fn type_output() -> pyo3_stub_gen::TypeInfo {
-        TypeInfo::with_module("Complex", "symbolica".into())
-    }
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for Complex<Float> {
-    fn type_output() -> pyo3_stub_gen::TypeInfo {
-        TypeInfo::with_module("Complex", "symbolica".into())
-    }
-}
+impl_stub_type!(Complex<f64> = ComplexStub);
 
 impl<'a> FromPyObject<'a> for Complex<Float> {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
@@ -2588,6 +2736,9 @@ impl<'a> FromPyObject<'a> for Complex<Float> {
         }
     }
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(Complex<Float> = ComplexStub);
 
 macro_rules! req_cmp {
     ($self:ident,$num:ident,$cmp_any_atom:ident,$c:ident) => {{
@@ -2717,26 +2868,26 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// Define a regular symbol and use it as a variable:
-    /// >>> x = Expression.symbol('x')
+    /// >>> x = S('x')
     /// >>> e = x**2 + 5
     /// >>> print(e)
     /// x**2 + 5
     ///
     /// Define a regular symbol and use it as a function:
-    /// >>> f = Expression.symbol('f')
+    /// >>> f = S('f')
     /// >>> e = f(1,2)
     /// >>> print(e)
     /// f(1,2)
     ///
     /// Define a symmetric function:
-    /// >>> f = Expression.symbol('f', is_symmetric=True)
+    /// >>> f = S('f', is_symmetric=True)
     /// >>> e = f(2,1)
     /// >>> print(e)
     /// f(1,2)
     ///
     /// Define a linear and symmetric function:
-    /// >>> p1, p2, p3, p4 = Expression.symbol('p1', 'p2', 'p3', 'p4')
-    /// >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
+    /// >>> p1, p2, p3, p4 = S('p1', 'p2', 'p3', 'p4')
+    /// >>> dot = S('dot', is_symmetric=True, is_linear=True)
     /// >>> e = dot(p2+2*p3,p1+3*p2-p3)
     /// dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
     ///
@@ -3057,7 +3208,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> e = Expression.parse('x^2+y+y*4')
+    /// >>> e = E('x^2+y+y*4')
     /// >>> print(e)
     /// x^2+5*y
     ///
@@ -3145,7 +3296,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+    /// >>> a = E('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
     /// >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
@@ -3217,7 +3368,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> a = Expression.parse('5 + x^2')
+    /// >>> a = E('5 + x^2')
     /// >>> print(a.to_plain())
     ///
     /// Yields `5 + x^2`, without any coloring.
@@ -3231,7 +3382,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+    /// >>> a = E('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
     /// >>> print(a.to_latex())
     ///
     /// Yields `$$z^{34}+x^{x+2}+y^{4}+f(x,x^{2})+128378127123 z^{\\frac{2}{3}} w^{2} \\frac{1}{x} \\frac{1}{y}+\\frac{3}{5}$$`.
@@ -3247,7 +3398,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from sympy import *
-    /// >>> s = sympy.parse_expr(Expression.parse('x^2+f((1+x)^y)').to_sympy())
+    /// >>> s = sympy.parse_expr(E('x^2+f((1+x)^y)').to_sympy())
     pub fn to_sympy(&self) -> PyResult<String> {
         Ok(format!("{}", self.expr.printer(PrintOptions::sympy())))
     }
@@ -3410,27 +3561,27 @@ impl PythonExpression {
     /// Take `self` to power `exp`, returning the result.
     pub fn __pow__(
         &self,
-        rhs: ConvertibleToExpression,
-        number: Option<i64>,
+        exponent: ConvertibleToExpression,
+        modulo: Option<i64>,
     ) -> PyResult<PythonExpression> {
-        if number.is_some() {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
-        let rhs = rhs.to_expression();
-        Ok(self.expr.pow(&rhs.expr).into())
+        let exponent = exponent.to_expression();
+        Ok(self.expr.pow(&exponent.expr).into())
     }
 
     /// Take `base` to power `self`, returning the result.
     pub fn __rpow__(
         &self,
-        rhs: ConvertibleToExpression,
-        number: Option<i64>,
+        base: ConvertibleToExpression,
+        modulo: Option<i64>,
     ) -> PyResult<PythonExpression> {
-        rhs.to_expression()
-            .__pow__(ConvertibleToExpression(self.clone()), number)
+        base.to_expression()
+            .__pow__(ConvertibleToExpression(self.clone()), modulo)
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
@@ -3466,8 +3617,8 @@ impl PythonExpression {
     ///
     /// Examples
     /// -------
-    /// >>> x = Expression.symbol('x')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x = S('x')
+    /// >>> f = S('f')
     /// >>> e = f(3,x)
     /// >>> print(e)
     /// f(3,x)
@@ -3586,7 +3737,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x, y, z = Expression.symbol('x', 'y', 'z')
+    /// >>> x, y, z = S('x', 'y', 'z')
     /// >>> e = x * y * z
     /// >>> e.contains(x) # True
     /// >>> e.contains(x*y*z) # True
@@ -3685,8 +3836,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, AtomType
-    /// >>> x, x_ = Expression.symbol('x', 'x_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x, x_ = S('x', 'x_')
+    /// >>> f = S("f")
     /// >>> e = f(x)*f(2)*f(f(3))
     /// >>> e = e.replace(f(x_), 1, x_.req_type(AtomType.Num))
     /// >>> print(e)
@@ -3826,8 +3977,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_ = S('x_')
+    /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req_lt(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -3849,8 +4000,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_ = S('x_')
+    /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req_gt(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -3872,8 +4023,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_ = S('x_')
+    /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req_le(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -3895,8 +4046,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_ = S('x_')
+    /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req_ge(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -3914,8 +4065,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_ = S('x_')
+    /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
     pub fn req(&self, filter_fn: PyObject) -> PyResult<PythonPatternRestriction> {
@@ -3965,8 +4116,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_, y_ = S('x_', 'y_')
+    /// >>> f = S("f")
     /// >>> e = f(1,2)
     /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_lt(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -3988,8 +4139,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_, y_ = S('x_', 'y_')
+    /// >>> f = S("f")
     /// >>> e = f(2,1)
     /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_gt(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -4011,8 +4162,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_, y_ = S('x_', 'y_')
+    /// >>> f = S("f")
     /// >>> e = f(1,2)
     /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_le(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -4034,8 +4185,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_, y_ = S('x_', 'y_')
+    /// >>> f = S("f")
     /// >>> e = f(2,1)
     /// >>> e = e.replace(f(x_,y_), 1, x_.req_cmp_ge(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -4053,8 +4204,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
-    /// >>> f = Expression.symbol("f")
+    /// >>> x_, y_ = S('x_', 'y_')
+    /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
     pub fn req_cmp(
@@ -4139,7 +4290,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> x, x_ = Expression.symbol('x', 'x_')
+    /// >>> x, x_ = S('x', 'x_')
     /// >>> e = (1+x)**2
     /// >>> r = e.map(Transformer().expand().replace(x, 6))
     /// >>> print(r)
@@ -4254,7 +4405,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = 3*(x+y)*(4*x+5*y)
     /// >>> print(e.expand_num())
     ///
@@ -4277,7 +4428,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> print(e.collect(x))
@@ -4285,7 +4436,7 @@ impl PythonExpression {
     /// yields `x^2+x*(y+5)+5`.
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> exp, coeff = Expression.funs('var', 'coeff')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
@@ -4381,7 +4532,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, f = Expression.symbol('x', 'f')
+    /// >>> x, f = S('x', 'f')
     /// >>> e = f(1,2) + x*f(1,2)
     /// >>>
     /// >>> print(e.collect_symbol(f))
@@ -4473,7 +4624,7 @@ impl PythonExpression {
     ///
     /// >>> from symbolica import Expression
     /// >>>
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = (-3*x+6*y)(2*x+2*y)
     /// >>> print(e.collect_num())
     ///
@@ -4493,7 +4644,7 @@ impl PythonExpression {
     ///
     /// >>> from symbolica import Expression
     /// >>>
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + y*x**2
     /// >>> print(e.coefficient(x**2))
     ///
@@ -4515,7 +4666,7 @@ impl PythonExpression {
     ///
     /// from symbolica import Expression
     /// >>>
-    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> x, y = S('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> for a in e.coefficient_list(x):
@@ -4586,8 +4737,8 @@ impl PythonExpression {
     /// Examples
     /// -------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbol('x', 'y')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, y = S('x', 'y')
+    /// >>> f = S('f')
     /// >>>
     /// >>> e = 2* x**2 * y + f(x)
     /// >>> e = e.series(x, 0, 2)
@@ -4658,7 +4809,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('v1^2/2+v1^3/v4*v2+v3/(1+v4)')
+    /// >>> p = E('v1^2/2+v1^3/v4*v2+v3/(1+v4)')
     /// >>> print(p.together())
     pub fn together(&self) -> PyResult<PythonExpression> {
         let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
@@ -4672,7 +4823,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('1+(y+1)^10*(x+1)/(x^2+2x+1)')
+    /// >>> p = E('1+(y+1)^10*(x+1)/(x^2+2x+1)')
     /// >>> print(p.cancel())
     /// 1+(y+1)**10/(x+1)
     pub fn cancel(&self) -> PyResult<PythonExpression> {
@@ -4685,7 +4836,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(6 + x)/(7776 + 6480*x + 2160*x^2 + 360*x^3 + 30*x^4 + x^5)')
+    /// >>> p = E('(6 + x)/(7776 + 6480*x + 2160*x^2 + 360*x^3 + 30*x^4 + x^5)')
     /// >>> print(p.factor())
     /// (x+6)**-4
     pub fn factor(&self) -> PyResult<PythonExpression> {
@@ -4695,7 +4846,7 @@ impl PythonExpression {
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     /// All non-polynomial elements will be converted to new independent variables.
     ///
-    /// If a `modulus` is provided, the coefficients will be converted to finite field elements modulo `modulus`.
+    /// If a `modulus` is provided, the coefficients will be converted to finite field elements mod `modulus`.
     /// If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
     /// `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
     ///
@@ -4850,7 +5001,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
+    /// >>> a = E('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
     /// >>> print(a)
     #[pyo3(signature = (vars = None))]
     pub fn to_rational_polynomial(
@@ -4888,13 +5039,13 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, x_ = Expression.symbol('x','x_')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, x_ = S('x','x_')
+    /// >>> f = S('f')
     /// >>> e = f(x)*f(1)*f(2)*f(3)
     /// >>> for match in e.match(f(x_)):
     /// >>>    for map in match:
     /// >>>        print(map[0],'=', map[1])
-    #[pyo3(name = "r#match", signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    #[pyo3(name = "match", signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
     pub fn pattern_match(
         &self,
         lhs: ConvertibleToExpression,
@@ -4929,7 +5080,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> f = Expression.symbol('f')
+    /// >>> f = S('f')
     /// >>> if f(1).matches(f(2)):
     /// >>>    print('match')
     #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
@@ -4970,8 +5121,8 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.symbol('x_')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x_ = S('x_')
+    /// >>> f = S('f')
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> for r in e.replace(f(x_), f(x_ + 1)):
     /// >>>     print(r)
@@ -5032,8 +5183,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, w1_, w2_ = S('x','w1_','w2_')
+    /// >>> f = S('f')
     /// >>> e = f(3,x)
     /// >>> r = e.replace(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
     /// >>> print(r)
@@ -5132,7 +5283,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
+    /// >>> x, y, f = S('x', 'y', 'f')
     /// >>> e = f(x,y)
     /// >>> r = e.replace_multiple([Replacement(x, y), Replacement(y, x)])
     /// >>> print(r)
@@ -5205,8 +5356,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y, c = Expression.symbol('x', 'y', 'c')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, y, c = S('x', 'y', 'c')
+    /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
     #[classmethod]
@@ -5243,8 +5394,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y, c = Expression.symbol('x', 'y', 'c')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, y, c = S('x', 'y', 'c')
+    /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
     #[pyo3(signature =
@@ -5295,8 +5446,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y, c = Expression.symbol('x', 'y', 'c')
-    /// >>> f = Expression.symbol('f')
+    /// >>> x, y, c = S('x', 'y', 'c')
+    /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
     #[pyo3(signature =
@@ -5366,9 +5517,9 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> f = Expression.symbol('f')
-    /// >>> e = Expression.parse('cos(x)')*3 + f(x,2)
+    /// >>> x = S('x')
+    /// >>> f = S('f')
+    /// >>> e = E('cos(x)')*3 + f(x,2)
     /// >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
     pub fn evaluate(
         &self,
@@ -5421,8 +5572,8 @@ impl PythonExpression {
     /// --------
     /// >>> from symbolica import *
     /// >>> from decimal import Decimal, getcontext
-    /// >>> x = Expression.symbol('x', 'f')
-    /// >>> e = Expression.parse('cos(x)')*3 + f(x, 2)
+    /// >>> x = S('x', 'f')
+    /// >>> e = E('cos(x)')*3 + f(x, 2)
     /// >>> getcontext().prec = 100
     /// >>> a = e.evaluate_with_prec({x: Decimal('1.123456789')}, {
     /// >>>                         f: lambda args: args[0] + args[1]}, 100)
@@ -5503,8 +5654,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbol('x', 'y')
-    /// >>> e = Expression.parse('sqrt(x)')*y
+    /// >>> x, y = S('x', 'y')
+    /// >>> e = E('sqrt(x)')*y
     /// >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
     pub fn evaluate_complex<'py>(
         &self,
@@ -5567,12 +5718,12 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x, y, z, pi, f, g = Expression.symbol(
+    /// >>> x, y, z, pi, f, g = S(
     /// >>>     'x', 'y', 'z', 'pi', 'f', 'g')
     /// >>>
-    /// >>> e1 = Expression.parse("x + pi + cos(x) + f(g(x+1),x*2)")
-    /// >>> fd = Expression.parse("y^2 + z^2*y^2")
-    /// >>> gd = Expression.parse("y + 5")
+    /// >>> e1 = E("x + pi + cos(x) + f(g(x+1),x*2)")
+    /// >>> fd = E("y^2 + z^2*y^2")
+    /// >>> gd = E("y + 5")
     /// >>>
     /// >>> ev = e1.evaluator({pi: Expression.num(22)/7},
     /// >>>              {(f, "f", (y, z)): fd, (g, "g", (y, )): gd}, [x])
@@ -5747,9 +5898,9 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x = Expression.symbol('x')
-    /// >>> e1 = Expression.parse("x^2 + 1")
-    /// >>> e2 = Expression.parse("x^2 + 2)
+    /// >>> x = S('x')
+    /// >>> e1 = E("x^2 + 1")
+    /// >>> e2 = E("x^2 + 2)
     /// >>> ev = Expression.evaluator_multiple([e1, e2], {}, {}, [x])
     ///
     /// will recycle the `x^2`
@@ -5922,9 +6073,9 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// g = Expression.symbol('g', is_symmetric=True)
-    /// >>> fc = Expression.symbol('fc', is_cyclesymmetric=True)
-    /// >>> mu1, mu2, mu3, mu4, k1 = Expression.symbol('mu1', 'mu2', 'mu3', 'mu4', 'k1')
+    /// g = S('g', is_symmetric=True)
+    /// >>> fc = S('fc', is_cyclesymmetric=True)
+    /// >>> mu1, mu2, mu3, mu4, k1 = S('mu1', 'mu2', 'mu3', 'mu4', 'k1')
     /// >>>
     /// >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
     /// >>>
@@ -5951,17 +6102,14 @@ impl PythonExpression {
 }
 
 /// A raplacement, which is a pattern and a right-hand side, with optional conditions and settings.
-#[pyclass(name = "Replacement", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Replacement")]
 #[derive(Clone)]
 pub struct PythonReplacement {
     replacement: Replacement,
-}
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for PythonReplacement {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("Replacement", "symbolica".into())
-    }
 }
 
 #[pymethods]
@@ -6041,6 +6189,9 @@ pub enum SeriesOrExpression {
     Expression(PythonExpression),
 }
 
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(SeriesOrExpression = PythonSeries | PythonExpression);
+
 /// A series expansion class.
 ///
 /// Supports standard arithmetic operations, such
@@ -6048,10 +6199,14 @@ pub enum SeriesOrExpression {
 ///
 /// Examples
 /// --------
-/// >>> x = Expression.symbol('x')
-/// >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
+/// >>> x = S('x')
+/// >>> s = E("(1-cos(x))/sin(x)").series(x, 0, 4)
 /// >>> print(s)
-#[pyclass(name = "Series", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Series")]
 #[derive(Clone)]
 pub struct PythonSeries {
     pub series: Series<AtomField>,
@@ -6129,8 +6284,8 @@ impl PythonSeries {
         })
     }
 
-    pub fn __pow__(&self, rhs: i64, m: Option<i64>) -> PyResult<Self> {
-        if m.is_some() {
+    pub fn __pow__(&self, exponent: i64, modulo: Option<i64>) -> PyResult<Self> {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
@@ -6139,7 +6294,7 @@ impl PythonSeries {
         Ok(Self {
             series: self
                 .series
-                .rpow((rhs, 1).into())
+                .rpow((exponent, 1).into())
                 .map_err(exceptions::PyValueError::new_err)?,
         })
     }
@@ -6176,7 +6331,7 @@ impl PythonSeries {
     ///
     /// Examples
     /// --------
-    /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+    /// >>> a = E('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
     /// >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
@@ -6354,10 +6509,17 @@ impl PythonSeries {
 
 /// A term streamer that can handle large expressions, by
 /// streaming terms to and from disk.
-#[pyclass(name = "TermStreamer", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "TermStreamer", subclass)]
 pub struct PythonTermStreamer {
     pub stream: TermStreamer<CompressorWriter<BufWriter<File>>>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonTermStreamer = PythonTermStreamer);
 
 #[pymethods]
 impl PythonTermStreamer {
@@ -6382,6 +6544,7 @@ impl PythonTermStreamer {
     }
 
     /// Add this expression to `other`, returning the result.
+    ///
     pub fn __add__(&mut self, rhs: &mut Self) -> PyResult<Self> {
         Ok(Self {
             stream: &mut self.stream + &mut rhs.stream,
@@ -6402,6 +6565,7 @@ impl PythonTermStreamer {
     /// can be resolved using the renaming function `conflict_fn`.
     ///
     /// A term stream can be exported using `TermStreamer.save`.
+
     #[pyo3(signature = (filename, conflict_fn=None))]
     pub fn load(&mut self, filename: &str, conflict_fn: Option<PyObject>) -> PyResult<u64> {
         let f = File::open(filename)
@@ -6511,7 +6675,14 @@ impl PythonTermStreamer {
         .map(|x| PythonTermStreamer { stream: x })
     }
 
-    /// Map the transformations to every term in the stream using a single thread.
+    /// Apply a transformer to all terms in the stream using a single thread.
+    ///
+    /// Parameters
+    /// ----------
+    /// f: Transformer
+    ///     The transformer to apply.
+    /// stats_to_file: str, optional
+    ///     If set, the output of the `stats` transformer will be written to a file in JSON format.
     #[pyo3(signature = (op, stats_to_file=None))]
     pub fn map_single_thread(
         &mut self,
@@ -6547,7 +6718,11 @@ impl PythonTermStreamer {
 }
 
 self_cell!(
-    #[pyclass(module = "symbolica")]
+    #[cfg_attr(
+        feature = "python_stubgen",
+        gen_stub_pyclass(module = "symbolica.core")
+    )]
+    #[pyclass(name = "AtomIterator")]
     pub struct PythonAtomIterator {
         owner: Atom,
         #[covariant]
@@ -6590,7 +6765,11 @@ type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a>;
 
 self_cell!(
     /// An iterator over matches.
-    #[pyclass(module = "symbolica")]
+    #[cfg_attr(
+        feature = "python_stubgen",
+        gen_stub_pyclass(module = "symbolica.core")
+    )]
+    #[pyclass(name = "MatchIterator")]
     pub struct PythonMatchIterator {
         owner: OwnedMatch,
         #[not_covariant]
@@ -6628,7 +6807,11 @@ type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a>;
 
 self_cell!(
     /// An iterator over all single replacements.
-    #[pyclass(module = "symbolica")]
+    #[cfg_attr(
+        feature = "python_stubgen",
+        gen_stub_pyclass(module = "symbolica.core")
+    )]
+    #[pyclass(name = "ReplaceIterator")]
     pub struct PythonReplaceIterator {
         owner: OwnedReplace,
         #[not_covariant]
@@ -6649,11 +6832,21 @@ impl PythonReplaceIterator {
     }
 }
 
-#[pyclass(name = "Polynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Polynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonPolynomial {
     pub poly: MultivariatePolynomial<RationalField, u16>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonPolynomial = PythonPolynomial);
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(OneOrMultiple<PythonExpression> = PythonExpression | Vec<PythonExpression>);
 
 #[pymethods]
 impl PythonPolynomial {
@@ -6781,15 +6974,15 @@ impl PythonPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
-    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonPolynomial> {
-        if m.is_some() {
+    pub fn __pow__(&self, exponent: usize, modulo: Option<i64>) -> PyResult<PythonPolynomial> {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
         Ok(Self {
-            poly: self.poly.pow(p),
+            poly: self.poly.pow(exponent),
         })
     }
 
@@ -6935,7 +7128,7 @@ impl PythonPolynomial {
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
-    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(PythonPolynomial, PythonPolynomial)> {
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -6997,7 +7190,10 @@ impl PythonPolynomial {
     /// >>> E('(1+x)(20+x)').to_polynomial().extended_gcd(E('x^2+2').to_polynomial())
     ///
     /// yields `(1, 1/67-7/402*x, 47/134+7/402*x)`.
-    pub fn extended_gcd(&self, rhs: Self) -> PyResult<(Self, Self, Self)> {
+    pub fn extended_gcd(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(PythonPolynomial, PythonPolynomial, PythonPolynomial)> {
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -7057,11 +7253,11 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> p = E('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
     /// >>> print('Square-free factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor_square_free():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+    pub fn factor_square_free(&self) -> Vec<(PythonPolynomial, usize)> {
         self.poly
             .square_free_factorization()
             .into_iter()
@@ -7075,11 +7271,11 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> p = E('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
     /// >>> print('Factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor(&self) -> Vec<(Self, usize)> {
+    pub fn factor(&self) -> Vec<(PythonPolynomial, usize)> {
         self.poly
             .factor()
             .into_iter()
@@ -7093,8 +7289,8 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -7122,7 +7318,7 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> p = E('3x^2+6x+9').to_polynomial()
     /// >>> print(p.content())
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
@@ -7136,15 +7332,15 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
     #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
-    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+    ) -> PyResult<Vec<(Vec<usize>, PythonPolynomial)>> {
         if let Some(vv) = vars {
             let mut vars = vec![];
 
@@ -7227,9 +7423,9 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
         let var: Variable = x.expr.into();
@@ -7306,8 +7502,24 @@ impl PythonPolynomial {
     }
 
     /// Isolate the real roots of the polynomial. The result is a list of intervals with rational bounds that contain exactly one root,
-    /// and the multiplicity of that root.
-    /// Optionally, the intervals can be refined to a given precision.
+    /// and the multiplicity of that root. Optionally, the intervals can be refined to a given precision.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> p = E('2016+5808*x+5452*x^2+1178*x^3+-753*x^4+-232*x^5+41*x^6').to_polynomial()
+    /// >>> for a, b, n in p.isolate_roots():
+    /// >>>     print('({},{}): {}'.format(a, b, n))
+    ///
+    /// yields
+    /// ```
+    /// (-56/45,-77/62): 1
+    /// (-98/79,-119/96): 1
+    /// (-119/96,-21/17): 1
+    /// (-7/6,0): 1
+    /// (0,6): 1
+    /// (6,12): 1
+    /// ```
     #[pyo3(signature = (refine = None))]
     pub fn isolate_roots(
         &self,
@@ -7340,7 +7552,14 @@ impl PythonPolynomial {
     }
 
     /// Approximate all complex roots of a univariate polynomial, given a maximal number of iterations
-    /// and a given tolerance.
+    /// and a given tolerance. Returns the roots and their multiplicity.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> p = E('x^10+9x^7+4x^3+2x+1').to_polynomial()
+    /// >>> for (r, m) in p.approximate_roots(1000, 1e-10):
+    /// >>>     print(r, m)
     pub fn approximate_roots<'py>(
         &self,
         max_iterations: usize,
@@ -7390,10 +7609,10 @@ impl PythonPolynomial {
     /// Examples
     /// --------
     /// >>> basis = Polynomial.groebner_basis(
-    /// >>>     [Expression.parse("a b c d - 1").to_polynomial(),
-    /// >>>      Expression.parse("a b c + a b d + a c d + b c d").to_polynomial(),
-    /// >>>      Expression.parse("a b + b c + a d + c d").to_polynomial(),
-    /// >>>      Expression.parse("a + b + c + d").to_polynomial()],
+    /// >>>     [E("a b c d - 1").to_polynomial(),
+    /// >>>      E("a b c + a b d + a c d + b c d").to_polynomial(),
+    /// >>>      E("a b + b c + a d + c d").to_polynomial(),
+    /// >>>      E("a + b + c + d").to_polynomial()],
     /// >>>     grevlex=True,
     /// >>>     print_stats=True
     /// >>> )
@@ -7456,8 +7675,8 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.integrate(x))
     pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -7485,8 +7704,8 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> e = Expression.parse('x*y+2*x+x^2')
+    /// >>> x = S('x')
+    /// >>> e = E('x*y+2*x+x^2')
     /// >>> p = e.to_polynomial()
     /// >>> print(e - p.to_expression())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
@@ -7575,11 +7794,18 @@ impl PythonPolynomial {
 }
 
 /// A Symbolica polynomial over finite fields.
-#[pyclass(name = "FiniteFieldPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "FiniteFieldPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
     pub poly: MultivariatePolynomial<Zp, u16>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonFiniteFieldPolynomial = PythonFiniteFieldPolynomial);
 
 #[pymethods]
 impl PythonFiniteFieldPolynomial {
@@ -7694,15 +7920,19 @@ impl PythonFiniteFieldPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
-    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonFiniteFieldPolynomial> {
-        if m.is_some() {
+    pub fn __pow__(
+        &self,
+        exponent: usize,
+        modulo: Option<i64>,
+    ) -> PyResult<PythonFiniteFieldPolynomial> {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
         Ok(Self {
-            poly: self.poly.pow(p),
+            poly: self.poly.pow(exponent),
         })
     }
 
@@ -7849,7 +8079,10 @@ impl PythonFiniteFieldPolynomial {
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
-    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+    pub fn quot_rem(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(PythonFiniteFieldPolynomial, PythonFiniteFieldPolynomial)> {
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -7911,7 +8144,14 @@ impl PythonFiniteFieldPolynomial {
     /// >>> E('(1+x)(20+x)').to_polynomial(modulus=5).extended_gcd(E('x^2+2').to_polynomial(modulus=5))
     ///
     /// yields `(1, 3+4*x, 3+x)`.
-    pub fn extended_gcd(&self, rhs: Self) -> PyResult<(Self, Self, Self)> {
+    pub fn extended_gcd(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(
+        PythonFiniteFieldPolynomial,
+        PythonFiniteFieldPolynomial,
+        PythonFiniteFieldPolynomial,
+    )> {
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -7985,11 +8225,11 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> p = E('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
     /// >>> print('Square-free factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor_square_free():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+    pub fn factor_square_free(&self) -> Vec<(PythonFiniteFieldPolynomial, usize)> {
         self.poly
             .square_free_factorization()
             .into_iter()
@@ -8003,11 +8243,11 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> p = E('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
     /// >>> print('Factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor(&self) -> Vec<(Self, usize)> {
+    pub fn factor(&self) -> Vec<(PythonFiniteFieldPolynomial, usize)> {
         self.poly
             .factor()
             .into_iter()
@@ -8021,8 +8261,8 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -8050,7 +8290,7 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> p = E('3x^2+6x+9').to_polynomial()
     /// >>> print(p.content())
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
@@ -8064,15 +8304,15 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
     #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
-    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+    ) -> PyResult<Vec<(Vec<usize>, PythonFiniteFieldPolynomial)>> {
         if let Some(vv) = vars {
             let mut vars = vec![];
 
@@ -8155,9 +8395,9 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
         let id = match x.expr.as_view() {
@@ -8259,8 +8499,8 @@ impl PythonFiniteFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.integrate(x))
     pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -8341,11 +8581,18 @@ impl PythonFiniteFieldPolynomial {
 }
 
 /// A Symbolica polynomial over Galois fields.
-#[pyclass(name = "PrimeTwoPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "PrimeTwoPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonPrimeTwoPolynomial {
     pub poly: MultivariatePolynomial<Z2, u16>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonPrimeTwoPolynomial = PythonPrimeTwoPolynomial);
 
 #[pymethods]
 impl PythonPrimeTwoPolynomial {
@@ -8460,15 +8707,19 @@ impl PythonPrimeTwoPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
-    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonPrimeTwoPolynomial> {
-        if m.is_some() {
+    pub fn __pow__(
+        &self,
+        exponent: usize,
+        modulo: Option<i64>,
+    ) -> PyResult<PythonPrimeTwoPolynomial> {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
         Ok(Self {
-            poly: self.poly.pow(p),
+            poly: self.poly.pow(exponent),
         })
     }
 
@@ -8597,7 +8848,10 @@ impl PythonPrimeTwoPolynomial {
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
-    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+    pub fn quot_rem(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(PythonPrimeTwoPolynomial, PythonPrimeTwoPolynomial)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
         } else {
@@ -8674,11 +8928,11 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> p = E('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
     /// >>> print('Square-free factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor_square_free():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+    pub fn factor_square_free(&self) -> Vec<(PythonPrimeTwoPolynomial, usize)> {
         self.poly
             .square_free_factorization()
             .into_iter()
@@ -8692,11 +8946,11 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> p = E('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
     /// >>> print('Factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor(&self) -> Vec<(Self, usize)> {
+    pub fn factor(&self) -> Vec<(PythonPrimeTwoPolynomial, usize)> {
         self.poly
             .factor()
             .into_iter()
@@ -8710,8 +8964,8 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -8739,7 +8993,7 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> p = E('3x^2+6x+9').to_polynomial()
     /// >>> print(p.content())
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
@@ -8753,15 +9007,15 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
     #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
-    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+    ) -> PyResult<Vec<(Vec<usize>, PythonPrimeTwoPolynomial)>> {
         if let Some(vv) = vars {
             let mut vars = vec![];
 
@@ -8844,9 +9098,9 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
         let id = match x.expr.as_view() {
@@ -8948,8 +9202,8 @@ impl PythonPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.integrate(x))
     pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -8982,11 +9236,18 @@ impl PythonPrimeTwoPolynomial {
 }
 
 /// A Symbolica polynomial over Z2 Galois fields.
-#[pyclass(name = "GaloisFieldPrimeTwoPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "GaloisFieldPrimeTwoPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPrimeTwoPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Z2>, u16>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonGaloisFieldPrimeTwoPolynomial = PythonGaloisFieldPrimeTwoPolynomial);
 
 #[pymethods]
 impl PythonGaloisFieldPrimeTwoPolynomial {
@@ -9103,17 +9364,17 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
 
     pub fn __pow__(
         &self,
-        p: usize,
-        m: Option<i64>,
+        exponent: usize,
+        modulo: Option<i64>,
     ) -> PyResult<PythonGaloisFieldPrimeTwoPolynomial> {
-        if m.is_some() {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
         Ok(Self {
-            poly: self.poly.pow(p),
+            poly: self.poly.pow(exponent),
         })
     }
 
@@ -9260,7 +9521,13 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
-    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+    pub fn quot_rem(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(
+        PythonGaloisFieldPrimeTwoPolynomial,
+        PythonGaloisFieldPrimeTwoPolynomial,
+    )> {
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -9322,7 +9589,14 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// >>> E('(1+x)(20+x)').to_polynomial(modulus=5).extended_gcd(E('x^2+2').to_polynomial(modulus=5))
     ///
     /// yields `(1, 3+4*x, 3+x)`.
-    pub fn extended_gcd(&self, rhs: Self) -> PyResult<(Self, Self, Self)> {
+    pub fn extended_gcd(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(
+        PythonGaloisFieldPrimeTwoPolynomial,
+        PythonGaloisFieldPrimeTwoPolynomial,
+        PythonGaloisFieldPrimeTwoPolynomial,
+    )> {
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -9382,11 +9656,11 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> p = E('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
     /// >>> print('Square-free factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor_square_free():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+    pub fn factor_square_free(&self) -> Vec<(PythonGaloisFieldPrimeTwoPolynomial, usize)> {
         self.poly
             .square_free_factorization()
             .into_iter()
@@ -9400,11 +9674,11 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> p = E('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
     /// >>> print('Factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor(&self) -> Vec<(Self, usize)> {
+    pub fn factor(&self) -> Vec<(PythonGaloisFieldPrimeTwoPolynomial, usize)> {
         self.poly
             .factor()
             .into_iter()
@@ -9418,8 +9692,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -9447,7 +9721,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> p = E('3x^2+6x+9').to_polynomial()
     /// >>> print(p.content())
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
@@ -9461,15 +9735,15 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
     #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
-    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+    ) -> PyResult<Vec<(Vec<usize>, PythonGaloisFieldPrimeTwoPolynomial)>> {
         if let Some(vv) = vars {
             let mut vars = vec![];
 
@@ -9552,9 +9826,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
         let id = match x.expr.as_view() {
@@ -9656,8 +9930,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.integrate(x))
     pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -9694,11 +9968,18 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
 }
 
 /// A Symbolica polynomial over Galois fields.
-#[pyclass(name = "GaloisFieldPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "GaloisFieldPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Zp>, u16>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonGaloisFieldPolynomial = PythonGaloisFieldPolynomial);
 
 #[pymethods]
 impl PythonGaloisFieldPolynomial {
@@ -9813,15 +10094,19 @@ impl PythonGaloisFieldPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
-    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonGaloisFieldPolynomial> {
-        if m.is_some() {
+    pub fn __pow__(
+        &self,
+        exponent: usize,
+        modulo: Option<i64>,
+    ) -> PyResult<PythonGaloisFieldPolynomial> {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
         Ok(Self {
-            poly: self.poly.pow(p),
+            poly: self.poly.pow(exponent),
         })
     }
 
@@ -9950,7 +10235,10 @@ impl PythonGaloisFieldPolynomial {
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
-    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+    pub fn quot_rem(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(PythonGaloisFieldPolynomial, PythonGaloisFieldPolynomial)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
         } else {
@@ -10027,11 +10315,11 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> p = E('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
     /// >>> print('Square-free factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor_square_free():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+    pub fn factor_square_free(&self) -> Vec<(PythonGaloisFieldPolynomial, usize)> {
         self.poly
             .square_free_factorization()
             .into_iter()
@@ -10045,11 +10333,11 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> p = E('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
     /// >>> print('Factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor(&self) -> Vec<(Self, usize)> {
+    pub fn factor(&self) -> Vec<(PythonGaloisFieldPolynomial, usize)> {
         self.poly
             .factor()
             .into_iter()
@@ -10063,8 +10351,8 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -10092,7 +10380,7 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> p = E('3x^2+6x+9').to_polynomial()
     /// >>> print(p.content())
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
@@ -10106,15 +10394,15 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
     #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
-    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+    ) -> PyResult<Vec<(Vec<usize>, PythonGaloisFieldPolynomial)>> {
         if let Some(vv) = vars {
             let mut vars = vec![];
 
@@ -10197,9 +10485,9 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
         let id = match x.expr.as_view() {
@@ -10301,8 +10589,8 @@ impl PythonGaloisFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.integrate(x))
     pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -10340,11 +10628,18 @@ impl PythonGaloisFieldPolynomial {
 }
 
 /// A Symbolica polynomial over number fields.
-#[pyclass(name = "NumberFieldPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "NumberFieldPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonNumberFieldPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Q>, u16>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonNumberFieldPolynomial = PythonNumberFieldPolynomial);
 
 #[pymethods]
 impl PythonNumberFieldPolynomial {
@@ -10459,15 +10754,19 @@ impl PythonNumberFieldPolynomial {
             .format_string(&DEFAULT_PRINT_OPTIONS, PrintState::new()))
     }
 
-    pub fn __pow__(&self, p: usize, m: Option<i64>) -> PyResult<PythonNumberFieldPolynomial> {
-        if m.is_some() {
+    pub fn __pow__(
+        &self,
+        exponent: usize,
+        modulo: Option<i64>,
+    ) -> PyResult<PythonNumberFieldPolynomial> {
+        if modulo.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
             ));
         }
 
         Ok(Self {
-            poly: self.poly.pow(p),
+            poly: self.poly.pow(exponent),
         })
     }
 
@@ -10596,7 +10895,10 @@ impl PythonNumberFieldPolynomial {
     }
 
     /// Divide `self` by `rhs`, returning the quotient and remainder.
-    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+    pub fn quot_rem(
+        &self,
+        rhs: Self,
+    ) -> PyResult<(PythonNumberFieldPolynomial, PythonNumberFieldPolynomial)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
         } else {
@@ -10673,11 +10975,11 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> p = E('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
     /// >>> print('Square-free factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor_square_free():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+    pub fn factor_square_free(&self) -> Vec<(PythonNumberFieldPolynomial, usize)> {
         self.poly
             .square_free_factorization()
             .into_iter()
@@ -10691,11 +10993,11 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> p = E('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
     /// >>> print('Factorization of {}:'.format(p))
     /// >>> for f, exp in p.factor():
     /// >>>     print('\t({})^{}'.format(f, exp))
-    pub fn factor(&self) -> Vec<(Self, usize)> {
+    pub fn factor(&self) -> Vec<(PythonNumberFieldPolynomial, usize)> {
         self.poly
             .factor()
             .into_iter()
@@ -10709,8 +11011,8 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -10738,7 +11040,7 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> p = E('3x^2+6x+9').to_polynomial()
     /// >>> print(p.content())
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
@@ -10752,15 +11054,15 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
     #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
-    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+    ) -> PyResult<Vec<(Vec<usize>, PythonNumberFieldPolynomial)>> {
         if let Some(vv) = vars {
             let mut vars = vec![];
 
@@ -10843,9 +11145,9 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> x = S('x')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
         let id = match x.expr.as_view() {
@@ -10947,8 +11249,8 @@ impl PythonNumberFieldPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('x^2+2').to_polynomial()
     /// >>> print(p.integrate(x))
     pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -10991,7 +11293,14 @@ impl PythonNumberFieldPolynomial {
     /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
     ///
     /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
-    pub fn extend(&self, b: Self) -> (Self, PythonPolynomial, PythonPolynomial) {
+    pub fn extend(
+        &self,
+        b: Self,
+    ) -> (
+        PythonNumberFieldPolynomial,
+        PythonPolynomial,
+        PythonPolynomial,
+    ) {
         let (new_field, map1, map2) = self.poly.ring.extend(&b.poly);
 
         (
@@ -11018,7 +11327,11 @@ impl PythonNumberFieldPolynomial {
 }
 
 /// A Symbolica rational polynomial.
-#[pyclass(name = "RationalPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "RationalPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
     pub poly: RationalPolynomial<IntegerRing, u16>,
@@ -11193,8 +11506,8 @@ impl PythonRationalPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -11224,8 +11537,8 @@ impl PythonRationalPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
     /// >>> for pp in p.apart(x):
     /// >>>     print(pp)
     #[pyo3(signature = (x = None))]
@@ -11350,7 +11663,7 @@ impl PythonRationalPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> e = Expression.parse('(x*y+2*x+x^2)/(1+y^2+x^7)')
+    /// >>> e = E('(x*y+2*x+x^2)/(1+y^2+x^7)')
     /// >>> p = e.to_rational_polynomial()
     /// >>> print((e - p.to_expression()).expand())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
@@ -11359,7 +11672,11 @@ impl PythonRationalPolynomial {
 }
 
 /// A Symbolica rational polynomial over finite fields.
-#[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "FiniteFieldRationalPolynomial", subclass)]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
     pub poly: RationalPolynomial<Zp, u16>,
@@ -11534,8 +11851,8 @@ impl PythonFiniteFieldRationalPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
     /// >>> print(p.derivative(x))
     pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
         let x = self
@@ -11564,8 +11881,8 @@ impl PythonFiniteFieldRationalPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> x = S('x')
+    /// >>> p = E('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
     /// >>> for pp in p.apart(x):
     /// >>>     print(pp)
     pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
@@ -11654,6 +11971,9 @@ pub enum ConvertibleToRationalPolynomial {
     Expression(ConvertibleToExpression),
 }
 
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(ConvertibleToRationalPolynomial = PythonRationalPolynomial | PythonExpression);
+
 impl ConvertibleToRationalPolynomial {
     pub fn to_rational_polynomial(self) -> PyResult<PythonRationalPolynomial> {
         match self {
@@ -11670,7 +11990,11 @@ impl ConvertibleToRationalPolynomial {
 }
 
 /// An optimized evaluator for expressions.
-#[pyclass(name = "Evaluator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Evaluator")]
 pub struct PythonExpressionEvaluator {
     pub eval_rat: ExpressionEvaluator<Complex<Rational>>,
     pub eval: Option<ExpressionEvaluatorWithExternalFunctions<f64>>,
@@ -12083,7 +12407,11 @@ impl PythonExpressionEvaluator {
 }
 
 /// A compiled and optimized evaluator for expressions.
-#[pyclass(name = "CompiledRealEvaluator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "CompiledRealEvaluator")]
 #[derive(Clone)]
 pub struct PythonCompiledRealExpressionEvaluator {
     pub eval: CompiledRealEvaluator,
@@ -12139,7 +12467,11 @@ impl PythonCompiledRealExpressionEvaluator {
 }
 
 /// A compiled and optimized evaluator for expressions.
-#[pyclass(name = "CompiledCudaRealEvaluator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "CompiledCudaRealEvaluator")]
 #[derive(Clone)]
 pub struct PythonCompiledCudaRealExpressionEvaluator {
     pub eval: CompiledCudaRealEvaluator,
@@ -12207,7 +12539,11 @@ impl PythonCompiledCudaRealExpressionEvaluator {
 }
 
 /// A compiled and optimized evaluator for expressions.
-#[pyclass(name = "CompiledCudaComplexEvaluator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "CompiledCudaComplexEvaluator")]
 #[derive(Clone)]
 pub struct PythonCompiledCudaComplexExpressionEvaluator {
     pub eval: CompiledCudaComplexEvaluator,
@@ -12292,7 +12628,11 @@ impl PythonCompiledCudaComplexExpressionEvaluator {
 }
 
 /// A compiled and optimized evaluator for expressions.
-#[pyclass(name = "CompiledComplexEvaluator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "CompiledComplexEvaluator")]
 #[derive(Clone)]
 pub struct PythonCompiledComplexExpressionEvaluator {
     pub eval: CompiledComplexEvaluator,
@@ -12365,8 +12705,15 @@ pub enum ScalarOrMatrix {
     Matrix(PythonMatrix),
 }
 
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(ScalarOrMatrix = ConvertibleToRationalPolynomial | PythonMatrix);
+
 /// A Symbolica matrix with rational polynomial coefficients.
-#[pyclass(name = "Matrix", module = "symbolica", subclass)]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Matrix", subclass)]
 #[derive(Clone)]
 pub struct PythonMatrix {
     pub matrix: Matrix<RationalPolynomialField<IntegerRing, u16>>,
@@ -12917,7 +13264,11 @@ impl PythonMatrix {
 
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
 /// accessible with `d` (empty when there are not discrete layers), and the final continuous layer `c` if it is present.
-#[pyclass(name = "Sample", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Sample")]
 #[derive(Clone)]
 pub struct PythonSample {
     #[pyo3(get)]
@@ -12991,8 +13342,12 @@ impl PythonSample {
 ///
 /// Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
 /// which is an instance counter starting at 0.
-#[pyclass(name = "RandomNumberGenerator", module = "symbolica")]
-struct PythonRandomNumberGenerator {
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "RandomNumberGenerator")]
+pub struct PythonRandomNumberGenerator {
     state: MonteCarloRng,
 }
 
@@ -13008,11 +13363,18 @@ impl PythonRandomNumberGenerator {
     }
 }
 
-#[pyclass(name = "NumericalIntegrator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "NumericalIntegrator")]
 #[derive(Clone)]
-struct PythonNumericalIntegrator {
+pub struct PythonNumericalIntegrator {
     grid: Grid<f64>,
 }
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(&mut PythonRandomNumberGenerator = PythonRandomNumberGenerator);
 
 #[pymethods]
 impl PythonNumericalIntegrator {
@@ -13134,8 +13496,8 @@ impl PythonNumericalIntegrator {
     /// Import an exported grid from another thread or machine.
     /// Use `export_grid` to export the grid.
     #[classmethod]
-    fn import_grid(_cls: &Bound<'_, PyType>, grid: &[u8]) -> PyResult<Self> {
-        let grid = bincode::decode_from_slice(grid, bincode::config::standard())
+    fn import_grid(_cls: &Bound<'_, PyType>, grid: Bound<'_, PyBytes>) -> PyResult<Self> {
+        let grid = bincode::decode_from_slice(grid.extract()?, bincode::config::standard())
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?
             .0;
 
@@ -13307,9 +13669,13 @@ impl PythonNumericalIntegrator {
 /// A graph that supported directional edges, parallel edges, self-edges and custom data on the nodes and edges.
 ///
 /// Warning: modifying the graph if it is contained in a `dict` or `set` will invalidate the hash.
-#[pyclass(name = "Graph", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Graph")]
 #[derive(Clone, PartialEq, Eq, Hash)]
-struct PythonGraph {
+pub struct PythonGraph {
     graph: Graph<Atom, Atom>,
 }
 
@@ -13364,9 +13730,50 @@ impl PythonGraph {
     }
 
     /// Generate all connected graphs with `external_edges` half-edges and the given allowed list
-    /// of vertex connections.
+    /// of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
+    /// there is no direction) and edge data.
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+    /// If `KeyboardInterrupt` is triggered during the generation, the generation will stop and will yield the currently generated
+    /// graphs.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> g, q, gh = S('g', 'q', 'gh')
+    /// >>> gp, qp, qbp, ghp, ghbp = (None, g), (True, q), (False, q), (True, gh), (False, gh)
+    /// >>> graphs = Graph.generate([(1, gp), (2, gp)],
+    /// >>>                         [[gp, gp, gp], [gp, gp, gp, gp],
+    /// >>>                         [qp, qbp, gp], [ghp, ghbp, gp]], max_loops=2)
+    /// >>> for (g, sym) in graphs.items():
+    /// >>>     print(f'Symmetry factor = 1/{sym}:')
+    /// >>>     print(g.to_dot())
+    ///
+    /// generates all connected graphs up to 2 loops with the specified vertices.
+    ///
+    /// Parameters
+    /// ----------
+    /// external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]]
+    ///     The external edges, consisting of a tuple of the node data and a tuple of the edge direction and edge data.
+    ///     If the node data is the same, flip symmetries will be recognized.
+    /// vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]]
+    ///     The allowed connections for each vertex.
+    /// max_vertices: int, optional
+    ///     The maximum number of vertices in the graph.
+    /// max_loops: int, optional
+    ///     The maximum number of loops in the graph.
+    /// max_bridges: int, optional
+    ///     The maximum number of bridges in the graph.
+    /// allow_self_loops: bool, optional
+    ///     Whether self-edges are allowed.
+    /// allow_zero_flow_edges: bool, optional
+    ///     Whether bridges that do not need to be crossed to connect external vertices are allowed.
+    /// filter_fn: Optional[Callable[[Graph, int], bool]], optional
+    ///     Set a filter function that is called during the graph generation.
+    ///     The first argument is the graph `g` and the second argument the vertex count `n`
+    ///     that specifies that the first `n` vertices are completed (no new edges will) be
+    ///     assigned to them. The filter function should return `true` if the current
+    ///     incomplete graph is allowed, else it should return `false` and the graph is discarded.
     #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None,
         max_bridges = None, allow_self_loops = None, allow_zero_flow_edges = None, filter_fn = None))]
     #[classmethod]
@@ -13677,9 +14084,13 @@ impl PythonGraph {
     }
 }
 
-#[pyclass(name = "Integer", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "Integer")]
 #[derive(Clone, PartialEq, Eq, Hash)]
-struct PythonInteger {}
+pub struct PythonInteger {}
 
 #[pymethods]
 impl PythonInteger {
@@ -13809,9 +14220,13 @@ impl PythonInteger {
     }
 }
 
-#[pyclass(name = "PrimeIterator", module = "symbolica")]
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "PrimeIterator")]
 #[derive(Clone, PartialEq, Eq, Hash)]
-struct PythonPrimeIterator {
+pub struct PythonPrimeIterator {
     cur: PrimeIteratorU64,
 }
 
@@ -13827,3 +14242,6 @@ impl PythonPrimeIterator {
         self.cur.next()
     }
 }
+
+#[cfg(feature = "python_stubgen")]
+pyo3_stub_gen::define_stub_info_gatherer!(stub_info);

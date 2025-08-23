@@ -46,9 +46,9 @@ use colored::Colorize;
 use once_cell::sync::OnceCell;
 use tinyjson::JsonValue;
 
-#[cfg(feature = "python_no_module")]
+#[cfg(feature = "python_export")]
 pub mod api;
-#[cfg(not(feature = "python_no_module"))]
+#[cfg(not(feature = "python_export"))]
 mod api;
 pub mod atom;
 pub mod coefficient;

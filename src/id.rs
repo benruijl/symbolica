@@ -688,6 +688,26 @@ impl<'a> AtomView<'a> {
         has_complex_coefficient
     }
 
+    /// Check if the expression has any non-integer exponents.
+    pub fn has_roots(&self) -> bool {
+        let mut has_roots = false;
+        self.visitor(&mut |a| {
+            if let AtomView::Pow(p) = a {
+                let (_, exp) = p.get_base_exp();
+                if let AtomView::Num(n) = exp {
+                    if !n.get_coeff_view().is_integer() {
+                        has_roots = true;
+                    }
+                } else {
+                    has_roots = true;
+                }
+            }
+            !has_roots
+        });
+
+        has_roots
+    }
+
     /// Check if the expression can be considered a polynomial in some variables, including
     /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
     /// `f(x)+x` is not a polynomial.
@@ -1178,7 +1198,6 @@ impl<'a> AtomView<'a> {
         }
 
         // no match found at this level, so check the children
-        
 
         match self {
             AtomView::Fun(f) => {

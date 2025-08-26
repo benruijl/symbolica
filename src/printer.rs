@@ -403,7 +403,17 @@ impl AtomView<'_> {
     fn to_canonical_view_impl(&self, out: &mut String) {
         fn add_paren(cur: AtomView, s: AtomView) -> bool {
             if let AtomView::Pow(_) = cur {
-                matches!(s, AtomView::Add(_) | AtomView::Mul(_))
+                match s {
+                    AtomView::Var(_) => false,
+                    AtomView::Num(n) => match n.get_coeff_view() {
+                        CoefficientView::Natural(c, d, ic, _) => c < 0 || ic != 0 || d != 1,
+                        CoefficientView::Large(r, i) => {
+                            r.is_negative() || !i.is_zero() || !r.to_rat().is_integer()
+                        }
+                        _ => true,
+                    },
+                    _ => true,
+                }
             } else if let AtomView::Mul(_) = cur {
                 matches!(s, AtomView::Add(_))
             } else {

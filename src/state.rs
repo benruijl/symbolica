@@ -19,7 +19,7 @@ use byteorder::LittleEndian;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
-use crate::atom::{FunctionAttribute, NamespacedSymbol, NormalizationFunction};
+use crate::atom::{DerivativeFunction, FunctionAttribute, NamespacedSymbol, NormalizationFunction};
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
 use crate::printer::PrintFunction;
@@ -73,6 +73,7 @@ pub(crate) struct SymbolData {
     pub(crate) line: usize,
     pub(crate) custom_normalization: Option<NormalizationFunction>,
     pub(crate) custom_print: Option<PrintFunction>,
+    pub(crate) custom_derivative: Option<DerivativeFunction>,
 }
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -162,12 +163,14 @@ impl State {
                 &[FunctionAttribute::Symmetric],
                 None,
                 None,
+                None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fc{}", i)),
                 &[FunctionAttribute::Cyclesymmetric],
+                None,
                 None,
                 None,
             );
@@ -178,6 +181,7 @@ impl State {
                 &[FunctionAttribute::Antisymmetric],
                 None,
                 None,
+                None,
             );
         }
         for i in 0..5 {
@@ -186,12 +190,14 @@ impl State {
                 &[FunctionAttribute::Linear],
                 None,
                 None,
+                None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fsl{}", i)),
                 &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
+                None,
                 None,
                 None,
             );
@@ -309,6 +315,7 @@ impl State {
                         line: name.line,
                         custom_normalization: None,
                         custom_print: None,
+                        custom_derivative: None,
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
@@ -335,6 +342,7 @@ impl State {
         attributes: &[FunctionAttribute],
         normalization_function: Option<NormalizationFunction>,
         print_function: Option<PrintFunction>,
+        derivative_function: Option<DerivativeFunction>,
     ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => {
@@ -398,6 +406,7 @@ impl State {
                         line: name.line,
                         custom_normalization: normalization_function,
                         custom_print: print_function,
+                        custom_derivative: derivative_function,
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);

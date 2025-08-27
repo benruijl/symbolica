@@ -291,7 +291,7 @@ fn get_license_key(email: String) -> PyResult<()> {
         .map_err(exceptions::PyConnectionError::new_err)
 }
 
-#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None,custom_print=None))]
+#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None,custom_print=None,custom_derivative=None))]
 /// Shorthand notation for :func:`Expression.symbol`.
 fn symbol_shorthand(
     names: &Bound<'_, PyTuple>,
@@ -301,6 +301,7 @@ fn symbol_shorthand(
     is_linear: Option<bool>,
     custom_normalization: Option<PythonTransformer>,
     custom_print: Option<PyObject>,
+    custom_derivative: Option<PyObject>,
     py: Python<'_>,
 ) -> PyResult<PyObject> {
     PythonExpression::symbol(
@@ -313,6 +314,7 @@ fn symbol_shorthand(
         is_linear,
         custom_normalization,
         custom_print,
+        custom_derivative,
     )
 }
 
@@ -2738,7 +2740,7 @@ impl PythonExpression {
     /// Define a custom normalization function:
     /// >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     /// >>> E("real_log(exp(x)) + real_log(5)")
-    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None, custom_print=None))]
+    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None, custom_print=None, custom_derivative=None))]
     #[classmethod]
     pub fn symbol(
         _cls: &Bound<'_, PyType>,
@@ -2750,6 +2752,7 @@ impl PythonExpression {
         is_linear: Option<bool>,
         custom_normalization: Option<PythonTransformer>,
         custom_print: Option<PyObject>,
+        custom_derivative: Option<PyObject>,
     ) -> PyResult<PyObject> {
         if names.is_empty() {
             return Err(exceptions::PyValueError::new_err(
@@ -2770,6 +2773,7 @@ impl PythonExpression {
             && is_linear.is_none()
             && custom_normalization.is_none()
             && custom_print.is_none()
+            && custom_derivative.is_none()
         {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
@@ -2862,6 +2866,21 @@ impl PythonExpression {
                             .extract::<Option<String>>(py)
                             .unwrap()
                         })
+                    },
+                ))
+            }
+
+            if let Some(f) = custom_derivative {
+                symbol = symbol.with_derivative_function(Box::new(
+                    move |input: AtomView<'_>, arg: usize, out: &mut Atom| {
+                        *out = Python::with_gil(|py| {
+                            f.call1(py, (PythonExpression::from(input.to_owned()), arg))
+                                .unwrap()
+                                .extract::<PythonExpression>(py)
+                                .unwrap()
+                        })
+                        .expr;
+                        true
                     },
                 ))
             }

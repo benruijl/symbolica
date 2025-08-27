@@ -56,7 +56,8 @@ def S(name: str,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
       custom_normalization: Optional[Transformer] = None,
-      custom_print: Optional[Callable[..., Optional[str]]] = None) -> Expression:
+      custom_print: Optional[Callable[..., Optional[str]]] = None,
+      custom_derivative: Optional[Callable[[Expression, int], Expression]] = None) -> Expression:
     """
     Create new symbols from `names`. Symbols can have attributes,
     such as symmetries. If no attributes
@@ -108,6 +109,11 @@ def S(name: str,
 
     If the function returns `None`, the default print function is used.
 
+    Define a custom derivative function:
+    >>> tag = S('tag', custom_derivative=lambda f, index: f)
+    >>> x = S('x')
+    >>> tag(3, x).derivative(x)
+
     Parameters
     ----------
     name : str
@@ -128,6 +134,8 @@ def S(name: str,
         A function that is called when printing the variable/function, which is provided as its first argument.
         This function should return a string, or `None` if the default print function should be used.
         The custom print function takes in keyword arguments that are the same as the arguments of the `format` function.
+    custom_derivative: Optional[Callable[[Expression, int], Expression]]:
+        A function that is called when computing the derivative of a function in a given argument.
     """
 
 
@@ -322,7 +330,8 @@ class Expression:
                is_cyclesymmetric: Optional[bool] = None,
                is_linear: Optional[bool] = None,
                custom_normalization: Optional[Transformer] = None,
-               custom_print: Optional[Callable[[Expression], Optional[str]]] = None) -> Expression:
+               custom_print: Optional[Callable[..., Optional[str]]] = None,
+               custom_derivative: Optional[Callable[[Expression, int], Expression]] = None) -> Expression:
         """
         Create new symbols from `names`. Symbols can have attributes,
         such as symmetries. If no attributes
@@ -374,6 +383,11 @@ class Expression:
 
         If the function returns `None`, the default print function is used.
 
+        Define a custom derivative function:
+        >>> tag = S('tag', custom_derivative=lambda f, index: f)
+        >>> x = S('x')
+        >>> tag(3, x).derivative(x)
+
         Parameters
         ----------
         name : str
@@ -394,6 +408,8 @@ class Expression:
             A function that is called when printing the variable/function, which is provided as its first argument.
             This function should return a string, or `None` if the default print function should be used.
             The custom print function takes in keyword arguments that are the same as the arguments of the `format` function.
+        custom_derivative: Optional[Callable[[Expression, int], Expression]]:
+            A function that is called when computing the derivative of a function in a given argument.
         """
 
     @overload

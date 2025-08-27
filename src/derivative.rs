@@ -4,10 +4,9 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomView, FunctionBuilder, Symbol},
+    atom::{Atom, AtomCore, AtomView, FunctionBuilder, Symbol},
     coefficient::{Coefficient, CoefficientView},
-    combinatorics::CombinationWithReplacementIterator,
-    domains::{atom::AtomField, integer::Integer, rational::Rational},
+    domains::{Ring, atom::AtomField, integer::Integer, rational::Rational},
     poly::{Variable, series::Series},
     state::Workspace,
 };
@@ -142,6 +141,16 @@ impl AtomView<'_> {
                 let mut n = workspace.new_atom();
                 let mut mul = workspace.new_atom();
                 for (index, arg_der) in args_der {
+                    if let Some(custom_der) = &f.get_symbol().get_data().custom_derivative {
+                        if custom_der(*self, index, &mut fn_der) {
+                            let m = mul.to_mul();
+                            m.extend(fn_der.as_view());
+                            m.extend(arg_der.as_view());
+                            a.extend(m.as_view());
+                            continue;
+                        }
+                    }
+
                     let p = fn_der.to_fun(Symbol::DERIVATIVE);
 
                     if is_der {
@@ -320,8 +329,7 @@ impl AtomView<'_> {
         }
     }
 
-    /// Series expand in `x` around `expansion_point` to depth `depth`.
-    pub fn series(
+    pub(crate) fn series(
         &self,
         x: Symbol,
         expansion_point: AtomView,
@@ -401,6 +409,24 @@ impl AtomView<'_> {
                     return Ok(info.constant(f.to_owned().into()));
                 }
 
+                if !f.get_symbol().is_builtin()
+                    && args_series
+                        .iter()
+                        .any(|x| x.get_trailing_exponent().is_negative())
+                {
+                    // fill in the expanded arguments, perhaps the leading negative exponent will be popped out,
+                    // in which case we can proceed
+                    let mut f_eval = FunctionBuilder::new(f.get_symbol());
+                    for c in &args_series {
+                        f_eval = f_eval.add_arg(c.to_atom());
+                    }
+                    let a = f_eval.finish();
+
+                    if !matches!(a, Atom::Fun(_)) {
+                        return a.as_view().series_impl(x, expansion_point, info);
+                    }
+                }
+
                 match f.get_symbol() {
                     Symbol::COS => args_series[0].cos(),
                     Symbol::SIN => args_series[0].sin(),
@@ -408,60 +434,45 @@ impl AtomView<'_> {
                     Symbol::LOG => args_series[0].log(),
                     Symbol::SQRT => args_series[0].rpow((1, 2).into()),
                     _ => {
-                        // TODO: also check for log(x)?
+                        // TODO: also check for log(x)
                         if args_series
                             .iter()
                             .any(|x| x.get_trailing_exponent().is_negative())
                         {
-                            return Err("Cannot series expand custom function with poles");
+                            return Err("Cannot series expand custom function with poles. If the function is linear in the expansion variable,
+                            you can add a custom normalization function that extracts the poles.");
                         }
+
+                        let mut f_eval = FunctionBuilder::new(f.get_symbol());
+                        for c in &args_series {
+                            f_eval = f_eval.add_arg(c.to_atom());
+                        }
+                        let a = f_eval.finish();
+
+                        let constant = a.replace(x).with(expansion_point.to_owned());
 
                         // TODO: depth is an overestimate
                         let order = info.absolute_order();
                         let depth = order.numerator().to_i64().unwrap() as u32
                             * order.denominator().to_i64().unwrap() as u32;
 
-                        // strip the constant terms
-                        let mut constants = vec![];
-                        for x in &mut args_series {
-                            if x.get_trailing_exponent().is_zero() {
-                                let c = x.get_trailing_coefficient();
-                                *x = &*x - &x.constant(c.clone());
-                                constants.push(c);
-                            } else {
-                                constants.push(Atom::num(0));
-                            }
-                        }
-
-                        let mut f_eval = FunctionBuilder::new(f.get_symbol());
-                        for c in &constants {
-                            f_eval = f_eval.add_arg(c);
-                        }
-                        let constant = f_eval.finish();
-
                         let mut result = info.constant(constant.clone());
+
+                        let mut d = a.clone();
                         for i in 1..=depth {
-                            let mut it =
-                                CombinationWithReplacementIterator::new(args_series.len(), i);
+                            d = d.derivative(x);
 
-                            while let Some(x) = it.next() {
-                                let mut f_der = FunctionBuilder::new(Symbol::DERIVATIVE);
-                                let mut term = info.one();
-                                for (arg, pow) in x.iter().enumerate() {
-                                    if *pow > 0 {
-                                        term = &term * &args_series[arg].npow(*pow as usize);
-                                    }
-                                    f_der = f_der.add_arg(Atom::num(*pow as i64));
-                                }
-
-                                f_der = f_der.add_arg(&constant);
-
-                                result = &result
-                                    + &term
-                                        .mul_coeff(&f_der.finish())
-                                        .mul_coeff(&Atom::num(Integer::multinom(x)))
-                                        .div_coeff(&Atom::num(Integer::factorial(i)));
+                            if d.is_zero() {
+                                break;
                             }
+
+                            let rep = d.replace(x).with(expansion_point.to_owned()).expand();
+
+                            result = &result
+                                + &info
+                                    .monomial(info.get_field().one(), i.into())
+                                    .mul_coeff(&rep)
+                                    .div_coeff(&Atom::num(Integer::factorial(i)));
                         }
 
                         Ok(result)
@@ -895,8 +906,7 @@ mod test {
             .to_atom();
 
         let res = parse!(
-            "f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
-            +v1^2*(1/2*der(0,2,f(1,0))+1/2*der(1,0,f(1,0))+der(1,1,f(1,0))+1/2*der(2,0,f(1,0)))"
+            "f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))+1/2*v1^2*(der(0,2,f(1,0))+der(1,0,f(1,0))+2*der(1,1,f(1,0))+der(2,0,f(1,0)))"
         );
         assert_eq!(t, res);
     }

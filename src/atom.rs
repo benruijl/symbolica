@@ -51,7 +51,7 @@ use crate::{
     domains::{float::Complex, rational::Rational},
     parser::Token,
     printer::{AtomPrinter, PrintFunction, PrintOptions},
-    state::{RecycledAtom, State, Workspace},
+    state::{RecycledAtom, State, SymbolData, Workspace},
     transformer::StatsOptions,
 };
 
@@ -269,6 +269,24 @@ macro_rules! hide_namespace {
 /// ```
 pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send + Sync>;
 
+/// A function that is called when a derivative of its arguments gets taken.
+/// The argument index to derive is specified in `arg`.
+/// If the default derivative should be taken, the function should return `false`.
+/// Otherwise, the function must return `true` and set the `out` argument to the normalized value.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::atom::{Atom, DerivativeFunction};
+///
+/// let derivative_fn: DerivativeFunction = Box::new(|view, arg, out| {
+///     // Example derivative logic for a transparent function
+///     *out = Atom::num(1);
+///     true
+/// });
+/// ```
+pub type DerivativeFunction = Box<dyn Fn(AtomView, usize, &mut Atom) -> bool + Send + Sync>;
+
 /// Attributes that can be assigned to functions.
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionAttribute {
@@ -335,6 +353,7 @@ pub struct SymbolBuilder {
     attributes: Option<Cow<'static, [FunctionAttribute]>>,
     normalization_function: Option<NormalizationFunction>,
     print_function: Option<PrintFunction>,
+    derivative_function: Option<DerivativeFunction>,
 }
 
 impl SymbolBuilder {
@@ -346,6 +365,7 @@ impl SymbolBuilder {
             attributes: None,
             normalization_function: None,
             print_function: None,
+            derivative_function: None,
         }
     }
 
@@ -416,6 +436,30 @@ impl SymbolBuilder {
         self
     }
 
+    /// Add a derivative function.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, Symbol}, wrap_symbol};
+    ///
+    /// let f = Symbol::new(wrap_symbol!("tag")).with_derivative_function(|view, arg, out| {
+    ///       if arg == 1 {
+    ///          *out = Atom::num(1);
+    ///       } else {
+    ///         *out = Atom::num(0);
+    ///       }
+    ///       true
+    /// }).build().unwrap();
+    /// ```
+    pub fn with_derivative_function(
+        mut self,
+        derivative_function: impl Fn(AtomView, usize, &mut Atom) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.derivative_function = Some(Box::new(derivative_function));
+        self
+    }
+
     /// Create a new symbol or return the existing symbol with the same name.
     ///
     /// This function will return an error when an existing symbol is redefined
@@ -424,6 +468,7 @@ impl SymbolBuilder {
         if self.attributes.is_none()
             && self.normalization_function.is_none()
             && self.print_function.is_none()
+            && self.derivative_function.is_none()
         {
             State::get_state_mut().get_symbol(self.symbol)
         } else {
@@ -432,6 +477,7 @@ impl SymbolBuilder {
                 self.attributes.as_ref().map(|x| x.as_ref()).unwrap_or(&[]),
                 self.normalization_function,
                 self.print_function,
+                self.derivative_function,
             )
         }
     }
@@ -498,7 +544,7 @@ impl Symbol {
     /// assert_eq!(x.get_stripped_name(), "x");
     /// ```
     pub fn get_stripped_name(&self) -> &str {
-        let d = State::get_symbol_data(*self);
+        let d = self.get_data();
         &d.name[d.namespace.len() + 2..]
     }
 
@@ -607,8 +653,8 @@ impl Symbol {
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
-    pub fn is_builtin(id: Symbol) -> bool {
-        State::is_builtin(id)
+    pub fn is_builtin(self) -> bool {
+        State::is_builtin(self)
     }
 
     /// Expert use: create a new variable symbol. This constructor should be used with care as there are no checks
@@ -649,7 +695,7 @@ impl Symbol {
         opts: &PrintOptions,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        let data = State::get_symbol_data(*self);
+        let data = self.get_data();
         let (namespace, name) = (&data.namespace, &data.name[data.namespace.len() + 2..]);
 
         if let Some(custom_print) = &data.custom_print {
@@ -697,6 +743,11 @@ impl Symbol {
                 f.write_str(name)
             }
         }
+    }
+
+    /// Get data related to the symbol.
+    pub(crate) fn get_data(self) -> &'static SymbolData {
+        State::get_symbol_data(self)
     }
 }
 
@@ -1709,7 +1760,7 @@ macro_rules! function {
 /// });
 /// ```
 ///
-/// You can also define a custom printing function using the `print` flag:
+/// You can define a custom printing function using the `print` flag:
 /// ```no_run
 /// use symbolica::symbol;
 /// use symbolica::atom::{AtomCore, AtomView};
@@ -1736,6 +1787,15 @@ macro_rules! function {
 /// });
 /// ```
 /// which renders the symbol/function as `\mu_{...}` in LaTeX.
+///
+/// You can define a custom derivative function using the `der` flag:
+/// ```no_run
+/// use symbolica::{atom::Atom, symbol};
+/// let _ = symbol!("tag", der = |a, arg, out| {
+///     out.set_from_view(&a); // function behaves as a tag
+///     true
+/// });
+/// ```
 ///
 /// To set special settings together with attributes, separate the attributes with another
 /// `;`:
@@ -1807,7 +1867,12 @@ macro_rules! symbol_set_attr {
     ($b: expr, norm = $norm: expr) => {
         $b.with_normalization_function($norm)
     };
-    ($b: expr, print = $print: expr) => {{ $b.with_print_function($print) }};
+    ($b: expr, print = $print: expr) => {
+        $b.with_print_function($print)
+    };
+    ($b: expr, der = $der: expr) => {
+        $b.with_derivative_function($der)
+    };
 }
 
 /// Try to create a new symbol or fetch the existing one with the same name.

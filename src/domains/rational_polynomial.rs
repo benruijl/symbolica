@@ -581,6 +581,15 @@ where
     }
 }
 
+impl<R: Field, E: PositiveExponent> RationalPolynomial<R, E> {
+    /// Evaluate the rational polynomial.
+    pub fn evaluate(&self, x: &[R::Element]) -> R::Element {
+        let num = self.numerator.replace_all(x);
+        let den = self.denominator.replace_all(x);
+        self.numerator.ring.div(&num, &den)
+    }
+}
+
 impl<R: Ring, E: PositiveExponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)

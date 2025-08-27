@@ -387,7 +387,7 @@ impl AtomView<'_> {
     }
 
     /// Construct a printer for the atom with special options.
-    pub(crate) fn printer(&self, opts: PrintOptions) -> AtomPrinter {
+    pub(crate) fn printer(&self, opts: PrintOptions) -> AtomPrinter<'_> {
         AtomPrinter::new_with_options(*self, opts)
     }
 

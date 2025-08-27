@@ -320,7 +320,7 @@ impl PackedRationalNumberWriter for Coefficient {
 
 /// A reader for generalized rational numbers. See [`MultiPrecisionRationalNumberWriter`].
 pub trait PackedRationalNumberReader {
-    fn get_coeff_view(&self) -> (CoefficientView, &[u8]);
+    fn get_coeff_view(&self) -> (CoefficientView<'_>, &[u8]);
     fn get_frac_u64(&self) -> (u64, u64, &[u8]);
     fn get_frac_i64(&self) -> (i64, i64, &[u8]);
     fn skip_rational(&self) -> &[u8];
@@ -330,7 +330,7 @@ pub trait PackedRationalNumberReader {
 
 impl PackedRationalNumberReader for [u8] {
     #[inline(always)]
-    fn get_coeff_view(&self) -> (CoefficientView, &[u8]) {
+    fn get_coeff_view(&self) -> (CoefficientView<'_>, &[u8]) {
         let mut source = self;
         let disc = source.get_u8();
         if disc == RAT_POLY {

@@ -2471,7 +2471,7 @@ impl From<Float> for PythonMultiPrecisionFloat {
 
 static PYDECIMAL: GILOnceCell<Py<PyType>> = GILOnceCell::new();
 
-fn get_decimal(py: Python) -> &Py<PyType> {
+fn get_decimal(py: Python<'_>) -> &Py<PyType> {
     PYDECIMAL.get_or_init(py, || {
         py.import("decimal")
             .unwrap()

@@ -355,7 +355,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     /// Get the ith monomial
-    pub fn to_monomial_view(&self, i: usize) -> MonomialView<F, E> {
+    pub fn to_monomial_view(&self, i: usize) -> MonomialView<'_, F, E> {
         assert!(i < self.nterms());
 
         MonomialView {
@@ -457,13 +457,13 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 
     /// Returns an iterator over the exponents of every monomial.
     #[inline]
-    pub fn exponents_iter(&self) -> std::slice::Chunks<E> {
+    pub fn exponents_iter(&self) -> std::slice::Chunks<'_, E> {
         self.exponents.chunks(self.nvars())
     }
 
     /// Returns an iterator over the mutable exponents of every monomial.
     #[inline]
-    pub fn exponents_iter_mut(&mut self) -> std::slice::ChunksMut<E> {
+    pub fn exponents_iter_mut(&mut self) -> std::slice::ChunksMut<'_, E> {
         let nvars = self.nvars();
         self.exponents.chunks_mut(nvars)
     }
@@ -643,9 +643,9 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         for t in 1..self.nterms() {
             match O::cmp(self.exponents(t), self.exponents(t - 1)) {
                 Ordering::Equal => panic!("Inconsistent polynomial (equal monomials): {self}"),
-                Ordering::Less => panic!(
-                    "Inconsistent polynomial (wrong monomial ordering): {self}"
-                ),
+                Ordering::Less => {
+                    panic!("Inconsistent polynomial (wrong monomial ordering): {self}")
+                }
                 Ordering::Greater => {}
             }
         }

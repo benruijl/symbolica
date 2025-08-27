@@ -529,7 +529,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         a
     }
 
-    fn reader(&mut self) -> TermInputStream<W::Reader> {
+    fn reader(&mut self) -> TermInputStream<'_, W::Reader> {
         let num_files = self.file_buf.len();
 
         for x in &mut self.file_buf {

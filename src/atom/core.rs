@@ -45,7 +45,7 @@ use super::{
 /// pattern matching that leave the expression unchanged.
 pub trait AtomCore {
     /// Take a view of the atom.
-    fn as_atom_view(&self) -> AtomView;
+    fn as_atom_view(&self) -> AtomView<'_>;
 
     /// Export the atom and state to a binary stream. It can be loaded
     /// with [Atom::import].
@@ -1063,7 +1063,7 @@ pub trait AtomCore {
     /// let printer = expr.printer(opts);
     /// assert_eq!(printer.to_string(), "x**2");
     /// ```
-    fn printer(&self, opts: PrintOptions) -> AtomPrinter {
+    fn printer(&self, opts: PrintOptions) -> AtomPrinter<'_> {
         AtomPrinter::new_with_options(self.as_atom_view(), opts)
     }
 
@@ -1201,7 +1201,7 @@ pub trait AtomCore {
     /// assert!(indeterminates.contains(&Atom::var(symbol!("x")).as_view()));
     /// assert!(indeterminates.contains(&parse!("f(x)").as_view()));
     /// ```
-    fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView> {
+    fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView<'_>> {
         self.as_atom_view().get_all_indeterminates(enter_functions)
     }
 
@@ -1522,13 +1522,13 @@ pub trait AtomCore {
 }
 
 impl AtomCore for InlineVar {
-    fn as_atom_view(&self) -> AtomView {
+    fn as_atom_view(&self) -> AtomView<'_> {
         self.as_view()
     }
 }
 
 impl AtomCore for InlineNum {
-    fn as_atom_view(&self) -> AtomView {
+    fn as_atom_view(&self) -> AtomView<'_> {
         self.as_view()
     }
 }
@@ -1540,13 +1540,13 @@ impl<'a> AtomCore for AtomView<'a> {
 }
 
 impl<T: AsRef<Atom>> AtomCore for T {
-    fn as_atom_view(&self) -> AtomView {
+    fn as_atom_view(&self) -> AtomView<'_> {
         self.as_ref().as_view()
     }
 }
 
 impl AtomCore for AtomOrView<'_> {
-    fn as_atom_view(&self) -> AtomView {
+    fn as_atom_view(&self) -> AtomView<'_> {
         self.as_view()
     }
 }

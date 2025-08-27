@@ -187,11 +187,11 @@ pub struct BorrowedReplacement<'a> {
 }
 
 pub trait BorrowReplacement {
-    fn borrow(&self) -> BorrowedReplacement;
+    fn borrow(&self) -> BorrowedReplacement<'_>;
 }
 
 impl BorrowReplacement for Replacement {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow(&self) -> BorrowedReplacement<'_> {
         BorrowedReplacement {
             pattern: &self.pat,
             rhs: &self.rhs,
@@ -202,7 +202,7 @@ impl BorrowReplacement for Replacement {
 }
 
 impl BorrowReplacement for &Replacement {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow(&self) -> BorrowedReplacement<'_> {
         BorrowedReplacement {
             pattern: &self.pat,
             rhs: &self.rhs,
@@ -213,7 +213,7 @@ impl BorrowReplacement for &Replacement {
 }
 
 impl BorrowReplacement for BorrowedReplacement<'_> {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow(&self) -> BorrowedReplacement<'_> {
         *self
     }
 }
@@ -1178,8 +1178,6 @@ impl<'a> AtomView<'a> {
         }
 
         // no match found at this level, so check the children
-        
-
         match self {
             AtomView::Fun(f) => {
                 let out = out.to_fun(f.get_symbol());

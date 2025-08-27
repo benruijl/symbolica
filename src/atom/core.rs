@@ -622,7 +622,7 @@ pub trait AtomCore {
     ///
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
-    /// use symbolica::evaluate::FunctionMap;
+    /// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
     /// let expr = parse!("x + y");
     /// let x = parse!("x");
     /// let y = parse!("y");
@@ -630,7 +630,7 @@ pub trait AtomCore {
     /// let params = vec![x.clone(), y.clone()];
     /// let mut tree = expr.to_evaluation_tree(&fn_map, &params).unwrap();
     /// tree.common_subexpression_elimination();
-    /// let e = tree.optimize(1, 1, None, false);
+    /// let e = tree.optimize(&OptimizationSettings::default());
     /// let mut e = e.map_coeff(&|c| c.to_real().unwrap().to_f64());
     /// let r = e.evaluate_single(&[0.5, 0.3]);
     /// assert_eq!(r, 0.8);

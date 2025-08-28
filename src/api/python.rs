@@ -12348,62 +12348,6 @@ impl PythonCompiledComplexExpressionEvaluator {
     }
 }
 
-/// A compiled and optimized evaluator for expressions.
-#[pyclass(name = "CompiledRealEvaluator", module = "symbolica")]
-#[derive(Clone)]
-pub struct PythonCompiledRealCudaExpressionEvaluator {
-    pub eval: CompiledRealEvaluator,
-    pub input_len: usize,
-    pub output_len: usize,
-}
-
-#[pymethods]
-impl PythonCompiledRealCudaExpressionEvaluator {
-    /// Load a compiled library, previously generated with `compile`.
-    #[classmethod]
-    fn load(
-        _cls: &Bound<'_, PyType>,
-        filename: &str,
-        function_name: &str,
-        input_len: usize,
-        output_len: usize,
-    ) -> PyResult<Self> {
-        Ok(Self {
-            eval: CompiledRealEvaluator::load(filename, function_name)
-                .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
-            input_len,
-            output_len,
-        })
-    }
-
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate`.
-    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
-        let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![0.; self.output_len * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.output_len)
-            .zip(inputs.chunks(self.input_len))
-        {
-            self.eval.evaluate(s, r);
-        }
-
-        res
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        inputs
-            .iter()
-            .map(|s| {
-                let mut v = vec![0.; self.output_len];
-                self.eval.evaluate(s, &mut v);
-                v
-            })
-            .collect()
-    }
-}
-
 #[derive(FromPyObject)]
 pub enum ScalarOrMatrix {
     Scalar(ConvertibleToRationalPolynomial),

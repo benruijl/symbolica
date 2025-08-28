@@ -5156,11 +5156,18 @@ impl<T: Real> EvalTree<T> {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 pub struct ExportedCode<T: CompiledNumber> {
     source_filename: String,
     function_name: String,
     _phantom: std::marker::PhantomData<T>,
 }
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 pub struct CompiledCode<T: CompiledNumber> {
     library_filename: String,
     function_name: String,
@@ -5197,7 +5204,9 @@ impl CudaEvaluationData {
 }
 
 /// Settings for CUDA.
-#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Clone)]
 pub struct CudaLoadSettings {
     pub number_of_evaluations: usize,
     /// The number of threads per block for CUDA evaluation.
@@ -5462,6 +5471,7 @@ impl CompiledNumber for Complex<f64> {
 
 pub struct CompiledRealEvaluator {
     library: LibraryRealf64,
+    file: String,
     fn_name: String,
     buffer_double: Vec<f64>,
 }
@@ -5481,6 +5491,7 @@ impl CompiledRealEvaluator {
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
         Ok(CompiledRealEvaluator {
+            file: self.file.to_string(),
             fn_name: function_name.to_string(),
             buffer_double: vec![0.; len],
             library,
@@ -5502,6 +5513,7 @@ impl CompiledRealEvaluator {
 
             Ok(CompiledRealEvaluator {
                 fn_name: function_name.to_string(),
+                file: file.to_string(),
                 buffer_double: vec![0.; len],
                 library,
             })
@@ -5534,7 +5546,23 @@ impl Clone for CompiledRealEvaluator {
     }
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledRealEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.file, &self.fn_name).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledRealEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name) = <(String, String)>::deserialize(deserializer)?;
+        CompiledRealEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
+    }
+}
+
 pub struct CompiledComplexEvaluator {
+    file: String,
     fn_name: String,
     library: LibraryComplexf64,
     buffer_complex: Vec<Complex<f64>>,
@@ -5543,6 +5571,21 @@ pub struct CompiledComplexEvaluator {
 impl EvaluatorLoader<Complex<f64>> for CompiledComplexEvaluator {
     fn load_with_settings(file: &str, function_name: &str, _settings: ()) -> Result<Self, String> {
         CompiledComplexEvaluator::load(file, function_name)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledComplexEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.file, &self.fn_name).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledComplexEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name) = <(String, String)>::deserialize(deserializer)?;
+        CompiledComplexEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
     }
 }
 
@@ -5559,6 +5602,7 @@ impl CompiledComplexEvaluator {
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
         Ok(CompiledComplexEvaluator {
+            file: self.file.clone(),
             fn_name: function_name.to_string(),
             buffer_complex: vec![Complex::new_zero(); len],
             library,
@@ -5582,6 +5626,7 @@ impl CompiledComplexEvaluator {
             let len = (library.borrow_dependent().get_buffer_len)() as usize;
 
             Ok(CompiledComplexEvaluator {
+                file: file.to_string(),
                 fn_name: function_name.to_string(),
                 buffer_complex: vec![Complex::default(); len],
                 library,
@@ -5655,7 +5700,42 @@ impl CompiledNumber for CudaComplexf64 {
     }
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledCudaRealEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.file, &self.fn_name, &self.settings).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledCudaRealEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name, settings) =
+            <(String, String, CudaLoadSettings)>::deserialize(deserializer)?;
+        CompiledCudaRealEvaluator::load_with_settings(&file, &fn_name, settings)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledCudaComplexEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.file, &self.fn_name).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledCudaComplexEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name, settings) =
+            <(String, String, CudaLoadSettings)>::deserialize(deserializer)?;
+        CompiledCudaComplexEvaluator::load(&file, &fn_name, settings)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 pub struct CompiledCudaRealEvaluator {
+    file: String,
     fn_name: String,
     library: LibraryCudaRealf64,
     settings: CudaLoadSettings,
@@ -5698,6 +5778,7 @@ impl CompiledCudaRealEvaluator {
         };
 
         Ok(CompiledCudaRealEvaluator {
+            file: self.file.clone(),
             fn_name: function_name.to_string(),
             library,
             settings: self.settings.clone(),
@@ -5728,6 +5809,7 @@ impl CompiledCudaRealEvaluator {
             (*data).check_for_error()?;
 
             Ok(CompiledCudaRealEvaluator {
+                file: file.to_string(),
                 fn_name: function_name.to_string(),
                 library,
                 settings,
@@ -5767,6 +5849,7 @@ impl CompiledCudaRealEvaluator {
 }
 
 pub struct CompiledCudaComplexEvaluator {
+    file: String,
     fn_name: String,
     library: LibraryCudaComplexf64,
     settings: CudaLoadSettings,
@@ -5809,6 +5892,7 @@ impl CompiledCudaComplexEvaluator {
             data
         };
         Ok(CompiledCudaComplexEvaluator {
+            file: self.file.clone(),
             fn_name: function_name.to_string(),
             library,
             settings: self.settings.clone(),
@@ -5839,6 +5923,7 @@ impl CompiledCudaComplexEvaluator {
             (*data).check_for_error()?;
 
             Ok(CompiledCudaComplexEvaluator {
+                file: file.to_string(),
                 fn_name: function_name.to_string(),
                 library,
                 settings,
@@ -5933,6 +6018,8 @@ impl Clone for CompiledCudaComplexEvaluator {
 }
 
 /// Options for compiling exported code.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Clone)]
 pub struct CompileOptions {
     pub optimization_level: usize,

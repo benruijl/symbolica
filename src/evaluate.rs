@@ -7,6 +7,7 @@ use self_cell::self_cell;
 use std::{
     hash::{Hash, Hasher},
     os::raw::{c_ulong, c_void},
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -1747,13 +1748,13 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     /// The resulting source code can be compiled and loaded.
     pub fn export_cpp<F: CompiledNumber>(
         &self,
-        filename: &str,
+        path: impl AsRef<Path>,
         function_name: &str,
         settings: ExportSettings,
     ) -> Result<ExportedCode<F>, std::io::Error> {
-        let mut filename = filename.to_string();
-        if !filename.ends_with(".cpp") {
-            filename += ".cpp";
+        let mut filename = path.as_ref().to_path_buf();
+        if filename.extension().map(|x| x != ".cpp").unwrap_or(false) {
+            filename.set_extension("cpp");
         }
 
         let cpp = &self
@@ -1762,7 +1763,7 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
 
         std::fs::write(&filename, cpp)?;
         Ok(ExportedCode::<F> {
-            source_filename: filename,
+            path: filename,
             function_name: function_name.to_string(),
             _phantom: std::marker::PhantomData,
         })
@@ -5160,7 +5161,7 @@ impl<T: Real> EvalTree<T> {
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 pub struct ExportedCode<T: CompiledNumber> {
-    source_filename: String,
+    path: PathBuf,
     function_name: String,
     _phantom: std::marker::PhantomData<T>,
 }
@@ -5169,7 +5170,7 @@ pub struct ExportedCode<T: CompiledNumber> {
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 pub struct CompiledCode<T: CompiledNumber> {
-    library_filename: String,
+    path: PathBuf,
     function_name: String,
     _phantom: std::marker::PhantomData<T>,
 }
@@ -5225,12 +5226,12 @@ impl Default for CudaLoadSettings {
 impl<T: CompiledNumber> CompiledCode<T> {
     /// Load the evaluator from the compiled shared library.
     pub fn load(&self) -> Result<T::Evaluator, String> {
-        T::Evaluator::load(&self.library_filename, &self.function_name)
+        T::Evaluator::load(&self.path, &self.function_name)
     }
 
     /// Load the evaluator from the compiled shared library.
     pub fn load_with_settings(&self, settings: T::Settings) -> Result<T::Evaluator, String> {
-        T::Evaluator::load_with_settings(&self.library_filename, &self.function_name, settings)
+        T::Evaluator::load_with_settings(&self.path, &self.function_name, settings)
     }
 }
 
@@ -5410,11 +5411,11 @@ pub trait CompiledNumber: Sized {
 
 pub trait EvaluatorLoader<T: CompiledNumber>: Sized {
     /// Load a compiled evaluator from a shared library.
-    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+    fn load(file: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
         Self::load_with_settings(file, function_name, T::Settings::default())
     }
     fn load_with_settings(
-        file: &str,
+        file: impl AsRef<Path>,
         function_name: &str,
         settings: T::Settings,
     ) -> Result<Self, String>;
@@ -5471,14 +5472,18 @@ impl CompiledNumber for Complex<f64> {
 
 pub struct CompiledRealEvaluator {
     library: LibraryRealf64,
-    file: String,
+    path: PathBuf,
     fn_name: String,
     buffer_double: Vec<f64>,
 }
 
 impl EvaluatorLoader<f64> for CompiledRealEvaluator {
-    fn load_with_settings(file: &str, function_name: &str, _settings: ()) -> Result<Self, String> {
-        CompiledRealEvaluator::load(file, function_name)
+    fn load_with_settings(
+        path: impl AsRef<Path>,
+        function_name: &str,
+        _settings: (),
+    ) -> Result<Self, String> {
+        CompiledRealEvaluator::load(path, function_name)
     }
 }
 
@@ -5491,19 +5496,21 @@ impl CompiledRealEvaluator {
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
         Ok(CompiledRealEvaluator {
-            file: self.file.to_string(),
+            path: self.path.clone(),
             fn_name: function_name.to_string(),
             buffer_double: vec![0.; len],
             library,
         })
     }
-    pub fn load(file: &str, function_name: &str) -> Result<CompiledRealEvaluator, String> {
+    pub fn load(
+        path: impl AsRef<Path>,
+        function_name: &str,
+    ) -> Result<CompiledRealEvaluator, String> {
         unsafe {
-            let lib = match libloading::Library::new(file) {
+            let lib = match libloading::Library::new(path.as_ref()) {
                 Ok(lib) => lib,
-                Err(_) => {
-                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
-                }
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
             };
             let library = LibraryRealf64::try_new(std::sync::Arc::new(lib), |lib| {
                 EvaluatorFunctionsRealf64::new(lib, function_name)
@@ -5513,7 +5520,7 @@ impl CompiledRealEvaluator {
 
             Ok(CompiledRealEvaluator {
                 fn_name: function_name.to_string(),
-                file: file.to_string(),
+                path: path.as_ref().to_path_buf(),
                 buffer_double: vec![0.; len],
                 library,
             })
@@ -5549,43 +5556,97 @@ impl Clone for CompiledRealEvaluator {
 #[cfg(feature = "serde")]
 impl serde::Serialize for CompiledRealEvaluator {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.file, &self.fn_name).serialize(serializer)
+        (&self.path, &self.fn_name).serialize(serializer)
     }
 }
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for CompiledRealEvaluator {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (file, fn_name) = <(String, String)>::deserialize(deserializer)?;
+        let (file, fn_name) = <(PathBuf, String)>::deserialize(deserializer)?;
         CompiledRealEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
     }
 }
 
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledRealEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledRealEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledRealEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        CompiledRealEvaluator::load(&file, &fn_name)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
+    }
+}
+
 pub struct CompiledComplexEvaluator {
-    file: String,
+    path: PathBuf,
     fn_name: String,
     library: LibraryComplexf64,
     buffer_complex: Vec<Complex<f64>>,
 }
 
 impl EvaluatorLoader<Complex<f64>> for CompiledComplexEvaluator {
-    fn load_with_settings(file: &str, function_name: &str, _settings: ()) -> Result<Self, String> {
-        CompiledComplexEvaluator::load(file, function_name)
+    fn load_with_settings(
+        path: impl AsRef<Path>,
+        function_name: &str,
+        _settings: (),
+    ) -> Result<Self, String> {
+        CompiledComplexEvaluator::load(path, function_name)
     }
 }
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for CompiledComplexEvaluator {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.file, &self.fn_name).serialize(serializer)
+        (&self.path, &self.fn_name).serialize(serializer)
     }
 }
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for CompiledComplexEvaluator {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (file, fn_name) = <(String, String)>::deserialize(deserializer)?;
+        let (file, fn_name) = <(PathBuf, String)>::deserialize(deserializer)?;
         CompiledComplexEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledComplexEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledComplexEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledComplexEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        CompiledComplexEvaluator::load(&file, &fn_name)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
     }
 }
 
@@ -5602,7 +5663,7 @@ impl CompiledComplexEvaluator {
         let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
 
         Ok(CompiledComplexEvaluator {
-            file: self.file.clone(),
+            path: self.path.clone(),
             fn_name: function_name.to_string(),
             buffer_complex: vec![Complex::new_zero(); len],
             library,
@@ -5610,13 +5671,15 @@ impl CompiledComplexEvaluator {
     }
 
     /// Load a compiled evaluator from a shared library.
-    pub fn load(file: &str, function_name: &str) -> Result<CompiledComplexEvaluator, String> {
+    pub fn load(
+        path: impl AsRef<Path>,
+        function_name: &str,
+    ) -> Result<CompiledComplexEvaluator, String> {
         unsafe {
-            let lib = match libloading::Library::new(file) {
+            let lib = match libloading::Library::new(path.as_ref()) {
                 Ok(lib) => lib,
-                Err(_) => {
-                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
-                }
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
             };
 
             let library = LibraryComplexf64::try_new(std::sync::Arc::new(lib), |lib| {
@@ -5626,7 +5689,7 @@ impl CompiledComplexEvaluator {
             let len = (library.borrow_dependent().get_buffer_len)() as usize;
 
             Ok(CompiledComplexEvaluator {
-                file: file.to_string(),
+                path: path.as_ref().to_path_buf(),
                 fn_name: function_name.to_string(),
                 buffer_complex: vec![Complex::default(); len],
                 library,
@@ -5703,7 +5766,7 @@ impl CompiledNumber for CudaComplexf64 {
 #[cfg(feature = "serde")]
 impl serde::Serialize for CompiledCudaRealEvaluator {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.file, &self.fn_name, &self.settings).serialize(serializer)
+        (&self.path, &self.fn_name, &self.settings).serialize(serializer)
     }
 }
 
@@ -5711,16 +5774,43 @@ impl serde::Serialize for CompiledCudaRealEvaluator {
 impl<'de> serde::Deserialize<'de> for CompiledCudaRealEvaluator {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let (file, fn_name, settings) =
-            <(String, String, CudaLoadSettings)>::deserialize(deserializer)?;
+            <(PathBuf, String, CudaLoadSettings)>::deserialize(deserializer)?;
         CompiledCudaRealEvaluator::load_with_settings(&file, &fn_name, settings)
             .map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledCudaRealEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)?;
+        bincode::Encode::encode(&self.settings, encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledCudaRealEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledCudaRealEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        let settings: CudaLoadSettings = bincode::Decode::decode(decoder)?;
+        CompiledCudaRealEvaluator::load(&file, &fn_name, settings)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
     }
 }
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for CompiledCudaComplexEvaluator {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.file, &self.fn_name).serialize(serializer)
+        (&self.path, &self.fn_name).serialize(serializer)
     }
 }
 
@@ -5728,14 +5818,41 @@ impl serde::Serialize for CompiledCudaComplexEvaluator {
 impl<'de> serde::Deserialize<'de> for CompiledCudaComplexEvaluator {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let (file, fn_name, settings) =
-            <(String, String, CudaLoadSettings)>::deserialize(deserializer)?;
+            <(PathBuf, String, CudaLoadSettings)>::deserialize(deserializer)?;
         CompiledCudaComplexEvaluator::load(&file, &fn_name, settings)
             .map_err(serde::de::Error::custom)
     }
 }
 
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledCudaComplexEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)?;
+        bincode::Encode::encode(&self.settings, encoder)
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledCudaComplexEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledCudaComplexEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        let settings: CudaLoadSettings = bincode::Decode::decode(decoder)?;
+        CompiledCudaComplexEvaluator::load(&file, &fn_name, settings)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
+    }
+}
+
 pub struct CompiledCudaRealEvaluator {
-    file: String,
+    path: PathBuf,
     fn_name: String,
     library: LibraryCudaRealf64,
     settings: CudaLoadSettings,
@@ -5743,20 +5860,20 @@ pub struct CompiledCudaRealEvaluator {
 }
 
 impl EvaluatorLoader<CudaRealf64> for CompiledCudaRealEvaluator {
-    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+    fn load(path: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
         CompiledCudaRealEvaluator::load_with_settings(
-            file,
+            path,
             function_name,
             CudaLoadSettings::default(),
         )
     }
 
     fn load_with_settings(
-        file: &str,
+        path: impl AsRef<Path>,
         function_name: &str,
         settings: CudaLoadSettings,
     ) -> Result<Self, String> {
-        CompiledCudaRealEvaluator::load(file, function_name, settings)
+        CompiledCudaRealEvaluator::load(path, function_name, settings)
     }
 }
 
@@ -5778,7 +5895,7 @@ impl CompiledCudaRealEvaluator {
         };
 
         Ok(CompiledCudaRealEvaluator {
-            file: self.file.clone(),
+            path: self.path.clone(),
             fn_name: function_name.to_string(),
             library,
             settings: self.settings.clone(),
@@ -5787,16 +5904,15 @@ impl CompiledCudaRealEvaluator {
     }
 
     pub fn load(
-        file: &str,
+        path: impl AsRef<Path>,
         function_name: &str,
         settings: CudaLoadSettings,
     ) -> Result<CompiledCudaRealEvaluator, String> {
         unsafe {
-            let lib = match libloading::Library::new(file) {
+            let lib = match libloading::Library::new(path.as_ref()) {
                 Ok(lib) => lib,
-                Err(_) => {
-                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
-                }
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
             };
             let library = LibraryCudaRealf64::try_new(std::sync::Arc::new(lib), |lib| {
                 EvaluatorFunctionsCudaRealf64::new(lib, function_name)
@@ -5809,7 +5925,7 @@ impl CompiledCudaRealEvaluator {
             (*data).check_for_error()?;
 
             Ok(CompiledCudaRealEvaluator {
-                file: file.to_string(),
+                path: path.as_ref().to_path_buf(),
                 fn_name: function_name.to_string(),
                 library,
                 settings,
@@ -5849,7 +5965,7 @@ impl CompiledCudaRealEvaluator {
 }
 
 pub struct CompiledCudaComplexEvaluator {
-    file: String,
+    path: PathBuf,
     fn_name: String,
     library: LibraryCudaComplexf64,
     settings: CudaLoadSettings,
@@ -5857,20 +5973,20 @@ pub struct CompiledCudaComplexEvaluator {
 }
 
 impl EvaluatorLoader<CudaComplexf64> for CompiledCudaComplexEvaluator {
-    fn load(file: &str, function_name: &str) -> Result<Self, String> {
+    fn load(path: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
         CompiledCudaComplexEvaluator::load_with_settings(
-            file,
+            path,
             function_name,
             CudaLoadSettings::default(),
         )
     }
 
     fn load_with_settings(
-        file: &str,
+        path: impl AsRef<Path>,
         function_name: &str,
         settings: CudaLoadSettings,
     ) -> Result<Self, String> {
-        CompiledCudaComplexEvaluator::load(file, function_name, settings)
+        CompiledCudaComplexEvaluator::load(path, function_name, settings)
     }
 }
 
@@ -5892,7 +6008,7 @@ impl CompiledCudaComplexEvaluator {
             data
         };
         Ok(CompiledCudaComplexEvaluator {
-            file: self.file.clone(),
+            path: self.path.clone(),
             fn_name: function_name.to_string(),
             library,
             settings: self.settings.clone(),
@@ -5901,16 +6017,15 @@ impl CompiledCudaComplexEvaluator {
     }
 
     pub fn load(
-        file: &str,
+        path: impl AsRef<Path>,
         function_name: &str,
         settings: CudaLoadSettings,
     ) -> Result<CompiledCudaComplexEvaluator, String> {
         unsafe {
-            let lib = match libloading::Library::new(file) {
+            let lib = match libloading::Library::new(path.as_ref()) {
                 Ok(lib) => lib,
-                Err(_) => {
-                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
-                }
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
             };
             let library = LibraryCudaComplexf64::try_new(std::sync::Arc::new(lib), |lib| {
                 EvaluatorFunctionsCudaComplexf64::new(lib, function_name)
@@ -5923,7 +6038,7 @@ impl CompiledCudaComplexEvaluator {
             (*data).check_for_error()?;
 
             Ok(CompiledCudaComplexEvaluator {
-                file: file.to_string(),
+                path: path.as_ref().to_path_buf(),
                 fn_name: function_name.to_string(),
                 library,
                 settings,
@@ -6061,9 +6176,9 @@ impl CompileOptions {
 
 impl<T: CompiledNumber> ExportedCode<T> {
     /// Create a new exported code object from a source file and function name.
-    pub fn new(source_filename: String, function_name: String) -> Self {
+    pub fn new(source_path: impl AsRef<Path>, function_name: String) -> Self {
         ExportedCode {
-            source_filename,
+            path: source_path.as_ref().to_path_buf(),
             function_name,
             _phantom: std::marker::PhantomData,
         }
@@ -6075,7 +6190,7 @@ impl<T: CompiledNumber> ExportedCode<T> {
     /// JIT compilation upon the first evaluation.
     pub fn compile(
         &self,
-        out: &str,
+        out: impl AsRef<Path>,
         options: CompileOptions,
     ) -> Result<CompiledCode<T>, std::io::Error> {
         let mut builder = std::process::Command::new(&options.compiler);
@@ -6102,8 +6217,8 @@ impl<T: CompiledNumber> ExportedCode<T> {
 
         let r = builder
             .arg("-o")
-            .arg(out)
-            .arg(&self.source_filename)
+            .arg(out.as_ref())
+            .arg(&self.path)
             .output()?;
 
         if !r.status.success() {
@@ -6123,7 +6238,7 @@ impl<T: CompiledNumber> ExportedCode<T> {
         }
 
         Ok(CompiledCode {
-            library_filename: out.to_string(),
+            path: out.as_ref().to_path_buf(),
             function_name: self.function_name.clone(),
             _phantom: std::marker::PhantomData,
         })

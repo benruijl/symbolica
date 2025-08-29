@@ -1442,7 +1442,9 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
             }
 
             for x in &mut self.result_indices {
-                *x += delta;
+                if *x >= self.reserved_indices {
+                    *x += delta;
+                }
             }
         }
 
@@ -3612,7 +3614,7 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
 /// A slot in a list that contains a numerical value.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Slot {
     /// An entry in the list of parameters.
     Param(usize),
@@ -3653,6 +3655,8 @@ pub enum Instruction {
     Fun(Slot, BuiltinSymbol, Slot),
     /// `ExternalFun(o, s, a,...)` means `o = s(a, ...)`, where `s` is an external function.
     ExternalFun(Slot, String, Vec<Slot>),
+    /// `Assign(o, v)` means `o = v`.
+    Assign(Slot, Slot),
 }
 
 impl std::fmt::Display for Instruction {
@@ -3700,6 +3704,9 @@ impl std::fmt::Display for Instruction {
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
+            }
+            Instruction::Assign(o, v) => {
+                write!(f, "{} = {}", o, v)
             }
         }
     }
@@ -3762,6 +3769,12 @@ impl<T: Clone> ExpressionEvaluator<T> {
                         a.iter().map(|x| get_slot!(*x)).collect(),
                     ));
                 }
+            }
+        }
+
+        for (out, i) in self.result_indices.iter().enumerate() {
+            if get_slot!(*i) != Slot::Out(out) {
+                instr.push(Instruction::Assign(Slot::Out(out), get_slot!(*i)));
             }
         }
 

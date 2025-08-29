@@ -11696,6 +11696,7 @@ impl PythonExpressionEvaluator {
     /// - `('pow', ('out', 0), ('param', 0), -1)` which means `out[0] = param[0]^-1`.
     /// - `('powf', ('out', 0), ('param', 0), ('param', 1))` which means `out[0] = param[0]^param[1]`.
     /// - `('fun', ('temp', 1), cos, ('param', 0))` which means `temp[1] = cos(param[0])`.
+    /// - `('assign', ('out', 1), ('const', 2))` which means `out[1] = const[2]`.
     ///
     /// Examples
     /// --------
@@ -11802,6 +11803,16 @@ impl PythonExpressionEvaluator {
                                 .collect::<Vec<_>>()
                                 .into_pyobject(py)?
                                 .as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Assign(o, r) => {
+                    v.push(PyTuple::new(
+                        py,
+                        [
+                            "assign".into_pyobject(py)?.as_any(),
+                            slot_to_object(o).into_pyobject(py)?.as_any(),
+                            slot_to_object(r).into_pyobject(py)?.as_any(),
                         ],
                     )?);
                 }

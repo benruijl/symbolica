@@ -25,8 +25,6 @@ use pyo3::{
 };
 use pyo3::{pyclass, types::PyModuleMethods};
 
-#[cfg(not(feature = "python_stubgen"))]
-use pyo3_stub_gen::derive::remove_gen_stub;
 #[cfg(feature = "python_stubgen")]
 use pyo3_stub_gen::{
     PyStubType, TypeInfo,
@@ -35,6 +33,8 @@ use pyo3_stub_gen::{
     inventory::submit,
     type_info::{ArgInfo, MethodInfo, MethodType, PyFunctionInfo, PyMethodsInfo, SignatureArg},
 };
+#[cfg(not(feature = "python_stubgen"))]
+use pyo3_stub_gen_derive::remove_gen_stub;
 
 use rug::Complete;
 use self_cell::self_cell;

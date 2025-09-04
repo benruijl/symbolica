@@ -650,7 +650,7 @@ custom_derivative: Optional[Callable[[Expression, int], Expression]]:
 #[cfg_attr(not(feature = "python_stubgen"), remove_gen_stub)]
 #[pyfunction(name = "N", signature = (num,relative_error=None))]
 fn number_shorthand(
-    #[gen_stub(override_type(type_repr = "int | float | complex | str | decimal.Decimal"))]
+    #[gen_stub(override_type(type_repr = "int | float | complex | str | decimal.Decimal", imports = ("decimal")))]
     num: PyObject,
     relative_error: Option<f64>,
     py: Python<'_>,
@@ -848,7 +848,11 @@ impl PyStubType for ReplaceFunction {
     fn type_output() -> TypeInfo {
         TypeInfo {
             name: "typing.Callable[[dict[Expression, Expression]], Expression] | int | float | complex | decimal.Decimal".into(),
-            import: std::collections::HashSet::default(),
+            import: {
+                let mut h = std::collections::HashSet::default();
+                h.insert("decimal".into());
+                h
+            },
         }
     }
 }
@@ -3381,7 +3385,10 @@ impl PythonExpression {
     pub fn num(
         _cls: &Bound<'_, PyType>,
         py: Python,
-        #[gen_stub(override_type(type_repr = "int | float | complex | str | decimal.Decimal"))]
+        #[gen_stub(override_type(
+            type_repr = "int | float | complex | str | decimal.Decimal",
+            imports = ("decimal")
+        ))]
         num: PyObject,
         relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
@@ -5695,7 +5702,7 @@ impl PythonExpression {
     /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
-    #[gen_stub(override_return_type(type_repr = "decimal.Decimal"))]
+    #[gen_stub(override_return_type(type_repr = "decimal.Decimal", imports = ("decimal")))]
     #[pyo3(signature =
         (variable,
         init,
@@ -5748,7 +5755,7 @@ impl PythonExpression {
     /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
-    #[gen_stub(override_return_type(type_repr = "decimal.Decimal"))]
+    #[gen_stub(override_return_type(type_repr = "decimal.Decimal", imports = ("decimal")))]
     #[pyo3(signature =
         (system,
         variables,
@@ -5879,7 +5886,7 @@ impl PythonExpression {
     /// >>> getcontext().prec = 100
     /// >>> a = e.evaluate_with_prec({x: Decimal('1.123456789')}, {
     /// >>>                         f: lambda args: args[0] + args[1]}, 100)
-    #[gen_stub(override_return_type(type_repr = "decimal.Decimal"))]
+    #[gen_stub(override_return_type(type_repr = "decimal.Decimal", imports = ("decimal")))]
     pub fn evaluate_with_prec(
         &self,
         constants: HashMap<PythonExpression, PythonMultiPrecisionFloat>,

@@ -181,6 +181,12 @@ pub enum Token {
     EOF,
 }
 
+impl Token {
+    const OPS: [char; 11] = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
+    const WHITESPACE: [char; 5] = [' ', '\t', '\n', '\r', '\\'];
+    const FORBIDDEN: [char; 6] = [';', '&', '!', '%', '.', '"'];
+}
+
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -252,6 +258,28 @@ impl std::fmt::Display for Token {
 }
 
 impl Token {
+    /// Check the validity of a symbol name.
+    pub fn check_symbol_name(symbol: &str) -> Result<(), String> {
+        if symbol.len() == 0 {
+            return Err("Empty symbol name".to_string());
+        }
+
+        if symbol.starts_with(|c: char| c.is_numeric()) {
+            return Err(format!("Symbol name '{symbol}' starts with a number"));
+        }
+
+        for c in symbol.chars() {
+            if Token::OPS.contains(&c)
+                || Token::WHITESPACE.contains(&c)
+                || Token::FORBIDDEN.contains(&c)
+            {
+                return Err(format!("Invalid character '{c}' in symbol name '{symbol}'"));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Return if the token does not require any further arguments.
     fn is_normal(&self) -> bool {
         match self {
@@ -709,10 +737,6 @@ impl Token {
         stack.push(Token::Start);
         let mut state = ParseState::Any;
 
-        let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
-        let whitespace = [' ', '\t', '\n', '\r', '\\'];
-        let forbidden = [';', '&', '!', '%', '.', '"'];
-
         let mut char_iter = input.chars();
         let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
         let mut extra_ops: SmallVec<[char; 6]> = SmallVec::new();
@@ -725,12 +749,12 @@ impl Token {
         loop {
             match state {
                 ParseState::Identifier => {
-                    if ops.contains(&c) || whitespace.contains(&c) {
+                    if Token::OPS.contains(&c) || Token::WHITESPACE.contains(&c) {
                         state = ParseState::Any;
 
                         stack.push(Token::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
-                    } else if !forbidden.contains(&c) {
+                    } else if !Token::FORBIDDEN.contains(&c) {
                         id_buffer.push(c);
                     } else {
                         // check for some symbols that could be the result of copy-paste errors
@@ -771,7 +795,7 @@ impl Token {
                             // complex number has trailing i and must be followed by whitespace or an operator
                             c = char_iter.next().unwrap_or('\0');
 
-                            let is_imag = whitespace.contains(&c) || ops.contains(&c);
+                            let is_imag = Token::WHITESPACE.contains(&c) || Token::OPS.contains(&c);
 
                             state = ParseState::Any;
                             stack.push(Token::Number(id_buffer.as_str().into(), is_imag));
@@ -843,7 +867,7 @@ impl Token {
             }
 
             if state == ParseState::Any {
-                if whitespace.contains(&c) {
+                if Token::WHITESPACE.contains(&c) {
                     if c == '\n' {
                         column_counter = 1;
                         line_counter += 1;
@@ -952,7 +976,7 @@ impl Token {
                         } else if c.is_ascii_digit() {
                             state = ParseState::Number;
                             id_buffer.push(c);
-                        } else if !forbidden.contains(&c) {
+                        } else if !Token::FORBIDDEN.contains(&c) {
                             state = ParseState::Identifier;
                             id_buffer.push(c);
                         } else {

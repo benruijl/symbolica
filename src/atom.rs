@@ -465,6 +465,17 @@ impl SymbolBuilder {
     /// This function will return an error when an existing symbol is redefined
     /// with different attributes.
     pub fn build(self) -> Result<Symbol, SmartString<LazyCompact>> {
+        let (namespace, partial_symbol) =
+            self.symbol.symbol.rsplit_once("::").unwrap_or_else(|| {
+                panic!(
+                    "Input {} does not contain a symbol in the format `namespace::symbol`.",
+                    self.symbol.symbol
+                )
+            });
+
+        Token::check_symbol_name(namespace)?;
+        Token::check_symbol_name(partial_symbol)?;
+
         if self.attributes.is_none()
             && self.normalization_function.is_none()
             && self.print_function.is_none()

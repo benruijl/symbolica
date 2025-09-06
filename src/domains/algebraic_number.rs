@@ -138,6 +138,12 @@ where
 
     fn element_from_coefficient(&self, number: crate::coefficient::Coefficient) -> Self::Element {
         match number {
+            crate::coefficient::Coefficient::Indeterminate => {
+                panic!("Cannot convert indeterminate to rational")
+            }
+            crate::coefficient::Coefficient::Infinity(_) => {
+                panic!("Cannot convert infinity to rational")
+            }
             crate::coefficient::Coefficient::Complex(r) => {
                 if r.is_real() {
                     let n = self.element_from_integer(r.re.numerator());
@@ -182,6 +188,12 @@ where
                 let n = self.element_from_integer(r.numerator());
                 let d = self.element_from_integer(r.denominator());
                 self.div(&n, &d)
+            }
+            crate::coefficient::CoefficientView::Indeterminate => {
+                panic!("Cannot convert indeterminate to rational")
+            }
+            crate::coefficient::CoefficientView::Infinity(_) => {
+                panic!("Cannot convert infinity to rational")
             }
             crate::coefficient::CoefficientView::Float(_, _) => {
                 panic!("Cannot convert float coefficient to algebraic number")

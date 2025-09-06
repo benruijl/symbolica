@@ -8,7 +8,7 @@ use crate::{
     domains::{
         float::{Complex, Real},
         integer::Z,
-        rational::Q,
+        rational::{Q, Rational},
     },
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
@@ -377,7 +377,7 @@ impl Atom {
                         let new_exp = helper.to_num(n.get_coeff_view() + n2.get_coeff_view());
 
                         if new_exp.to_num_view().is_zero() {
-                            self.to_num(1.into());
+                            self.to_num(1.into()); // FIXME: not true!
                         } else if new_exp.to_num_view().is_one() {
                             self.set_from_view(&base2);
                         } else {
@@ -397,7 +397,7 @@ impl Atom {
 
                 if let AtomView::Num(n) = helper2.as_view() {
                     if n.is_zero() {
-                        self.to_num(1.into());
+                        self.to_num(1.into()); // FIXME: not true!
                         return true;
                     } else if n.is_one() {
                         self.set_from_view(&base2);
@@ -419,7 +419,7 @@ impl Atom {
                     let new_exp = n.get_coeff_view() + 1;
 
                     if new_exp.is_zero() {
-                        self.to_num(1.into());
+                        self.to_num(1.into()); // FIXME: not true!
                     } else if new_exp == 1.into() {
                         self.set_from_view(&other.as_view());
                     } else {
@@ -455,7 +455,7 @@ impl Atom {
                     let new_exp = n.get_coeff_view() + 1;
 
                     if new_exp.is_zero() {
-                        self.to_num(1.into());
+                        self.to_num(1.into()); // FIXME: not true!
                     } else if new_exp == 1.into() {
                         self.set_from_view(&base);
                     } else {
@@ -719,7 +719,7 @@ impl AtomView<'_> {
                                 if n.is_zero() {
                                     out.to_num(Coefficient::zero());
                                     is_zero = true;
-                                    continue; // do not return as we may encounter 0/0
+                                    //continue; // do not return as we may encounter 0/0
                                 }
                             }
 
@@ -734,7 +734,7 @@ impl AtomView<'_> {
                             if n.is_zero() {
                                 out.to_num(Coefficient::zero());
                                 is_zero = true;
-                                continue;
+                                //continue;
                             }
                         }
 
@@ -743,7 +743,7 @@ impl AtomView<'_> {
                 }
 
                 if is_zero {
-                    return;
+                    //return;
                 }
 
                 atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
@@ -764,6 +764,15 @@ impl AtomView<'_> {
                             {
                                 let v = last_buf.as_view();
                                 if let AtomView::Num(n) = v {
+                                    if matches!(
+                                        n.get_coeff_view(),
+                                        CoefficientView::Indeterminate
+                                            | CoefficientView::Infinity(None)
+                                    ) {
+                                        out.set_from_view(&v);
+                                        return;
+                                    }
+
                                     if !n.is_one() {
                                         // the number is not in the final position, which only happens when i*i merges to -1
                                         // add it to the first position in the reversed buffer
@@ -794,6 +803,14 @@ impl AtomView<'_> {
 
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
+                            if matches!(
+                                n.get_coeff_view(),
+                                CoefficientView::Indeterminate | CoefficientView::Infinity(None)
+                            ) {
+                                out.set_from_view(&v);
+                                return;
+                            }
+
                             if !n.is_one() {
                                 out_mul.extend(v);
                                 out_mul.set_has_coefficient(true);
@@ -893,6 +910,11 @@ impl AtomView<'_> {
                                 out.to_num(Coefficient::zero());
                                 return;
                             }
+                        }
+
+                        if n.is_zero() && id == Symbol::LOG {
+                            out.to_num(Coefficient::Infinity(Some(Rational::new(-1, 1).into())));
+                            return;
                         }
 
                         if let CoefficientView::Float(r, i) = n.get_coeff_view() {
@@ -1209,18 +1231,19 @@ impl AtomView<'_> {
                 };
 
                 'pow_simplify: {
-                    if base_handle.is_one() {
-                        out.to_num(1.into());
-                        break 'pow_simplify;
-                    }
+                    // if base_handle.is_one() {
+                    //     out.to_num(1.into()); // FIXME: not true! exp could be Infinity
+                    //     break 'pow_simplify;
+                    // }
 
                     if let AtomView::Num(e) = exp_handle.as_view() {
                         let exp_num = e.get_coeff_view();
-                        if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
-                            // x^0 = 1
-                            out.to_num(1.into());
-                            break 'pow_simplify;
-                        } else if exp_num == CoefficientView::Natural(1, 1, 0, 1) {
+                        // if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
+                        //     // x^0 = 1
+                        //     out.to_num(1.into()); // FIXME: not true if base is 0 or infinite
+                        //     break 'pow_simplify;
+                        // } else
+                        if exp_num == CoefficientView::Natural(1, 1, 0, 1) {
                             // remove power of 1
                             out.set_from_view(&base_handle.as_view());
                             break 'pow_simplify;
@@ -1330,6 +1353,12 @@ impl AtomView<'_> {
                         }
                     } else {
                         if let AtomView::Num(n) = r {
+                            let coeff = n.get_coeff_view();
+                            if matches!(coeff, CoefficientView::Indeterminate) {
+                                out.set_from_view(&r);
+                                return;
+                            }
+
                             if n.is_zero() {
                                 continue;
                             }
@@ -1362,6 +1391,15 @@ impl AtomView<'_> {
                         // we are done merging
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
+                            let coeff = n.get_coeff_view();
+                            if matches!(
+                                coeff,
+                                CoefficientView::Indeterminate | CoefficientView::Infinity(_)
+                            ) {
+                                out.set_from_view(&v);
+                                return;
+                            }
+
                             if !n.is_zero() {
                                 out_add.extend(v);
                                 cur_len += 1;
@@ -1381,6 +1419,15 @@ impl AtomView<'_> {
                 } else {
                     let v = last_buf.as_view();
                     if let AtomView::Num(n) = v {
+                        let coeff = n.get_coeff_view();
+                        if matches!(
+                            coeff,
+                            CoefficientView::Indeterminate | CoefficientView::Infinity(_)
+                        ) {
+                            out.set_from_view(&v);
+                            return;
+                        }
+
                         if !n.is_zero() {
                             out_add.extend(v);
                             out_add.set_normalized(true);

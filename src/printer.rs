@@ -1018,6 +1018,37 @@ impl FormattedPrintNum for NumView<'_> {
 
                 Ok(false)
             }
+            CoefficientView::Indeterminate => {
+                f.write_str("¿")?;
+                Ok(false)
+            }
+            CoefficientView::Infinity(None) => {
+                f.write_str("⧞")?;
+                Ok(false)
+            }
+            CoefficientView::Infinity(Some((r, i))) => {
+                let real = r.to_rat();
+                let imag = i.to_rat();
+
+                if imag.is_zero() {
+                    if real.is_negative() {
+                        f.write_str("-∞")?;
+                    } else {
+                        f.write_str("∞")?;
+                    }
+                } else {
+                    f.write_char('(')?;
+                    real.format(opts, PrintState::default(), f)?;
+                    real.format(
+                        opts,
+                        PrintState::default().step(true, false, false, false),
+                        f,
+                    )?;
+                    f.write_char(')')?;
+                    f.write_str("∞")?;
+                }
+                Ok(false)
+            }
             CoefficientView::FiniteField(num, fi) => {
                 let ff = State::get_finite_field(fi);
                 f.write_fmt(format_args!(

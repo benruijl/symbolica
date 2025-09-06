@@ -357,7 +357,11 @@ impl State {
                     attributes.contains(&FunctionAttribute::Linear),
                 );
 
-                if r == new_id && normalization_function.is_none() {
+                if r == new_id
+                    && normalization_function.is_none()
+                    && print_function.is_none()
+                    && derivative_function.is_none()
+                {
                     Ok(r)
                 } else {
                     let data = &ID_TO_STR[r.get_id() as usize].1;

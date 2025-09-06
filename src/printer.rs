@@ -5,7 +5,10 @@ use std::fmt::{self, Error, Write};
 use colored::Colorize;
 
 use crate::{
-    atom::{AddView, AtomView, MulView, NumView, PowView, VarView, representation::FunView},
+    atom::{
+        AddView, Atom, AtomView, FunctionBuilder, MulView, NumView, PowView, VarView,
+        representation::FunView,
+    },
     coefficient::CoefficientView,
     domains::{SelfRing, finite_field::FiniteFieldCore, float::Complex},
     state::State,
@@ -392,12 +395,121 @@ impl AtomView<'_> {
     }
 
     /// Print the atom in a form that is unique and independent of any implementation details.
-    ///
-    /// Anti-symmetric functions are not supported.
     pub(crate) fn to_canonical_string(&self) -> String {
+        let fixed = self.canonical_string_sign_fix();
+        fixed.as_view().to_canonical_string_symmetric()
+    }
+
+    /// Print the atom in a form that is unique and independent of any implementation details,
+    /// treating all antisymmetric functions as symmetric.
+    pub(crate) fn to_canonical_string_symmetric(&self) -> String {
         let mut s = String::new();
         self.to_canonical_view_impl(&mut s);
         s
+    }
+
+    /// Fix the sign of antisymmetric functions so that they can be treated as symmetric under
+    /// canonical string ordering.
+    fn canonical_string_sign_fix(&self) -> Atom {
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => self.to_owned(),
+            AtomView::Fun(f) => {
+                let mut fb = FunctionBuilder::new(f.get_symbol());
+                for aa in f.iter() {
+                    fb = fb.add_arg(aa.canonical_string_sign_fix());
+                }
+
+                // sign changes in the arguments may cause a reordering, and linearity may
+                // move minus sign out of the function
+                let res = fb.finish();
+
+                if f.is_antisymmetric() {
+                    fn sort_args(ff: &FunView) -> Atom {
+                        let mut args = vec![];
+                        for (i, aa) in ff.iter().enumerate() {
+                            // all antisymmetric functions in the arguments can be treated as symmetric under canonical string ordering
+                            args.push((aa.to_canonical_string_symmetric(), i));
+                        }
+
+                        args.sort();
+
+                        if ff.is_antisymmetric() {
+                            // find the number of swaps needed to sort the arguments
+                            let mut order: Vec<_> = (0..args.len())
+                                .map(|i| args.iter().position(|(_, j)| *j == i).unwrap())
+                                .collect();
+                            let mut swaps = 0;
+                            for i in 0..order.len() {
+                                let pos = order[i..].iter().position(|&x| x == i).unwrap();
+                                order.copy_within(i..i + pos, i + 1);
+                                swaps += pos;
+                            }
+
+                            if swaps % 2 == 1 {
+                                return -ff.as_view();
+                            }
+                        }
+
+                        ff.as_view().to_owned()
+                    }
+
+                    match res.as_view() {
+                        AtomView::Fun(ff) => sort_args(&ff),
+                        AtomView::Mul(m) => {
+                            // find the antisymmetric function in the product
+                            let mut it = m.iter();
+                            let first = it.next().unwrap_or_else(|| {
+                                panic!("Expected at least two terms in product: {}", self)
+                            });
+                            let second = it.next().unwrap_or_else(|| {
+                                panic!("Expected at least one term in product: {}", self)
+                            });
+                            if it.next().is_some() {
+                                panic!("Expected at most two terms in product: {}", self);
+                            }
+
+                            if let AtomView::Fun(fff) = first {
+                                return sort_args(&fff) * second;
+                            } else if let AtomView::Fun(fff) = second {
+                                return sort_args(&fff) * first;
+                            } else {
+                                panic!(
+                                    "Expected one term in product to be antisymmetric function: {}",
+                                    self
+                                );
+                            }
+                        }
+                        _ => panic!(
+                            "Unexpected result from antisymmetric function sign fix of {}",
+                            self
+                        ),
+                    }
+                } else {
+                    res
+                }
+            }
+            AtomView::Pow(p) => {
+                let (b, e) = p.get_base_exp();
+                b.canonical_string_sign_fix()
+                    .pow(e.canonical_string_sign_fix())
+            }
+            AtomView::Mul(m) => {
+                let mut terms = vec![];
+                for x in m.iter() {
+                    terms.push(x.canonical_string_sign_fix());
+                }
+
+                Atom::mul_many(&terms)
+            }
+            AtomView::Add(a) => {
+                let mut terms = vec![];
+                for x in a.iter() {
+                    terms.push(x.canonical_string_sign_fix());
+                }
+
+                Atom::add_many(&terms)
+            }
+        }
     }
 
     fn to_canonical_view_impl(&self, out: &mut String) {
@@ -436,15 +548,10 @@ impl AtomView<'_> {
                     args.push(arg);
                 }
 
-                // TODO: anti-symmetric may generate minus sign...
-                if f.is_symmetric() {
+                // The potential sign flip for antisymmetric functions should have been
+                // taken into account in the input, by the canonical_string_sign_fix() function
+                if f.is_symmetric() || f.is_antisymmetric() {
                     args.sort();
-                }
-
-                if f.is_antisymmetric() {
-                    unimplemented!(
-                        "Antisymmetric functions are not supported yet for canonical view"
-                    );
                 }
 
                 for (i, arg) in args.iter().enumerate() {
@@ -1240,7 +1347,7 @@ mod test {
     use crate::{
         atom::{AtomCore, AtomView},
         domains::{SelfRing, finite_field::Zp, integer::Z},
-        parse,
+        function, parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
         symbol,
     };
@@ -1369,6 +1476,27 @@ mod test {
         assert_eq!(
             a.to_canonical_string(),
             "(symbolica::canon_x+symbolica::canon_y)*symbolica::canon_y^2+2*symbolica::canon_x*symbolica::canon_y+symbolica::canon_f(symbolica::canon_x,symbolica::canon_y)+symbolica::canon_x^2"
+        );
+    }
+
+    #[test]
+    fn canon_antisymmetric() {
+        let (y, x) = symbol!(
+            "symbolica::canon_antisymmetric::y",
+            "symbolica::canon_antisymmetric::x"
+        );
+        let f = symbol!("symbolica::canon_antisymmetric::f"; Antisymmetric);
+        let f_l = symbol!("symbolica::canon_antisymmetric::f_l"; Antisymmetric, Linear);
+        let r1 = (function!(f, y, x) + 2).to_canonical_string();
+        assert_eq!(
+            r1,
+            "-1*symbolica::canon_antisymmetric::f(symbolica::canon_antisymmetric::x,symbolica::canon_antisymmetric::y)+2"
+        );
+
+        let r2 = (function!(f_l, function!(f, y, x), x) * 3).to_canonical_string();
+        assert_eq!(
+            r2,
+            "-3*symbolica::canon_antisymmetric::f_l(symbolica::canon_antisymmetric::f(symbolica::canon_antisymmetric::x,symbolica::canon_antisymmetric::y),symbolica::canon_antisymmetric::x)"
         );
     }
 

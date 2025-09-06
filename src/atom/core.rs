@@ -1069,8 +1069,6 @@ pub trait AtomCore {
 
     /// Print the atom in a form that is unique and independent of any implementation details.
     ///
-    /// Anti-symmetric functions are not supported.
-    ///
     /// # Example
     ///
     /// ```

@@ -136,62 +136,81 @@ where
         AlgebraicNumber { poly }
     }
 
-    fn element_from_coefficient(&self, number: crate::coefficient::Coefficient) -> Self::Element {
+    fn try_element_from_coefficient(
+        &self,
+        number: crate::coefficient::Coefficient,
+    ) -> Result<Self::Element, String> {
         match number {
+            crate::coefficient::Coefficient::Indeterminate => {
+                Err("Cannot convert indeterminate to rational".to_string())
+            }
+            crate::coefficient::Coefficient::Infinity(_) => {
+                Err("Cannot convert infinity to rational".to_string())
+            }
             crate::coefficient::Coefficient::Complex(r) => {
                 if r.is_real() {
                     let n = self.element_from_integer(r.re.numerator());
                     let d = self.element_from_integer(r.re.denominator());
-                    self.div(&n, &d)
+                    Ok(self.div(&n, &d))
                 } else {
                     // TODO: check if i is a root of the minimal polynomial
-                    panic!("Cannot convert complex coefficient to algebraic number")
+                    Err("Cannot convert complex coefficient to algebraic number".to_string())
                 }
             }
             crate::coefficient::Coefficient::Float(_) => {
-                panic!("Cannot convert float coefficient to algebraic number")
+                Err("Cannot convert float coefficient to algebraic number".to_string())
             }
             crate::coefficient::Coefficient::FiniteField(_, _) => {
-                panic!("Cannot convert finite field coefficient to algebraic number")
+                Err("Cannot convert finite field coefficient to algebraic number".to_string())
             }
-            crate::coefficient::Coefficient::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial coefficient to algebraic number")
-            }
+            crate::coefficient::Coefficient::RationalPolynomial(_) => Err(
+                "Cannot convert rational polynomial coefficient to algebraic number".to_string(),
+            ),
         }
     }
 
-    fn element_from_coefficient_view(
+    fn try_element_from_coefficient_view(
         &self,
         number: crate::coefficient::CoefficientView<'_>,
-    ) -> Self::Element {
+    ) -> Result<Self::Element, String> {
         match number {
             crate::coefficient::CoefficientView::Natural(n, d, ni, _di) => {
                 if ni != 0 {
-                    panic!("Cannot convert complex coefficient to algebraic number")
+                    return Err(
+                        "Cannot convert complex coefficient to algebraic number".to_string()
+                    );
                 }
 
                 let n = self.element_from_integer(n.into());
                 let d = self.element_from_integer(d.into());
-                self.div(&n, &d)
+                Ok(self.div(&n, &d))
             }
             crate::coefficient::CoefficientView::Large(l, i) => {
                 if !i.is_zero() {
-                    panic!("Cannot convert complex coefficient to algebraic number")
+                    return Err(
+                        "Cannot convert complex coefficient to algebraic number".to_string()
+                    );
                 }
                 let r: Rational = l.to_rat();
                 let n = self.element_from_integer(r.numerator());
                 let d = self.element_from_integer(r.denominator());
-                self.div(&n, &d)
+                Ok(self.div(&n, &d))
+            }
+            crate::coefficient::CoefficientView::Indeterminate => {
+                Err("Cannot convert indeterminate to rational".to_string())
+            }
+            crate::coefficient::CoefficientView::Infinity(_) => {
+                Err("Cannot convert infinity to rational".to_string())
             }
             crate::coefficient::CoefficientView::Float(_, _) => {
-                panic!("Cannot convert float coefficient to algebraic number")
+                Err("Cannot convert float coefficient to algebraic number".to_string())
             }
             crate::coefficient::CoefficientView::FiniteField(_, _) => {
-                panic!("Cannot convert finite field coefficient to algebraic number")
+                Err("Cannot convert finite field coefficient to algebraic number".to_string())
             }
-            crate::coefficient::CoefficientView::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial coefficient to algebraic number")
-            }
+            crate::coefficient::CoefficientView::RationalPolynomial(_) => Err(
+                "Cannot convert rational polynomial coefficient to algebraic number".to_string(),
+            ),
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     domains::{
         float::{Complex, Real},
         integer::Z,
-        rational::Q,
+        rational::{Q, Rational},
     },
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
@@ -695,7 +695,6 @@ impl AtomView<'_> {
             AtomView::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[_; 20]> = SmallVec::new();
 
-                let mut is_zero = false;
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
 
@@ -715,12 +714,6 @@ impl AtomView<'_> {
                                 if n.is_one() {
                                     continue;
                                 }
-
-                                if n.is_zero() {
-                                    out.to_num(Coefficient::zero());
-                                    is_zero = true;
-                                    continue; // do not return as we may encounter 0/0
-                                }
                             }
 
                             atom_test_buf.push(handle);
@@ -730,20 +723,10 @@ impl AtomView<'_> {
                             if n.is_one() {
                                 continue;
                             }
-
-                            if n.is_zero() {
-                                out.to_num(Coefficient::zero());
-                                is_zero = true;
-                                continue;
-                            }
                         }
 
                         atom_test_buf.push(handle);
                     }
-                }
-
-                if is_zero {
-                    return;
                 }
 
                 atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
@@ -764,6 +747,20 @@ impl AtomView<'_> {
                             {
                                 let v = last_buf.as_view();
                                 if let AtomView::Num(n) = v {
+                                    if matches!(
+                                        n.get_coeff_view(),
+                                        CoefficientView::Indeterminate
+                                            | CoefficientView::Infinity(None)
+                                    ) {
+                                        out.set_from_view(&v);
+                                        return;
+                                    }
+
+                                    if n.is_zero() {
+                                        out.to_num(Coefficient::zero());
+                                        return;
+                                    }
+
                                     if !n.is_one() {
                                         // the number is not in the final position, which only happens when i*i merges to -1
                                         // add it to the first position in the reversed buffer
@@ -794,6 +791,19 @@ impl AtomView<'_> {
 
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
+                            if matches!(
+                                n.get_coeff_view(),
+                                CoefficientView::Indeterminate | CoefficientView::Infinity(None)
+                            ) {
+                                out.set_from_view(&v);
+                                return;
+                            }
+
+                            if n.is_zero() {
+                                out.to_num(Coefficient::zero());
+                                return;
+                            }
+
                             if !n.is_one() {
                                 out_mul.extend(v);
                                 out_mul.set_has_coefficient(true);
@@ -893,6 +903,11 @@ impl AtomView<'_> {
                                 out.to_num(Coefficient::zero());
                                 return;
                             }
+                        }
+
+                        if n.is_zero() && id == Symbol::LOG {
+                            out.to_num(Coefficient::Infinity(Some(Rational::new(-1, 1).into())));
+                            return;
                         }
 
                         if let CoefficientView::Float(r, i) = n.get_coeff_view() {
@@ -1209,18 +1224,9 @@ impl AtomView<'_> {
                 };
 
                 'pow_simplify: {
-                    if base_handle.is_one() {
-                        out.to_num(1.into());
-                        break 'pow_simplify;
-                    }
-
                     if let AtomView::Num(e) = exp_handle.as_view() {
                         let exp_num = e.get_coeff_view();
-                        if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
-                            // x^0 = 1
-                            out.to_num(1.into());
-                            break 'pow_simplify;
-                        } else if exp_num == CoefficientView::Natural(1, 1, 0, 1) {
+                        if exp_num == CoefficientView::Natural(1, 1, 0, 1) {
                             // remove power of 1
                             out.set_from_view(&base_handle.as_view());
                             break 'pow_simplify;
@@ -1279,6 +1285,10 @@ impl AtomView<'_> {
                                 mul_h.as_view().normalize(workspace, out);
                                 break 'pow_simplify;
                             }
+                        } else if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
+                            // x^0 = 1
+                            out.to_num(1.into());
+                            break 'pow_simplify;
                         }
                     } else if let AtomView::Pow(p_base) = base_handle.as_view() {
                         if exp_handle.is_integer() {
@@ -1330,6 +1340,12 @@ impl AtomView<'_> {
                         }
                     } else {
                         if let AtomView::Num(n) = r {
+                            let coeff = n.get_coeff_view();
+                            if matches!(coeff, CoefficientView::Indeterminate) {
+                                out.set_from_view(&r);
+                                return;
+                            }
+
                             if n.is_zero() {
                                 continue;
                             }
@@ -1362,6 +1378,15 @@ impl AtomView<'_> {
                         // we are done merging
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
+                            let coeff = n.get_coeff_view();
+                            if matches!(
+                                coeff,
+                                CoefficientView::Indeterminate | CoefficientView::Infinity(_)
+                            ) {
+                                out.set_from_view(&v);
+                                return;
+                            }
+
                             if !n.is_zero() {
                                 out_add.extend(v);
                                 cur_len += 1;
@@ -1381,6 +1406,15 @@ impl AtomView<'_> {
                 } else {
                     let v = last_buf.as_view();
                     if let AtomView::Num(n) = v {
+                        let coeff = n.get_coeff_view();
+                        if matches!(
+                            coeff,
+                            CoefficientView::Indeterminate | CoefficientView::Infinity(_)
+                        ) {
+                            out.set_from_view(&v);
+                            return;
+                        }
+
                         if !n.is_zero() {
                             out_add.extend(v);
                             out_add.set_normalized(true);
@@ -1481,6 +1515,14 @@ impl AtomView<'_> {
             if rhs.is_zero() {
                 self.clone_into(out);
                 return;
+            }
+
+            if let AtomView::Num(n) = rhs {
+                let r = n.get_coeff_view();
+                if r == CoefficientView::Indeterminate || r == CoefficientView::Infinity(None) {
+                    rhs.clone_into(out);
+                    return;
+                }
             }
 
             if a1.get_nargs() < 50 {

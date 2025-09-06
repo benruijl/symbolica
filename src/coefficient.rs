@@ -20,6 +20,7 @@ use ahash::HashMap;
 use bytes::Buf;
 use rug::{integer::Order, ops::NegAssign};
 use smallvec::{SmallVec, smallvec};
+use tracing::error;
 
 use crate::{
     atom::{Atom, AtomView, Symbol},
@@ -45,10 +46,31 @@ pub trait ConvertToRing: Ring {
     fn element_from_integer(&self, number: Integer) -> Self::Element;
 
     /// Convert from a Symbolica `Coefficient` to a Ring.
-    fn element_from_coefficient(&self, number: Coefficient) -> Self::Element;
+    /// Panics when the conversion is impossible.
+    fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
+        match self.try_element_from_coefficient(number) {
+            Ok(e) => e,
+            Err(msg) => panic!("Cannot convert coefficient to ring element: {}", msg),
+        }
+    }
+
+    /// Try to convert from a Symbolica `Coefficient` to a Ring.
+    fn try_element_from_coefficient(&self, number: Coefficient) -> Result<Self::Element, String>;
 
     /// Convert from a Symbolica `CoefficientView` to a Ring.
-    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element;
+    /// Panics when the conversion is impossible.
+    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element {
+        match self.try_element_from_coefficient_view(number) {
+            Ok(e) => e,
+            Err(msg) => panic!("Cannot convert coefficient to ring element: {}", msg),
+        }
+    }
+
+    /// Try to convert from a Symbolica `CoefficientView` to a Ring.
+    fn try_element_from_coefficient_view(
+        &self,
+        number: CoefficientView<'_>,
+    ) -> Result<Self::Element, String>;
 }
 
 /// A coefficient that can appear in a Symbolica expression.
@@ -59,6 +81,10 @@ pub trait ConvertToRing: Ring {
 /// The borrowed version of this is [CoefficientView].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Coefficient {
+    /// An indeterminate number, such as `0/0` or `0^0`.
+    Indeterminate,
+    /// Infinity with an optional complex phase
+    Infinity(Option<Complex<Rational>>),
     Complex(Complex<Rational>),
     Float(Complex<Float>),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
@@ -66,10 +92,40 @@ pub enum Coefficient {
 }
 
 impl Coefficient {
+    /// Construct positive infinity.
+    pub fn positive_infinity() -> Self {
+        Coefficient::Infinity(Some(Complex::new(Rational::one(), Rational::zero())))
+    }
+
+    /// Construct complex infinity.
+    pub fn complex_infinity() -> Self {
+        Coefficient::Infinity(None)
+    }
+
+    /// Construct an indeterminate quantity.
+    pub fn indeterminate() -> Self {
+        Coefficient::Indeterminate
+    }
+
     /// Construct a coefficient from a finite field element.
     pub fn from_finite_field(field: Zp64, element: FiniteFieldElement<u64>) -> Self {
         let index = State::get_or_insert_finite_field(field);
         Coefficient::FiniteField(element, index)
+    }
+
+    /// Normalize the direction of an infinity so that the real part has absolute value 1.
+    /// If the real part is zero, the imaginary part is normalized to an absolute value of 1.
+    pub(crate) fn normalize_infinity(dir: Complex<Rational>) -> Coefficient {
+        if dir.is_zero() {
+            Coefficient::Indeterminate
+        } else if dir.re.is_zero() {
+            Coefficient::Infinity(Some(Complex::new(
+                Rational::zero(),
+                &dir.im / &dir.im.abs(),
+            )))
+        } else {
+            Coefficient::Infinity(Some(&dir / &dir.re.abs()))
+        }
     }
 }
 
@@ -209,8 +265,11 @@ impl Complex<Rational> {
 }
 
 impl Ord for Coefficient {
+    /// A comparison. It considers infinites the same.
     fn cmp(&self, other: &Coefficient) -> Ordering {
         match (self, other) {
+            (Coefficient::Indeterminate, Coefficient::Indeterminate) => Ordering::Equal,
+            (Coefficient::Infinity(_), Coefficient::Infinity(_)) => Ordering::Equal,
             (Coefficient::Complex(r1), Coefficient::Complex(r2)) => r1
                 .re
                 .partial_cmp(&r2.re)
@@ -225,6 +284,10 @@ impl Ord for Coefficient {
             (Coefficient::RationalPolynomial(n1), Coefficient::RationalPolynomial(n2)) => {
                 n1.internal_cmp(n2)
             }
+            (Coefficient::Indeterminate, _) => Ordering::Greater,
+            (_, Coefficient::Indeterminate) => Ordering::Less,
+            (Coefficient::Infinity(_), _) => Ordering::Greater,
+            (_, Coefficient::Infinity(_)) => Ordering::Less,
             (Coefficient::Complex(_), _) => Ordering::Less,
             (_, Coefficient::Complex(_)) => Ordering::Greater,
             (Coefficient::Float(_), _) => Ordering::Less,
@@ -250,7 +313,8 @@ impl Coefficient {
 
     pub fn is_negative(&self) -> bool {
         match self {
-            Coefficient::Complex(r) => {
+            Coefficient::Indeterminate | Coefficient::Infinity(None) => false,
+            Coefficient::Infinity(Some(r)) | Coefficient::Complex(r) => {
                 r.re.is_negative() && r.im.is_zero() || r.im.is_negative() && r.re.is_zero()
             }
             Coefficient::Float(f) => {
@@ -263,6 +327,7 @@ impl Coefficient {
 
     pub fn is_zero(&self) -> bool {
         match self {
+            Coefficient::Indeterminate | Coefficient::Infinity(_) => false,
             Coefficient::Complex(r) => r.is_zero(),
             Coefficient::Float(f) => f.is_zero(),
             Coefficient::FiniteField(num, _field) => num.0 == 0,
@@ -272,6 +337,7 @@ impl Coefficient {
 
     pub fn is_one(&self) -> bool {
         match self {
+            Coefficient::Indeterminate | Coefficient::Infinity(_) => false,
             Coefficient::Complex(r) => r.is_one(),
             Coefficient::Float(f) => f.is_one(),
             Coefficient::FiniteField(num, field) => {
@@ -284,24 +350,28 @@ impl Coefficient {
 
     pub fn gcd(&self, rhs: &Self) -> Self {
         match (self, rhs) {
+            (Coefficient::Indeterminate | Coefficient::Infinity(_), _) => Self::one(),
+            (_, Coefficient::Indeterminate | Coefficient::Infinity(_)) => Self::one(),
             (Coefficient::Complex(r1), Coefficient::Complex(r2)) => {
                 Coefficient::Complex(r1.gcd(r2))
             }
             (Coefficient::FiniteField(_n1, i1), Coefficient::FiniteField(_n2, i2)) => {
                 if i1 != i2 {
-                    panic!(
+                    error!(
                         "Cannot multiply numbers from different finite fields: p1={}, p2={}",
                         State::get_finite_field(*i1).get_prime(),
                         State::get_finite_field(*i2).get_prime()
                     );
+                    return Coefficient::Indeterminate;
                 }
                 let f = State::get_finite_field(*i1);
                 Coefficient::FiniteField(f.one(), *i1)
             }
             (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
-                panic!(
+                error!(
                     "Cannot multiply finite field to non-finite number. Convert other number first?"
                 );
+                Coefficient::Indeterminate
             }
             (Coefficient::Complex(r), Coefficient::RationalPolynomial(rp))
             | (Coefficient::RationalPolynomial(rp), Coefficient::Complex(r)) => {
@@ -320,7 +390,8 @@ impl Coefficient {
                         unreachable!()
                     }
                 } else {
-                    panic!("Cannot multiply complex number to rational polynomial")
+                    error!("Cannot multiply complex number to rational polynomial");
+                    Coefficient::Indeterminate
                 }
             }
             (Coefficient::RationalPolynomial(p1), Coefficient::RationalPolynomial(p2)) => {
@@ -343,7 +414,8 @@ impl Coefficient {
             | (Coefficient::Float(f), Coefficient::Complex(_)) => Coefficient::Float(f.one()),
             (Coefficient::Float(f1), Coefficient::Float(_f2)) => Coefficient::Float(f1.one()),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
-                panic!("Cannot take gcd of floats and other coefficient types");
+                error!("Cannot take gcd of floats and other coefficient types");
+                Coefficient::Indeterminate
             }
         }
     }
@@ -354,6 +426,11 @@ impl Neg for Coefficient {
 
     fn neg(self) -> Coefficient {
         match self {
+            Coefficient::Indeterminate => Coefficient::Indeterminate,
+            Coefficient::Infinity(phase) => match phase {
+                Some(p) => Coefficient::Infinity(Some(-p)),
+                None => Coefficient::Infinity(None),
+            },
             Coefficient::Complex(r) => Coefficient::Complex(-r),
             Coefficient::Float(f) => Coefficient::Float(-f),
             Coefficient::FiniteField(n, i) => {
@@ -373,17 +450,19 @@ impl Add for Coefficient {
             (Coefficient::Complex(r1), Coefficient::Complex(r2)) => Coefficient::Complex(r1 + r2),
             (Coefficient::FiniteField(n1, i1), Coefficient::FiniteField(n2, i2)) => {
                 if i1 != i2 {
-                    panic!(
+                    error!(
                         "Cannot add numbers from different finite fields: p1={}, p2={}",
                         State::get_finite_field(i1).get_prime(),
                         State::get_finite_field(i2).get_prime()
                     );
+                    return Coefficient::Indeterminate;
                 }
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+                error!("Cannot add finite field to non-finite number. Convert other number first?");
+                Coefficient::Indeterminate
             }
             (Coefficient::Complex(r), Coefficient::RationalPolynomial(rp))
             | (Coefficient::RationalPolynomial(rp), Coefficient::Complex(r)) => {
@@ -392,11 +471,18 @@ impl Add for Coefficient {
                         numerator: rp.numerator.constant(r.re.numerator()),
                         denominator: rp.denominator.constant(r.re.denominator()),
                     };
-                    Coefficient::RationalPolynomial(&rp + &r2)
+                    let res = &rp + &r2;
+
+                    if res.is_constant() {
+                        (res.numerator.lcoeff(), res.denominator.lcoeff()).into()
+                    } else {
+                        Coefficient::RationalPolynomial(res)
+                    }
                 } else {
-                    panic!(
+                    error!(
                         "Cannot add complex number to rational polynomial. Convert other number first?"
                     );
+                    Coefficient::Indeterminate
                 }
             }
             (Coefficient::RationalPolynomial(mut p1), Coefficient::RationalPolynomial(mut p2)) => {
@@ -418,7 +504,19 @@ impl Add for Coefficient {
             }
             (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 + f2),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
-                panic!("Cannot add float to finite-field number or rational polynomial");
+                error!("Cannot add float to finite-field number or rational polynomial");
+                Coefficient::Indeterminate
+            }
+            (Coefficient::Indeterminate, _) => Coefficient::Indeterminate,
+            (_, Coefficient::Indeterminate) => Coefficient::Indeterminate,
+            (Coefficient::Infinity(phase1), Coefficient::Infinity(phase2)) => {
+                match (phase1, phase2) {
+                    (Some(p1), Some(p2)) if p1 == p2 => Coefficient::Infinity(Some(p1)),
+                    _ => Coefficient::Indeterminate,
+                }
+            }
+            (Coefficient::Infinity(a), _) | (_, Coefficient::Infinity(a)) => {
+                Coefficient::Infinity(a)
             }
         }
     }
@@ -432,19 +530,21 @@ impl Mul for Coefficient {
             (Coefficient::Complex(r1), Coefficient::Complex(r2)) => Coefficient::Complex(r1 * r2),
             (Coefficient::FiniteField(n1, i1), Coefficient::FiniteField(n2, i2)) => {
                 if i1 != i2 {
-                    panic!(
+                    error!(
                         "Cannot multiply numbers from different finite fields: p1={}, p2={}",
                         State::get_finite_field(i1).get_prime(),
                         State::get_finite_field(i2).get_prime()
                     );
+                    return Coefficient::Indeterminate;
                 }
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
-                panic!(
+                error!(
                     "Cannot multiply finite field to non-finite number. Convert other number first?"
                 );
+                Coefficient::Indeterminate
             }
             (Coefficient::Complex(r), Coefficient::RationalPolynomial(mut rp))
             | (Coefficient::RationalPolynomial(mut rp), Coefficient::Complex(r)) => {
@@ -461,9 +561,10 @@ impl Mul for Coefficient {
                         .mul_coeff(r.re.denominator().div(&gcd2));
                     Coefficient::RationalPolynomial(rp)
                 } else {
-                    panic!(
+                    error!(
                         "Cannot multiply complex number to non-complex number. Convert other number first?"
                     );
+                    Coefficient::Indeterminate
                 }
             }
             (Coefficient::RationalPolynomial(mut p1), Coefficient::RationalPolynomial(mut p2)) => {
@@ -486,7 +587,32 @@ impl Mul for Coefficient {
             )),
             (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 * f2),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
-                panic!("Cannot multiply float to finite-field number or rational polynomial");
+                error!("Cannot multiply float to finite-field number or rational polynomial");
+                Coefficient::Indeterminate
+            }
+            (Coefficient::Indeterminate, _) => Coefficient::Indeterminate,
+            (_, Coefficient::Indeterminate) => Coefficient::Indeterminate,
+            (Coefficient::Infinity(phase1), Coefficient::Infinity(phase2)) => {
+                match (phase1, phase2) {
+                    (Some(p1), Some(p2)) => Coefficient::normalize_infinity(p1 * p2),
+                    _ => Coefficient::Infinity(None),
+                }
+            }
+            (Coefficient::Infinity(a), Coefficient::Complex(r))
+            | (Coefficient::Complex(r), Coefficient::Infinity(a)) => {
+                if r.is_zero() {
+                    return Coefficient::Indeterminate;
+                }
+                match a {
+                    Some(p) => Coefficient::normalize_infinity(p * r),
+                    None => Coefficient::Infinity(None),
+                }
+            }
+            (Coefficient::Infinity(_), _) | (_, Coefficient::Infinity(_)) => {
+                error!(
+                    "Multiplication of rational polynomial or finite field is not implemented yet"
+                );
+                Coefficient::Indeterminate
             }
         }
     }
@@ -574,6 +700,8 @@ impl SerializedFloat<'_> {
 /// serialized for efficiency.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CoefficientView<'a> {
+    Indeterminate,
+    Infinity(Option<(SerializedRational<'a>, SerializedRational<'a>)>),
     /// A complex number `(n_re, d_re, n_im, d_im)` that represents `n_re/d_re + i * n_im/d_im`.
     Natural(i64, i64, i64, i64),
     /// A floating point number `(re, im)` that represents `re + i * im`.
@@ -591,48 +719,59 @@ impl ConvertToRing for Q {
     }
 
     #[inline]
-    fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
+    fn try_element_from_coefficient(&self, number: Coefficient) -> Result<Self::Element, String> {
         match number {
+            Coefficient::Indeterminate => {
+                Err("Cannot convert indeterminate to rational".to_owned())
+            }
+            Coefficient::Infinity(_) => Err("Cannot convert infinity to rational".to_owned()),
             Coefficient::Complex(r) => {
                 if r.is_real() {
-                    r.re
+                    Ok(r.re)
                 } else {
-                    panic!("Cannot convert complex to rational")
+                    Err("Cannot convert complex to rational".to_owned())
                 }
             }
-            Coefficient::Float(_) => panic!("Cannot convert float to rational"),
-            Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to rational"),
+            Coefficient::Float(_) => Err("Cannot convert float to rational".to_owned()),
+            Coefficient::FiniteField(_, _) => {
+                Err("Cannot convert finite field to rational".to_owned())
+            }
             Coefficient::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to rational")
+                Err("Cannot convert rational polynomial to rational".to_owned())
             }
         }
     }
 
     #[inline]
-    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Rational {
+    fn try_element_from_coefficient_view(
+        &self,
+        number: CoefficientView<'_>,
+    ) -> Result<Rational, String> {
         match number {
+            CoefficientView::Indeterminate => {
+                Err("Cannot convert indeterminate to rational".to_owned())
+            }
+            CoefficientView::Infinity(_) => Err("Cannot convert infinity to rational".to_owned()),
             CoefficientView::Natural(r, d, cr, _cd) => {
                 if cr == 0 {
-                    Rational::from_unchecked(r, d)
+                    Ok(Rational::from_unchecked(r, d))
                 } else {
-                    panic!("Cannot convert complex number to rational")
+                    Err("Cannot convert complex number to rational".to_owned())
                 }
             }
             CoefficientView::Large(r, i) => {
                 if i.is_zero() {
-                    r.to_rat()
+                    Ok(r.to_rat())
                 } else {
-                    panic!("Cannot convert complex number to rational")
+                    Err("Cannot convert complex number to rational".to_owned())
                 }
             }
-            CoefficientView::Float(_, _) => {
-                panic!("Cannot convert float to rational")
-            }
+            CoefficientView::Float(_, _) => Err("Cannot convert float to rational".to_owned()),
             CoefficientView::FiniteField(_, _) => {
-                panic!("Cannot convert finite field to rational")
+                Err("Cannot convert finite field to rational".to_owned())
             }
             CoefficientView::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to rational")
+                Err("Cannot convert rational polynomial to rational".to_owned())
             }
         }
     }
@@ -645,55 +784,64 @@ impl ConvertToRing for IntegerRing {
     }
 
     #[inline]
-    fn element_from_coefficient(&self, number: Coefficient) -> Integer {
+    fn try_element_from_coefficient(&self, number: Coefficient) -> Result<Integer, String> {
         match number {
+            Coefficient::Indeterminate => Err("Cannot convert indeterminate to integer".to_owned()),
+            Coefficient::Infinity(_) => Err("Cannot convert infinity to integer".to_owned()),
             Coefficient::Complex(r) => {
                 if r.is_real() {
                     if r.re.is_integer() {
-                        r.re.numerator()
+                        Ok(r.re.numerator())
                     } else {
-                        panic!("Cannot convert non-integer real number to integer")
+                        Err("Cannot convert non-integer real number to integer".to_owned())
                     }
                 } else {
-                    panic!("Cannot convert complex number to integer")
+                    Err("Cannot convert complex number to integer".to_owned())
                 }
             }
-            Coefficient::Float(_) => panic!("Cannot convert float to integer"),
-            Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to integer"),
+            Coefficient::Float(_) => Err("Cannot convert float to integer".to_owned()),
+            Coefficient::FiniteField(_, _) => {
+                Err("Cannot convert finite field to integer".to_owned())
+            }
             Coefficient::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to rational")
+                Err("Cannot convert rational polynomial to rational".to_owned())
             }
         }
     }
 
     #[inline]
-    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Integer {
+    fn try_element_from_coefficient_view(
+        &self,
+        number: CoefficientView<'_>,
+    ) -> Result<Integer, String> {
         match number {
+            CoefficientView::Indeterminate => {
+                Err("Cannot convert indeterminate to integer".to_owned())
+            }
+            CoefficientView::Infinity(_) => Err("Cannot convert infinity to integer".to_owned()),
             CoefficientView::Natural(nr, dr, ni, _di) => {
                 if dr == 1 && ni == 0 {
-                    Integer::Natural(nr)
+                    Ok(Integer::Natural(nr))
                 } else {
-                    panic!("Cannot convert rational or complex number to integer")
+                    Err("Cannot convert rational or complex number to integer".to_owned())
                 }
             }
             CoefficientView::Large(r, i) => {
                 if !i.is_zero() {
-                    panic!("Cannot convert complex number to integer")
+                    return Err("Cannot convert complex number to integer".to_owned());
                 }
                 let r = r.to_rat();
                 if !r.is_integer() {
-                    panic!("Cannot convert rational to integer")
+                    return Err("Cannot convert rational to integer".to_owned());
                 }
-                r.numerator()
+                Ok(r.numerator())
             }
-            CoefficientView::Float(_, _) => {
-                panic!("Cannot convert float to integer")
-            }
+            CoefficientView::Float(_, _) => Err("Cannot convert float to integer".to_owned()),
             CoefficientView::FiniteField(_, _) => {
-                panic!("Cannot convert finite field to integer")
+                Err("Cannot convert finite field to integer".to_owned())
             }
             CoefficientView::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to integer")
+                Err("Cannot convert rational polynomial to integer".to_owned())
             }
         }
     }
@@ -711,6 +859,17 @@ impl ConvertToRing for AtomField {
     fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element {
         Atom::num(number.to_owned())
     }
+
+    fn try_element_from_coefficient(&self, number: Coefficient) -> Result<Self::Element, String> {
+        Ok(Atom::num(number))
+    }
+
+    fn try_element_from_coefficient_view(
+        &self,
+        number: CoefficientView<'_>,
+    ) -> Result<Self::Element, String> {
+        Ok(Atom::num(number.to_owned()))
+    }
 }
 
 impl<UField: FiniteFieldWorkspace> ConvertToRing for FiniteField<UField>
@@ -724,64 +883,74 @@ where
     }
 
     #[inline]
-    fn element_from_coefficient(
+    fn try_element_from_coefficient(
         &self,
         number: Coefficient,
-    ) -> <FiniteField<UField> as Ring>::Element {
+    ) -> Result<<FiniteField<UField> as Ring>::Element, String> {
         match number {
+            Coefficient::Indeterminate => {
+                Err("Cannot convert indeterminate to finite field".to_owned())
+            }
+            Coefficient::Infinity(_) => Err("Cannot convert infinity to finite field".to_owned()),
             Coefficient::Complex(r) => {
                 if r.is_real() {
-                    self.div(
+                    Ok(self.div(
                         &r.re.numerator().to_finite_field(self),
                         &r.re.denominator().to_finite_field(self),
-                    )
+                    ))
                 } else {
-                    panic!("Cannot convert complex number to finite field")
+                    Err("Cannot convert complex number to finite field".to_owned())
                 }
             }
-            Coefficient::Float(_) => panic!("Cannot convert float to finite field"),
-            Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to other one"),
+            Coefficient::Float(_) => Err("Cannot convert float to finite field".to_owned()),
+            Coefficient::FiniteField(_, _) => {
+                Err("Cannot convert finite field to other one".to_owned())
+            }
             Coefficient::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to finite field")
+                Err("Cannot convert rational polynomial to finite field".to_owned())
             }
         }
     }
 
     #[inline]
-    fn element_from_coefficient_view(
+    fn try_element_from_coefficient_view(
         &self,
         number: CoefficientView<'_>,
-    ) -> <FiniteField<UField> as Ring>::Element {
+    ) -> Result<<FiniteField<UField> as Ring>::Element, String> {
         match number {
+            CoefficientView::Indeterminate => {
+                Err("Cannot convert indeterminate to finite field".to_owned())
+            }
+            CoefficientView::Infinity(_) => {
+                Err("Cannot convert infinity to finite field".to_owned())
+            }
             CoefficientView::Natural(n, d, i, _) => {
                 if i == 0 {
-                    self.div(
+                    Ok(self.div(
                         &Integer::new(n).to_finite_field(self),
                         &Integer::new(d).to_finite_field(self),
-                    )
+                    ))
                 } else {
-                    panic!("Cannot convert complex number to finite field")
+                    Err("Cannot convert complex number to finite field".to_owned())
                 }
             }
             CoefficientView::Large(r, i) => {
                 if i.is_zero() {
                     let l = r.to_rat();
-                    self.div(
+                    Ok(self.div(
                         &l.numerator().to_finite_field(self),
                         &l.denominator().to_finite_field(self),
-                    )
+                    ))
                 } else {
-                    panic!("Cannot convert complex number to finite field")
+                    Err("Cannot convert complex number to finite field".to_owned())
                 }
             }
-            CoefficientView::Float(_, _) => {
-                panic!("Cannot convert float to finite field")
-            }
+            CoefficientView::Float(_, _) => Err("Cannot convert float to finite field".to_owned()),
             CoefficientView::FiniteField(_, _) => {
-                panic!("Cannot convert finite field to other one")
+                Err("Cannot convert finite field to other one".to_owned())
             }
             CoefficientView::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to finite field")
+                Err("Cannot convert rational polynomial to finite field".to_owned())
             }
         }
     }
@@ -794,77 +963,91 @@ impl ConvertToRing for AlgebraicExtension<Q> {
     }
 
     #[inline]
-    fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
+    fn try_element_from_coefficient(&self, number: Coefficient) -> Result<Self::Element, String> {
         match number {
+            Coefficient::Indeterminate => {
+                Err("Cannot convert indeterminate to rational".to_owned())
+            }
+            Coefficient::Infinity(_) => Err("Cannot convert infinity to rational".to_owned()),
             Coefficient::Complex(r) => {
                 if r.is_real() {
-                    self.constant(r.re.clone())
+                    Ok(self.constant(r.re.clone()))
                 } else if self.poly().exponents == [0, 2]
                     && self.poly().get_constant() == Rational::one()
                 {
-                    self.to_element(
+                    Ok(self.to_element(
                         self.poly().monomial(r.im.clone(), vec![1])
                             + self.poly().constant(r.re.clone()),
-                    )
+                    ))
                 } else {
-                    panic!(
+                    Err(
                         "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                            .to_owned(),
                     )
                 }
             }
-            Coefficient::Float(_) => panic!("Cannot convert float to rational"),
-            Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to extension"),
+            Coefficient::Float(_) => Err("Cannot convert float to rational".to_owned()),
+            Coefficient::FiniteField(_, _) => {
+                Err("Cannot convert finite field to extension".to_owned())
+            }
             Coefficient::RationalPolynomial(_) => {
                 // TODO: this may be possible!
-                panic!("Cannot convert rational polynomial to extension")
+                Err("Cannot convert rational polynomial to extension".to_owned())
             }
         }
     }
 
     #[inline]
-    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element {
+    fn try_element_from_coefficient_view(
+        &self,
+        number: CoefficientView<'_>,
+    ) -> Result<Self::Element, String> {
         match number {
+            CoefficientView::Indeterminate => {
+                Err("Cannot convert indeterminate to rational".to_owned())
+            }
+            CoefficientView::Infinity(_) => Err("Cannot convert infinity to rational".to_owned()),
             CoefficientView::Natural(r, d, cr, cd) => {
                 if cr == 0 {
-                    self.constant(Rational::from_unchecked(r, d))
+                    Ok(self.constant(Rational::from_unchecked(r, d)))
                 } else if self.poly().exponents == [0, 2]
                     && self.poly().get_constant() == Rational::one()
                 {
-                    self.to_element(
+                    Ok(self.to_element(
                         self.poly()
                             .monomial(Rational::from_unchecked(cr, cd), vec![1])
                             + self.poly().constant(Rational::from_unchecked(r, d)),
-                    )
+                    ))
                 } else {
-                    panic!(
+                    Err(
                         "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                            .to_owned(),
                     )
                 }
             }
             CoefficientView::Large(r, i) => {
                 if i.is_zero() {
-                    self.constant(r.to_rat())
+                    Ok(self.constant(r.to_rat()))
                 } else if self.poly().exponents == [0, 2]
                     && self.poly().get_constant() == Rational::one()
                 {
-                    self.to_element(
+                    Ok(self.to_element(
                         self.poly().monomial(i.to_rat(), vec![1])
                             + self.poly().constant(r.to_rat()),
-                    )
+                    ))
                 } else {
-                    panic!(
+                    Err(
                         "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                            .to_owned(),
                     )
                 }
             }
-            CoefficientView::Float(_, _) => {
-                panic!("Cannot convert float to rational")
-            }
+            CoefficientView::Float(_, _) => Err("Cannot convert float to rational".to_owned()),
             CoefficientView::FiniteField(_, _) => {
-                panic!("Cannot convert finite field to rational")
+                Err("Cannot convert finite field to rational".to_owned())
             }
             CoefficientView::RationalPolynomial(_) => {
-                panic!("Cannot convert rational polynomial to rational")
+                Err("Cannot convert rational polynomial to rational".to_owned())
             }
         }
     }
@@ -880,6 +1063,9 @@ impl CoefficientView<'_> {
             | CoefficientView::Large(_, _)
             | CoefficientView::FiniteField(_, _)
             | CoefficientView::RationalPolynomial(_) => self.to_owned(),
+            CoefficientView::Indeterminate => Coefficient::Indeterminate,
+            CoefficientView::Infinity(None) => Coefficient::Infinity(None),
+            CoefficientView::Infinity(Some(_)) => self.to_owned(),
         }
     }
 
@@ -899,6 +1085,11 @@ impl CoefficientView<'_> {
             CoefficientView::RationalPolynomial(p) => {
                 Coefficient::RationalPolynomial(p.deserialize())
             }
+            CoefficientView::Indeterminate => Coefficient::Indeterminate,
+            CoefficientView::Infinity(None) => Coefficient::Infinity(None),
+            CoefficientView::Infinity(Some((rr, ri))) => {
+                Coefficient::Infinity(Some(Complex::new(rr.to_rat(), ri.to_rat())))
+            }
         }
     }
 
@@ -909,6 +1100,7 @@ impl CoefficientView<'_> {
             CoefficientView::Float(r, i) => r.is_zero() && i.is_zero(),
             CoefficientView::FiniteField(num, _) => num.0 == 0,
             CoefficientView::RationalPolynomial(p) => p.deserialize().is_zero(),
+            CoefficientView::Indeterminate | CoefficientView::Infinity(_) => false,
         }
     }
 
@@ -925,10 +1117,61 @@ impl CoefficientView<'_> {
                 let r = p.deserialize();
                 r.numerator.is_one() && r.denominator.is_one()
             }
+            CoefficientView::Indeterminate | CoefficientView::Infinity(_) => false,
         }
     }
 
     pub fn pow(&self, other: &CoefficientView<'_>) -> (Coefficient, Coefficient, Coefficient) {
+        if let CoefficientView::Natural(0, _, 0, _) = self {
+            let r = match other {
+                CoefficientView::Indeterminate => Coefficient::Indeterminate,
+                CoefficientView::Infinity(None) => Coefficient::Indeterminate,
+                CoefficientView::Infinity(Some((r, i))) => {
+                    if i.is_zero() {
+                        if !r.is_negative() {
+                            Coefficient::zero()
+                        } else {
+                            Coefficient::Infinity(None)
+                        }
+                    } else {
+                        Coefficient::Indeterminate
+                    }
+                }
+                CoefficientView::Natural(r, _, _, _) => {
+                    if *r < 0 {
+                        Coefficient::Infinity(None)
+                    } else if *r == 0 {
+                        Coefficient::Indeterminate
+                    } else {
+                        Coefficient::zero()
+                    }
+                }
+                CoefficientView::Float(_, _) => {
+                    error!("Cannot exponentiate zero with float exponent");
+                    Coefficient::Indeterminate
+                }
+                CoefficientView::Large(r, _) => {
+                    if r.is_negative() {
+                        Coefficient::Infinity(None)
+                    } else if r.is_zero() {
+                        Coefficient::Indeterminate
+                    } else {
+                        Coefficient::zero()
+                    }
+                }
+                CoefficientView::FiniteField(_, _) => {
+                    error!("Cannot exponentiate zero with finite field exponent");
+                    Coefficient::Indeterminate
+                }
+                CoefficientView::RationalPolynomial(_) => {
+                    error!("Cannot exponentiate zero with rational polynomial exponent");
+                    Coefficient::Indeterminate
+                }
+            };
+
+            return (Coefficient::one(), r, Coefficient::one());
+        }
+
         // cannot simplify complex exponent
         if let CoefficientView::Natural(_, _, n, _) = other {
             if *n != 0 {
@@ -971,6 +1214,8 @@ impl CoefficientView<'_> {
                         Rational::from_unchecked(rest, exp.denominator()),
                     )
                 }
+            } else if base.is_one() {
+                (Rational::one().into(), Rational::one(), Rational::one())
             } else {
                 if exp < 0 {
                     base = base.inv();
@@ -1040,7 +1285,12 @@ impl CoefficientView<'_> {
             }
             (&CoefficientView::RationalPolynomial(r), &CoefficientView::Natural(n2, d2, _, _)) => {
                 if n2.unsigned_abs() > u32::MAX as u64 {
-                    panic!("Power is too large: {n2}");
+                    error!("Power is too large: {n2}");
+                    return (
+                        Coefficient::one(),
+                        Coefficient::Indeterminate,
+                        Coefficient::one(),
+                    );
                 }
 
                 if n2 < 0 {
@@ -1167,12 +1417,281 @@ impl CoefficientView<'_> {
                     )
                 }
             }
-            _ => {
-                unimplemented!(
-                    "Power of configuration {:?}^{:?} is not implemented",
-                    self,
+            (&CoefficientView::Infinity(d), CoefficientView::Natural(r, rd, i, _)) => {
+                if *r < 0 {
+                    (Coefficient::one(), Coefficient::zero(), Coefficient::one())
+                } else if *r == 0 {
+                    (
+                        Coefficient::one(),
+                        Coefficient::Indeterminate,
+                        Coefficient::one(),
+                    )
+                } else if *i == 0
+                    && let Some((rr, ri)) = d
+                {
+                    let dir = Complex::new(rr.to_rat(), ri.to_rat());
+                    if *rd == 1 {
+                        (
+                            Coefficient::one(),
+                            Coefficient::normalize_infinity(dir.pow(*r as u64)),
+                            Coefficient::one(),
+                        )
+                    } else {
+                        error!(
+                            "Cannot express infinite direction ({})^({}/{}) as single complex number",
+                            dir, r, rd
+                        );
+                        (
+                            Coefficient::one(),
+                            Coefficient::Infinity(None),
+                            Coefficient::one(),
+                        )
+                    }
+                } else {
+                    (
+                        Coefficient::one(),
+                        Coefficient::Infinity(None),
+                        Coefficient::one(),
+                    )
+                }
+            }
+            (&CoefficientView::Infinity(d), CoefficientView::Large(r, i)) => {
+                if r.is_negative() {
+                    (Coefficient::one(), Coefficient::zero(), Coefficient::one())
+                } else if r.is_zero() {
+                    (
+                        Coefficient::one(),
+                        Coefficient::Indeterminate,
+                        Coefficient::one(),
+                    )
+                } else if i.is_zero()
+                    && let Some((rr, ri)) = d
+                {
+                    let r = r.to_rat();
+                    let dir = Complex::new(rr.to_rat(), ri.to_rat());
+                    if r.is_integer() {
+                        error!("Power is too large: {r}");
+                        (
+                            Coefficient::one(),
+                            Coefficient::Infinity(None),
+                            Coefficient::one(),
+                        )
+                    } else {
+                        error!(
+                            "Cannot express infinite direction ({})^({}) as single complex number",
+                            dir, r
+                        );
+                        (
+                            Coefficient::one(),
+                            Coefficient::Infinity(None),
+                            Coefficient::one(),
+                        )
+                    }
+                } else {
+                    (
+                        Coefficient::one(),
+                        Coefficient::Infinity(None),
+                        Coefficient::one(),
+                    )
+                }
+            }
+            (&CoefficientView::Infinity(d), CoefficientView::Float(r, i)) => {
+                let r = r.to_float();
+                if r.is_negative() {
+                    (Coefficient::one(), Coefficient::zero(), Coefficient::one())
+                } else if r.is_zero() {
+                    (
+                        Coefficient::one(),
+                        Coefficient::Indeterminate,
+                        Coefficient::one(),
+                    )
+                } else if i.is_zero() && d.is_some() {
+                    error!("Cannot express infinite float direction as single complex number");
+                    (
+                        Coefficient::one(),
+                        Coefficient::Infinity(None),
+                        Coefficient::one(),
+                    )
+                } else {
+                    (
+                        Coefficient::one(),
+                        Coefficient::Infinity(None),
+                        Coefficient::one(),
+                    )
+                }
+            }
+            (&CoefficientView::Indeterminate, _) | (_, &CoefficientView::Indeterminate) => (
+                Coefficient::one(),
+                Coefficient::Indeterminate,
+                Coefficient::one(),
+            ),
+            (_, CoefficientView::Infinity(None)) => {
+                return (
+                    Coefficient::one(),
+                    Coefficient::Indeterminate,
+                    Coefficient::one(),
+                );
+            }
+            (_, CoefficientView::Infinity(Some((r, i)))) => {
+                let r = r.to_rat();
+                if i.is_zero() {
+                    let c = match self {
+                        CoefficientView::Natural(rn, rd, ir, id) => {
+                            Complex::new((*rn, *rd).into(), (*ir, *id).into())
+                        }
+                        CoefficientView::Large(rn, ir) => Complex::new(rn.to_rat(), ir.to_rat()),
+                        CoefficientView::Indeterminate => {
+                            return (
+                                Coefficient::one(),
+                                Coefficient::Indeterminate,
+                                Coefficient::one(),
+                            );
+                        }
+                        CoefficientView::Infinity(_) => {
+                            return (
+                                Coefficient::one(),
+                                Coefficient::Infinity(None),
+                                Coefficient::one(),
+                            );
+                        }
+                        _ => {
+                            error!(
+                                "Cannot simplify infinite exponent with float, finite field or rational polynomial base"
+                            );
+                            return (
+                                Coefficient::one(),
+                                Coefficient::Indeterminate,
+                                Coefficient::one(),
+                            );
+                        }
+                    };
+
+                    let norm = c.norm_squared();
+
+                    if norm == Rational::one() {
+                        return (
+                            Coefficient::one(),
+                            Coefficient::Indeterminate,
+                            Coefficient::one(),
+                        );
+                    }
+
+                    if norm < Rational::one() && r > Rational::zero()
+                        || norm > Rational::one() && r < Rational::zero()
+                    {
+                        return (Coefficient::one(), Coefficient::zero(), Coefficient::one());
+                    } else {
+                        return (
+                            Coefficient::one(),
+                            Coefficient::Infinity(None),
+                            Coefficient::one(),
+                        );
+                    }
+                } else {
+                    match self {
+                        CoefficientView::Natural(rn, _, ir, _) => {
+                            return (
+                                Coefficient::one(),
+                                if *rn > 0 && *ir == 0 {
+                                    Coefficient::Infinity(None)
+                                } else {
+                                    Coefficient::Indeterminate
+                                },
+                                Coefficient::one(),
+                            );
+                        }
+                        CoefficientView::Large(rn, ir) => {
+                            return (
+                                Coefficient::one(),
+                                if !rn.is_negative() && !rn.is_zero() && ir.is_zero() {
+                                    Coefficient::Infinity(None)
+                                } else {
+                                    Coefficient::Indeterminate
+                                },
+                                Coefficient::one(),
+                            );
+                        }
+                        CoefficientView::Indeterminate => {
+                            return (
+                                Coefficient::one(),
+                                Coefficient::Indeterminate,
+                                Coefficient::one(),
+                            );
+                        }
+                        CoefficientView::Infinity(_) => {
+                            return (
+                                Coefficient::one(),
+                                Coefficient::Infinity(None),
+                                Coefficient::one(),
+                            );
+                        }
+                        _ => {
+                            error!(
+                                "Cannot simplify infinite exponent with float, finite field or rational polynomial base"
+                            );
+                            return (
+                                Coefficient::one(),
+                                Coefficient::Indeterminate,
+                                Coefficient::one(),
+                            );
+                        }
+                    };
+                }
+            }
+            (&CoefficientView::Natural(_, _, _, _), &CoefficientView::RationalPolynomial(_)) => {
+                (Coefficient::one(), self.to_owned(), other.to_owned())
+            }
+            (&CoefficientView::Large(_, _), &CoefficientView::RationalPolynomial(_)) => {
+                (Coefficient::one(), self.to_owned(), other.to_owned())
+            }
+            (&CoefficientView::FiniteField(f, d), CoefficientView::Natural(n, 1, 0, 1)) => {
+                let field = State::get_finite_field(d);
+                let r = if *n < 0 {
+                    let f = field.inv(&f);
+                    field.pow(&f, n.unsigned_abs())
+                } else {
+                    field.pow(&f, n.unsigned_abs())
+                };
+                (
+                    Coefficient::one(),
+                    Coefficient::FiniteField(r, d),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::RationalPolynomial(_), _) => {
+                (Coefficient::one(), self.to_owned(), other.to_owned())
+            }
+            (&CoefficientView::FiniteField(_, _), _) => {
+                error!(
+                    "Cannot exponentiate finite field with non-integer exponent or large {:?}",
                     other
                 );
+                (
+                    Coefficient::one(),
+                    Coefficient::Indeterminate,
+                    Coefficient::one(),
+                )
+            }
+            (_, CoefficientView::FiniteField(_, _)) => {
+                error!("Cannot exponentiate with finite field exponent {:?}", other);
+                (
+                    Coefficient::one(),
+                    Coefficient::Indeterminate,
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Infinity(_), CoefficientView::RationalPolynomial(_)) => (
+                Coefficient::one(),
+                Coefficient::Indeterminate,
+                Coefficient::one(),
+            ),
+            (_, CoefficientView::RationalPolynomial(_)) => {
+                error!("Cannot exponentiate with rational polynomial exponent");
+                (
+                    Coefficient::one(),
+                    Coefficient::Indeterminate,
+                    Coefficient::one(),
+                )
             }
         }
     }
@@ -1184,6 +1703,8 @@ impl CoefficientView<'_> {
             CoefficientView::Large(r, d) => d.is_zero() && r.to_rat().is_integer(),
             CoefficientView::FiniteField(_, _) => true,
             CoefficientView::RationalPolynomial(_) => false,
+            CoefficientView::Indeterminate => false,
+            CoefficientView::Infinity(_) => false,
         }
     }
 
@@ -1194,6 +1715,9 @@ impl CoefficientView<'_> {
             CoefficientView::Large(_, i) => i.is_zero(),
             CoefficientView::FiniteField(_, _) => true,
             CoefficientView::RationalPolynomial(_) => true,
+            CoefficientView::Indeterminate => false,
+            CoefficientView::Infinity(None) => false,
+            CoefficientView::Infinity(Some((_, i))) => i.is_zero(),
         }
     }
 }
@@ -1243,6 +1767,12 @@ impl Ord for CoefficientView<'_> {
             (CoefficientView::RationalPolynomial(n1), CoefficientView::RationalPolynomial(n2)) => {
                 n1.deserialize().internal_cmp(&n2.deserialize())
             }
+            (CoefficientView::Indeterminate, CoefficientView::Indeterminate) => Ordering::Equal,
+            (CoefficientView::Infinity(_), CoefficientView::Infinity(_)) => Ordering::Equal,
+            (CoefficientView::Indeterminate, _) => Ordering::Less,
+            (_, CoefficientView::Indeterminate) => Ordering::Greater,
+            (CoefficientView::Infinity(_), _) => Ordering::Less,
+            (_, CoefficientView::Infinity(_)) => Ordering::Greater,
             (CoefficientView::Natural(_, _, _, _), _) => Ordering::Less,
             (_, CoefficientView::Natural(_, _, _, _)) => Ordering::Greater,
             (CoefficientView::Large(_, _), _) => Ordering::Less,
@@ -1289,25 +1819,29 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             }
             (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
                 if i1 != i2 {
-                    panic!(
+                    error!(
                         "Cannot add numbers from different finite fields: p1={}, p2={}",
                         State::get_finite_field(i1).get_prime(),
                         State::get_finite_field(i2).get_prime()
                     );
+                    return Coefficient::Indeterminate;
                 }
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &n2), i1)
             }
             (CoefficientView::FiniteField(_, _), _) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+                error!("Cannot add finite field to non-finite number. Convert other number first?");
+                Coefficient::Indeterminate
             }
             (_, CoefficientView::FiniteField(_, _)) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+                error!("Cannot add finite field to non-finite number. Convert other number first?");
+                Coefficient::Indeterminate
             }
             (CoefficientView::Natural(n, d, ni, _di), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d, ni, _di)) => {
                 if ni != 0 {
-                    panic!("Cannot add complex number with polynomial");
+                    error!("Cannot add complex number with polynomial");
+                    return Coefficient::Indeterminate;
                 }
                 let r = p.deserialize();
                 let r2 = RationalPolynomial {
@@ -1319,7 +1853,8 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             (CoefficientView::Large(l, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l, d)) => {
                 if !d.is_zero() {
-                    panic!("Cannot add complex number with polynomial");
+                    error!("Cannot add complex number with polynomial");
+                    return Coefficient::Indeterminate;
                 }
                 let r = p.deserialize();
                 let l = l.to_rat();
@@ -1361,10 +1896,25 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                 Complex::new(r1.to_float() + r2.to_float(), i1.to_float() + i2.to_float()),
             ),
             (CoefficientView::Float(_, _), CoefficientView::RationalPolynomial(_)) => {
-                panic!("Cannot add float to rational polynomial");
+                error!("Cannot add float to rational polynomial");
+                Coefficient::Indeterminate
             }
             (CoefficientView::RationalPolynomial(_), CoefficientView::Float(_, _)) => {
-                panic!("Cannot add float to rational polynomial");
+                error!("Cannot add float to rational polynomial");
+                Coefficient::Indeterminate
+            }
+            (CoefficientView::Indeterminate, _) => Coefficient::Indeterminate,
+            (_, CoefficientView::Indeterminate) => Coefficient::Indeterminate,
+            (CoefficientView::Infinity(phase1), CoefficientView::Infinity(phase2)) => {
+                match (phase1, phase2) {
+                    (Some(p1), Some(p2)) if p1 == p2 => {
+                        Coefficient::Infinity(Some(Complex::new(p1.0.to_rat(), p1.1.to_rat())))
+                    }
+                    _ => Coefficient::Indeterminate,
+                }
+            }
+            (CoefficientView::Infinity(a), _) | (_, CoefficientView::Infinity(a)) => {
+                Coefficient::Infinity(a.map(|p| Complex::new(p.0.to_rat(), p.1.to_rat())))
             }
         }
     }
@@ -1404,29 +1954,33 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
                 if i1 != i2 {
-                    panic!(
+                    error!(
                         "Cannot multiply numbers from different finite fields: p1={}, p2={}",
                         State::get_finite_field(i1).get_prime(),
                         State::get_finite_field(i2).get_prime()
                     );
+                    return Coefficient::Indeterminate;
                 }
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
             (CoefficientView::FiniteField(_, _), _) => {
-                panic!(
+                error!(
                     "Cannot multiply finite field to non-finite number. Convert other number first?"
                 );
+                Coefficient::Indeterminate
             }
             (_, CoefficientView::FiniteField(_, _)) => {
-                panic!(
+                error!(
                     "Cannot multiply finite field to non-finite number. Convert other number first?"
                 );
+                Coefficient::Indeterminate
             }
             (CoefficientView::Natural(n, d, ni, _di), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d, ni, _di)) => {
                 if ni != 0 {
-                    panic!("Cannot multiply complex number with polynomial");
+                    error!("Cannot multiply complex number with polynomial");
+                    return Coefficient::Indeterminate;
                 }
 
                 let mut r = p.deserialize();
@@ -1441,7 +1995,8 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Large(l, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l, d)) => {
                 if !d.is_zero() {
-                    panic!("Cannot multiply complex number with polynomial");
+                    error!("Cannot multiply complex number with polynomial");
+                    return Coefficient::Indeterminate;
                 }
 
                 let mut r = p.deserialize();
@@ -1498,10 +2053,58 @@ impl Mul for CoefficientView<'_> {
                 (c1 * c2).into()
             }
             (CoefficientView::Float(_, _), CoefficientView::RationalPolynomial(_)) => {
-                panic!("Cannot multiply float to rational polynomial");
+                error!("Cannot multiply float to rational polynomial");
+                Coefficient::Indeterminate
             }
             (CoefficientView::RationalPolynomial(_), CoefficientView::Float(_, _)) => {
-                panic!("Cannot multiply float to rational polynomial");
+                error!("Cannot multiply float to rational polynomial");
+                Coefficient::Indeterminate
+            }
+            (CoefficientView::Indeterminate, _) => Coefficient::Indeterminate,
+            (_, CoefficientView::Indeterminate) => Coefficient::Indeterminate,
+            (CoefficientView::Infinity(phase1), CoefficientView::Infinity(phase2)) => {
+                match (phase1, phase2) {
+                    (Some(p1), Some(p2)) => {
+                        let r = Complex::new(p1.0.to_rat(), p1.1.to_rat())
+                            * Complex::new(p2.0.to_rat(), p2.1.to_rat());
+                        Coefficient::normalize_infinity(r)
+                    }
+                    _ => Coefficient::Infinity(None),
+                }
+            }
+            (CoefficientView::Infinity(a), CoefficientView::Natural(n1, d1, ni1, di1))
+            | (CoefficientView::Natural(n1, d1, ni1, di1), CoefficientView::Infinity(a)) => {
+                if n1 == 0 && ni1 == 0 {
+                    return Coefficient::Indeterminate;
+                }
+                match a {
+                    Some(p) => {
+                        let r = Complex::new(p.0.to_rat(), p.1.to_rat())
+                            * Complex::new(Rational::new(n1, d1), Rational::new(ni1, di1));
+                        Coefficient::normalize_infinity(r)
+                    }
+                    None => Coefficient::Infinity(None),
+                }
+            }
+            (CoefficientView::Infinity(a), CoefficientView::Large(r, i))
+            | (CoefficientView::Large(r, i), CoefficientView::Infinity(a)) => {
+                if r.is_zero() && i.is_zero() {
+                    return Coefficient::Indeterminate;
+                }
+                match a {
+                    Some(p) => {
+                        let r = Complex::new(p.0.to_rat(), p.1.to_rat())
+                            * Complex::new(r.to_rat(), i.to_rat());
+                        Coefficient::normalize_infinity(r)
+                    }
+                    None => Coefficient::Infinity(None),
+                }
+            }
+            (CoefficientView::Infinity(_), _) | (_, CoefficientView::Infinity(_)) => {
+                error!(
+                    "Multiplication of rational polynomial or finite field is not implemented yet"
+                );
+                Coefficient::Indeterminate
             }
         }
     }
@@ -1536,6 +2139,10 @@ impl Add<i64> for CoefficientView<'_> {
                 };
 
                 Coefficient::RationalPolynomial(&p + &a)
+            }
+            CoefficientView::Indeterminate => Coefficient::Indeterminate,
+            CoefficientView::Infinity(a) => {
+                Coefficient::Infinity(a.map(|(r, i)| Complex::new(r.to_rat(), i.to_rat())))
             }
         }
     }
@@ -1933,10 +2540,37 @@ impl AtomView<'_> {
                     )));
                 }
                 CoefficientView::FiniteField(_, _) => {
-                    panic!("Cannot convert finite field to float");
+                    error!("Cannot convert finite field to float");
+                    out.to_num(Coefficient::Indeterminate);
                 }
                 CoefficientView::RationalPolynomial(_) => {
-                    panic!("Cannot convert rational polynomial to float");
+                    error!("Cannot convert rational polynomial to float");
+                    out.to_num(Coefficient::Indeterminate);
+                }
+                CoefficientView::Infinity(None) => {
+                    error!("Cannot convert complex infinity to float");
+                    out.to_num(Coefficient::Indeterminate);
+                }
+                CoefficientView::Indeterminate => {
+                    error!("Cannot convert indeterminate to float");
+                    out.to_num(Coefficient::Indeterminate);
+                }
+                CoefficientView::Infinity(Some((r, i))) => {
+                    if i.is_zero() {
+                        if r.is_negative() {
+                            out.to_num(
+                                Float::with_val(binary_prec, rug::float::Special::Infinity).into(),
+                            );
+                        } else {
+                            out.to_num(
+                                Float::with_val(binary_prec, rug::float::Special::NegInfinity)
+                                    .into(),
+                            );
+                        }
+                    } else {
+                        error!("Cannot convert complex infinity to float");
+                        out.to_num(Coefficient::Indeterminate);
+                    }
                 }
             },
             AtomView::Var(v) => {
@@ -2259,5 +2893,33 @@ mod test {
         let expr = expr.coefficients_to_float(60);
         let expr = expr.rationalize_coefficients(&(1, 10000).into());
         assert_eq!(expr, parse!("1/2*x+137/201"));
+    }
+
+    #[test]
+    fn infinity() {
+        assert_eq!(parse!("x^0"), 1);
+        assert_eq!(parse!("0^0"), Coefficient::Indeterminate);
+        assert_eq!(parse!("∞^0"), Coefficient::Indeterminate);
+        assert_eq!(parse!("1^3"), 1);
+        assert_eq!(parse!("1^∞"), Coefficient::Indeterminate);
+        assert_eq!(parse!("(1/2)^∞"), 0);
+        assert_eq!(parse!("(1/2 + 1i/2)^∞"), 0);
+        assert_eq!(parse!("2^(-∞)"), 0);
+        assert_eq!(parse!("(1/2)^((2+1i)∞)"), Coefficient::complex_infinity());
+        assert_eq!(parse!("(-1)^∞"), Coefficient::Indeterminate);
+        assert_eq!(parse!("∞ + ∞"), Coefficient::positive_infinity());
+        assert_eq!(parse!("∞ - ∞"), Coefficient::Indeterminate);
+        assert_eq!(parse!("∞/∞"), Coefficient::Indeterminate);
+        assert_eq!(parse!("0 * ∞"), Coefficient::Indeterminate);
+        assert_eq!(parse!("0/0"), Coefficient::Indeterminate);
+        assert_eq!(parse!("∞^-1"), 0);
+        assert_eq!(parse!("0/∞"), 0);
+        assert_eq!(parse!("∞/0"), Coefficient::complex_infinity());
+        assert_eq!(parse!("1/0"), Coefficient::complex_infinity());
+        assert_eq!(parse!("⧞^0"), Coefficient::Indeterminate);
+        assert_eq!(parse!("¿^0"), Coefficient::Indeterminate);
+        assert_eq!(parse!("¿ * x + 5"), Coefficient::Indeterminate);
+        assert_eq!(parse!("log(0)"), -Coefficient::positive_infinity());
+        assert_eq!(parse!("(-2+1i)∞ (3+2i)∞"), parse!("(-1-1i/8)∞"));
     }
 }

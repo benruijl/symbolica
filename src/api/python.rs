@@ -45,7 +45,7 @@ use crate::{
     atom::{
         Atom, AtomCore, AtomType, AtomView, DefaultNamespace, ListIterator, Symbol, SymbolAttribute,
     },
-    coefficient::CoefficientView,
+    coefficient::{Coefficient, CoefficientView},
     domains::{
         Ring, SelfRing,
         algebraic_number::AlgebraicExtension,
@@ -3266,6 +3266,27 @@ impl PythonExpression {
         Atom::i().into()
     }
 
+    /// The number that represents infinity: `∞`.
+    #[classattr]
+    #[pyo3(name = "INFINITY")]
+    pub fn inf() -> PythonExpression {
+        Atom::num(Coefficient::Infinity(Some(Rational::one().into()))).into()
+    }
+
+    /// The number that represents infinity with an unknown complex phase: `⧞`.
+    #[classattr]
+    #[pyo3(name = "COMPLEX_INFINITY")]
+    pub fn cinf() -> PythonExpression {
+        Atom::num(Coefficient::Infinity(None)).into()
+    }
+
+    /// The number that represents indeterminacy: `¿`.
+    #[classattr]
+    #[pyo3(name = "INDETERMINATE")]
+    pub fn indeterminate() -> PythonExpression {
+        Atom::num(Coefficient::Indeterminate).into()
+    }
+
     /// The built-in function that converts a rational polynomial to a coefficient.
     #[classattr]
     #[pyo3(name = "COEFF")]
@@ -3709,6 +3730,17 @@ impl PythonExpression {
     /// True
     pub fn is_positive(&self) -> bool {
         self.expr.is_positive()
+    }
+
+    /// Check if the expression has no infinities and is not indeterminate.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = E('x + x^2 + log(0)')
+    /// >>> print(e.is_finite())
+    /// False
+    pub fn is_finite(&self) -> bool {
+        self.expr.is_finite()
     }
 
     /// Add this expression to `other`, returning the result.

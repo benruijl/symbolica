@@ -539,6 +539,24 @@ impl<'a> AtomView<'a> {
         }
     }
 
+    /// Returns true iff an expression only consists of finite numbers.
+    pub(crate) fn is_finite(&self) -> bool {
+        match self {
+            AtomView::Num(n) => !matches!(
+                n.get_coeff_view(),
+                CoefficientView::Infinity(_) | CoefficientView::Indeterminate
+            ),
+            AtomView::Var(_) => true,
+            AtomView::Fun(f) => f.iter().all(|arg| arg.is_finite()),
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+                base.is_finite() && exp.is_finite()
+            }
+            AtomView::Mul(m) => m.iter().all(|child| child.is_finite()),
+            AtomView::Add(a) => a.iter().all(|child| child.is_finite()),
+        }
+    }
+
     /// Get all symbols in the expression, optionally including function symbols.
     pub(crate) fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
         let mut out = HashSet::default();

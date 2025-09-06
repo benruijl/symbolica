@@ -10,7 +10,7 @@ use crate::{
         representation::FunView,
     },
     coefficient::CoefficientView,
-    domains::{SelfRing, finite_field::FiniteFieldCore, float::Complex},
+    domains::{SelfRing, finite_field::FiniteFieldCore, float::Complex, rational::Rational},
     state::State,
 };
 
@@ -786,6 +786,130 @@ impl FormattedPrintNum for NumView<'_> {
             "𝑖"
         };
 
+        fn print_complex_rational<W: std::fmt::Write>(
+            real: Rational,
+            imag: Rational,
+            global_negative: bool,
+            i_str: &str,
+            print_state: PrintState,
+            f: &mut W,
+            opts: &PrintOptions,
+        ) -> Result<bool, Error> {
+            let need_paren =
+                (print_state.in_product || print_state.in_exp || print_state.in_exp_base)
+                    && (!real.is_zero() && !imag.is_zero())
+                    || print_state.in_exp_base
+                        && (real.is_negative()
+                            || imag.is_negative()
+                            || !real.is_integer()
+                            || !imag.is_integer())
+                    || print_state.in_exp && (!real.is_integer() || !imag.is_integer());
+
+            if need_paren {
+                f.write_char('(')?;
+            }
+
+            if !opts.mode.is_latex()
+                && (opts.number_thousands_separator.is_some() || print_state.superscript)
+            {
+                if !real.is_zero() {
+                    if !global_negative && real.is_negative() {
+                        f.write_char('-')?;
+                    }
+
+                    format_num(
+                        real.numerator_ref().abs().to_string(),
+                        opts,
+                        &print_state,
+                        f,
+                    )?;
+                    if !real.is_integer() {
+                        f.write_char('/')?;
+                        format_num(real.denominator_ref().to_string(), opts, &print_state, f)?;
+                    }
+                }
+
+                if !real.is_zero() && !imag.is_zero() && !imag.is_negative() {
+                    f.write_char('+')?;
+                }
+
+                if !imag.is_zero() {
+                    if !global_negative && imag.is_negative() {
+                        f.write_char('-')?;
+                    }
+                    format_num(
+                        imag.numerator_ref().abs().to_string(),
+                        opts,
+                        &print_state,
+                        f,
+                    )?;
+                    f.write_str(i_str)?;
+                    if !imag.is_integer() {
+                        f.write_char('/')?;
+                        format_num(imag.denominator_ref().to_string(), opts, &print_state, f)?;
+                    }
+                }
+            } else {
+                if !real.is_zero() || imag.is_zero() {
+                    if !global_negative && real.is_negative() {
+                        f.write_char('-')?;
+                    }
+                    if !real.is_integer() {
+                        if opts.mode.is_latex() {
+                            f.write_fmt(format_args!(
+                                "\\frac{{{}}}{{{}}}",
+                                real.numerator_ref().abs(),
+                                real.denominator_ref()
+                            ))?;
+                        } else {
+                            f.write_fmt(format_args!(
+                                "{}/{}",
+                                real.numerator_ref().abs(),
+                                real.denominator_ref()
+                            ))?;
+                        }
+                    } else {
+                        f.write_fmt(format_args!("{}", real.numerator_ref().abs()))?;
+                    }
+                }
+
+                if !real.is_zero() && !imag.is_zero() && !imag.is_negative() {
+                    f.write_char('+')?;
+                }
+
+                if !imag.is_zero() {
+                    if !global_negative && imag.is_negative() {
+                        f.write_char('-')?;
+                    }
+
+                    if !imag.is_integer() {
+                        if opts.mode.is_latex() {
+                            f.write_fmt(format_args!(
+                                "\\frac{{{}}}{{{}}}𝑖",
+                                imag.numerator_ref().abs(),
+                                imag.denominator_ref(),
+                            ))?;
+                        } else {
+                            f.write_fmt(format_args!(
+                                "{}{}/{}",
+                                imag.numerator_ref().abs(),
+                                i_str,
+                                imag.denominator_ref()
+                            ))?;
+                        }
+                    } else {
+                        f.write_fmt(format_args!("{}{}", imag.numerator_ref().abs(), i_str))?;
+                    }
+                }
+            }
+
+            if need_paren {
+                f.write_char(')')?;
+            }
+
+            Ok(false)
+        }
+
         match d {
             CoefficientView::Natural(num, den, num_i, den_i) => {
                 if num_i == 0 && den == 1 && print_state.suppress_one && (num == 1 || num == -1) {
@@ -904,118 +1028,53 @@ impl FormattedPrintNum for NumView<'_> {
                 let real = r.to_rat();
                 let imag = i.to_rat();
 
-                let need_paren =
-                    (print_state.in_product || print_state.in_exp || print_state.in_exp_base)
-                        && (!real.is_zero() && !imag.is_zero())
-                        || print_state.in_exp_base
-                            && (real.is_negative()
-                                || imag.is_negative()
-                                || !real.is_integer()
-                                || !imag.is_integer())
-                        || print_state.in_exp && (!real.is_integer() || !imag.is_integer());
+                print_complex_rational(real, imag, global_negative, i_str, print_state, f, opts)
+            }
+            CoefficientView::Indeterminate => {
+                f.write_char('¿')?;
+                Ok(false)
+            }
+            CoefficientView::Infinity(None) => {
+                f.write_char('⧞')?;
+                Ok(false)
+            }
+            CoefficientView::Infinity(Some((r, i))) => {
+                let real = r.to_rat();
+                let imag = i.to_rat();
 
-                if need_paren {
-                    f.write_char('(')?;
-                }
-
-                if !opts.mode.is_latex()
-                    && (opts.number_thousands_separator.is_some() || print_state.superscript)
-                {
-                    if !real.is_zero() {
-                        if !global_negative && real.is_negative() {
-                            f.write_char('-')?;
+                if imag.is_zero() {
+                    if real.is_negative() {
+                        if opts.mode.is_latex() {
+                            f.write_str("-\\infty")?;
+                        } else {
+                            f.write_str("-∞")?;
                         }
-
-                        format_num(
-                            real.numerator_ref().abs().to_string(),
-                            opts,
-                            &print_state,
-                            f,
-                        )?;
-                        if !real.is_integer() {
-                            f.write_char('/')?;
-                            format_num(real.denominator_ref().to_string(), opts, &print_state, f)?;
-                        }
-                    }
-
-                    if !real.is_zero() && !imag.is_zero() && !imag.is_negative() {
-                        f.write_char('+')?;
-                    }
-
-                    if !imag.is_zero() {
-                        if !global_negative && imag.is_negative() {
-                            f.write_char('-')?;
-                        }
-                        format_num(
-                            imag.numerator_ref().abs().to_string(),
-                            opts,
-                            &print_state,
-                            f,
-                        )?;
-                        f.write_str(i_str)?;
-                        if !imag.is_integer() {
-                            f.write_char('/')?;
-                            format_num(imag.denominator_ref().to_string(), opts, &print_state, f)?;
+                    } else {
+                        if opts.mode.is_latex() {
+                            f.write_str("\\infty")?;
+                        } else {
+                            f.write_char('∞')?;
                         }
                     }
                 } else {
-                    if !real.is_zero() || imag.is_zero() {
-                        if !global_negative && real.is_negative() {
-                            f.write_char('-')?;
-                        }
-                        if !real.is_integer() {
-                            if opts.mode.is_latex() {
-                                f.write_fmt(format_args!(
-                                    "\\frac{{{}}}{{{}}}",
-                                    real.numerator_ref().abs(),
-                                    real.denominator_ref()
-                                ))?;
-                            } else {
-                                f.write_fmt(format_args!(
-                                    "{}/{}",
-                                    real.numerator_ref().abs(),
-                                    real.denominator_ref()
-                                ))?;
-                            }
-                        } else {
-                            f.write_fmt(format_args!("{}", real.numerator_ref().abs()))?;
-                        }
-                    }
+                    print_state.in_product = true;
+                    print_complex_rational(
+                        real,
+                        imag,
+                        global_negative,
+                        i_str,
+                        print_state,
+                        f,
+                        opts,
+                    )?;
 
-                    if !real.is_zero() && !imag.is_zero() && !imag.is_negative() {
-                        f.write_char('+')?;
-                    }
-
-                    if !imag.is_zero() {
-                        if !global_negative && imag.is_negative() {
-                            f.write_char('-')?;
-                        }
-
-                        if !imag.is_integer() {
-                            if opts.mode.is_latex() {
-                                f.write_fmt(format_args!(
-                                    "\\frac{{{}}}{{{}}}𝑖",
-                                    imag.numerator_ref().abs(),
-                                    imag.denominator_ref(),
-                                ))?;
-                            } else {
-                                f.write_fmt(format_args!(
-                                    "{}{}/{}",
-                                    imag.numerator_ref().abs(),
-                                    i_str,
-                                    imag.denominator_ref()
-                                ))?;
-                            }
-                        } else {
-                            f.write_fmt(format_args!("{}{}", imag.numerator_ref().abs(), i_str))?;
-                        }
+                    if opts.mode.is_latex() {
+                        f.write_str(" \\infty")?;
+                    } else {
+                        f.write_char(opts.multiplication_operator)?;
+                        f.write_char('∞')?;
                     }
                 }
-
-                if need_paren {
-                    f.write_char(')')?;
-                }
-
                 Ok(false)
             }
             CoefficientView::FiniteField(num, fi) => {

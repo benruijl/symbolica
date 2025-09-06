@@ -6561,6 +6561,12 @@ impl<'a> AtomView<'a> {
                         i.to_float().to_rational(),
                     )))
                 }
+                CoefficientView::Indeterminate => {
+                    panic!("Cannot convert indeterminate")
+                }
+                CoefficientView::Infinity(_) => {
+                    panic!("Cannot convert infinity")
+                }
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())
                 }
@@ -6599,7 +6605,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let Some(fun) = fn_map.get(*self) else {
-                    return Err(format!("Undefined function {self:#}"));
+                    return Err(format!("Undefined function {}", self.to_plain_string()));
                 };
 
                 match fun {
@@ -6759,6 +6765,8 @@ impl<'a> AtomView<'a> {
                             + rm)
                     }
                 }
+                CoefficientView::Indeterminate => Err("Cannot evaluate indeterminate".to_string()),
+                CoefficientView::Infinity(_) => Err("Cannot evaluate infinity".to_string()),
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())
                 }
@@ -6769,10 +6777,22 @@ impl<'a> AtomView<'a> {
             AtomView::Var(v) => match v.get_symbol() {
                 Symbol::E => Ok(coeff_map(&1.into()).e()),
                 Symbol::PI => Ok(coeff_map(&1.into()).pi()),
-                _ => Err(format!(
-                    "Variable {} not in constant map",
-                    v.get_symbol().get_name()
-                )),
+                s => {
+                    if let Some(fun) = function_map.get(&s) {
+                        if let Some(eval) = cache.get(self) {
+                            return Ok(eval.clone());
+                        }
+
+                        let eval = fun.get()(&[], const_map, function_map, cache);
+                        cache.insert(*self, eval.clone());
+                        Ok(eval)
+                    } else {
+                        Err(format!(
+                            "Variable {} not in constant map or function map",
+                            v.get_symbol().get_name()
+                        ))
+                    }
+                }
             },
             AtomView::Fun(f) => {
                 let name = f.get_symbol();

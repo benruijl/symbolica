@@ -816,6 +816,8 @@ impl AtomView<'_> {
                                     Err("Exponent too large or negative or a fraction")
                                 }
                             }
+                            CoefficientView::Indeterminate => Err("Indeterminate exponent"),
+                            CoefficientView::Infinity(_) => Err("Infinite exponent"),
                             CoefficientView::Float(_, _) => {
                                 Err("Float is not supported in conversion routine")
                             }

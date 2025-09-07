@@ -2101,6 +2101,7 @@ impl<T: Clone + Send + Sync + Fn(&MatchStack) -> ConditionResult> MatchStackFn f
 pub enum WildcardRestriction {
     Length(usize, Option<usize>), // min-max range
     IsAtomType(AtomType),
+    HasTag(String),
     IsLiteralWildcard(Symbol),
     Filter(Box<dyn FilterFn>),
     Cmp(Symbol, Box<dyn CmpFn>),
@@ -2136,6 +2137,7 @@ impl std::fmt::Display for WildcardRestriction {
             WildcardRestriction::Filter(_) => write!(f, "filter"),
             WildcardRestriction::Cmp(s, _) => write!(f, "cmp with {s}"),
             WildcardRestriction::NotGreedy => write!(f, "not greedy"),
+            WildcardRestriction::HasTag(tag) => write!(f, "has tag {tag}"),
         }
     }
 }
@@ -2236,9 +2238,25 @@ impl Symbol {
         Condition::from((*self, restriction))
     }
 
+    /// Restrict a wildcard match to be a symbol or function with
+    /// a given namespaced tag.
+    ///
+    /// # Examples
+    /// ```
+    /// use symbolica::{id::WildcardRestriction, symbol};
+    /// symbol!("x_").filter_tag("symbolica::real".into());
+    /// ```
+    pub fn filter_tag(&self, tag: String) -> Condition<PatternRestriction> {
+        if tag.contains("::") {
+            self.restrict(WildcardRestriction::HasTag(tag))
+        } else {
+            panic!("Tag {} must contain namespace", tag);
+        }
+    }
+
     /// Restrict a wildcard symbol with a filter function `f`.
     ///
-    /// # Example
+    /// # Examples
     /// Restrict the wildcard `x_` to be greater than 1:
     /// ```
     /// use symbolica::{id::WildcardRestriction, symbol};
@@ -2569,6 +2587,12 @@ impl Evaluate for Condition<PatternRestriction> {
                                 }
                             }
                             WildcardRestriction::NotGreedy => true,
+                            WildcardRestriction::HasTag(tag) => match value {
+                                Match::Single(AtomView::Var(v)) => v.get_symbol().has_tag(tag),
+                                Match::Single(AtomView::Fun(f)) => f.get_symbol().has_tag(tag),
+                                Match::FunctionName(s) => s.has_tag(tag),
+                                _ => false,
+                            },
                         }
                         .into()
                     } else {
@@ -2667,6 +2691,12 @@ impl Condition<PatternRestriction> {
                         }
                     }
                     WildcardRestriction::NotGreedy => true.into(),
+                    WildcardRestriction::HasTag(tag) => match value {
+                        Match::Single(AtomView::Var(v)) => v.get_symbol().has_tag(tag).into(),
+                        Match::Single(AtomView::Fun(f)) => f.get_symbol().has_tag(tag).into(),
+                        Match::FunctionName(s) => s.has_tag(tag).into(),
+                        _ => false.into(),
+                    },
                 }
             }
         }
@@ -2751,6 +2781,7 @@ impl Clone for WildcardRestriction {
             Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
             Self::Cmp(i, f) => Self::Cmp(*i, dyn_clone::clone_box(f)),
             Self::NotGreedy => Self::NotGreedy,
+            Self::HasTag(tag) => Self::HasTag(tag.clone()),
         }
     }
 }
@@ -2766,6 +2797,7 @@ impl std::fmt::Debug for WildcardRestriction {
             Self::Filter(_) => f.debug_tuple("Filter").finish(),
             Self::Cmp(arg0, _) => f.debug_tuple("Cmp").field(arg0).finish(),
             Self::NotGreedy => write!(f, "NotGreedy"),
+            Self::HasTag(tag) => f.debug_tuple("HasTag").field(tag).finish(),
         }
     }
 }

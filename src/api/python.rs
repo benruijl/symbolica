@@ -43,8 +43,7 @@ use pyo3::pymodule;
 use crate::{
     LicenseManager,
     atom::{
-        Atom, AtomCore, AtomType, AtomView, DefaultNamespace, FunctionAttribute, ListIterator,
-        Symbol,
+        Atom, AtomCore, AtomType, AtomView, DefaultNamespace, ListIterator, Symbol, SymbolAttribute,
     },
     coefficient::CoefficientView,
     domains::{
@@ -346,7 +345,7 @@ fn get_license_key(email: String) -> PyResult<()> {
         .map_err(exceptions::PyConnectionError::new_err)
 }
 
-#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None,custom_print=None,custom_derivative=None))]
+#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,tags=None,custom_normalization=None,custom_print=None,custom_derivative=None))]
 /// Shorthand notation for :func:`Expression.symbol`.
 fn symbol_shorthand(
     names: &Bound<'_, PyTuple>,
@@ -354,6 +353,7 @@ fn symbol_shorthand(
     is_antisymmetric: Option<bool>,
     is_cyclesymmetric: Option<bool>,
     is_linear: Option<bool>,
+    tags: Option<Vec<String>>,
     custom_normalization: Option<PythonTransformer>,
     custom_print: Option<PyObject>,
     custom_derivative: Option<PyObject>,
@@ -367,6 +367,7 @@ fn symbol_shorthand(
         is_antisymmetric,
         is_cyclesymmetric,
         is_linear,
+        tags,
         custom_normalization,
         custom_print,
         custom_derivative,
@@ -2895,7 +2896,7 @@ impl PythonExpression {
     /// Define a custom normalization function:
     /// >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     /// >>> E("real_log(exp(x)) + real_log(5)")
-    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None, custom_print=None, custom_derivative=None))]
+    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,tags=None,custom_normalization=None, custom_print=None, custom_derivative=None))]
     #[classmethod]
     pub fn symbol(
         _cls: &Bound<'_, PyType>,
@@ -2905,6 +2906,7 @@ impl PythonExpression {
         is_antisymmetric: Option<bool>,
         is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
+        tags: Option<Vec<String>>,
         custom_normalization: Option<PythonTransformer>,
         custom_print: Option<PyObject>,
         custom_derivative: Option<PyObject>,
@@ -2926,6 +2928,7 @@ impl PythonExpression {
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
             && is_linear.is_none()
+            && tags.is_none()
             && custom_normalization.is_none()
             && custom_print.is_none()
             && custom_derivative.is_none()
@@ -2967,19 +2970,19 @@ impl PythonExpression {
         let mut opts = vec![];
 
         if let Some(true) = is_symmetric {
-            opts.push(FunctionAttribute::Symmetric);
+            opts.push(SymbolAttribute::Symmetric);
         }
 
         if let Some(true) = is_antisymmetric {
-            opts.push(FunctionAttribute::Antisymmetric);
+            opts.push(SymbolAttribute::Antisymmetric);
         }
 
         if let Some(true) = is_cyclesymmetric {
-            opts.push(FunctionAttribute::Cyclesymmetric);
+            opts.push(SymbolAttribute::Cyclesymmetric);
         }
 
         if let Some(true) = is_linear {
-            opts.push(FunctionAttribute::Linear);
+            opts.push(SymbolAttribute::Linear);
         }
 
         if names.len() == 1 {
@@ -3040,6 +3043,20 @@ impl PythonExpression {
                 ))
             }
 
+            if let Some(t) = tags {
+                symbol = symbol.with_tags(
+                    t.into_iter()
+                        .map(|x| {
+                            if x.contains("::") {
+                                x
+                            } else {
+                                format!("python::{x}")
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                );
+            }
+
             let symbol = symbol
                 .build()
                 .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
@@ -3071,6 +3088,20 @@ impl PythonExpression {
                             true
                         },
                     ))
+                }
+
+                if let Some(t) = tags.as_ref() {
+                    symbol = symbol.with_tags(
+                        t.into_iter()
+                            .map(|x| {
+                                if x.contains("::") {
+                                    x.clone()
+                                } else {
+                                    format!("python::{x}")
+                                }
+                            })
+                            .collect::<Vec<_>>(),
+                    );
                 }
 
                 let symbol = symbol
@@ -3504,12 +3535,28 @@ impl PythonExpression {
     }
 
     /// Get the name of a variable or function if the current atom
-    /// is a variable or function.
-    pub fn get_name(&self) -> PyResult<Option<String>> {
+    /// is a variable or function, otherwise throw an error.
+    pub fn get_name(&self) -> PyResult<String> {
         match self.expr.as_ref() {
-            Atom::Var(v) => Ok(Some(v.get_symbol().get_name().to_string())),
-            Atom::Fun(f) => Ok(Some(f.get_symbol().get_name().to_string())),
-            _ => Ok(None),
+            Atom::Var(v) => Ok(v.get_symbol().get_name().to_string()),
+            Atom::Fun(f) => Ok(f.get_symbol().get_name().to_string()),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "The exxpression {} is not a symbol or atom",
+                self.expr
+            ))),
+        }
+    }
+
+    /// Get the tags of a variable or function if the current atom
+    /// is a variable or function, otherwise throw an error.
+    pub fn get_tags(&self) -> PyResult<Vec<String>> {
+        match self.expr.as_ref() {
+            Atom::Var(v) => Ok(v.get_symbol().get_tags().to_vec()),
+            Atom::Fun(f) => Ok(f.get_symbol().get_tags().to_vec()),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "The exxpression {} is not a symbol or atom",
+                self.expr
+            ))),
         }
     }
 
@@ -3835,7 +3882,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, AtomType
+    /// >>> from symbolica import *
     /// >>> x, x_ = S('x', 'x_')
     /// >>> f = S("f")
     /// >>> e = f(x)*f(2)*f(f(3))
@@ -3867,6 +3914,42 @@ impl PythonExpression {
                     )
                         .into(),
                 })
+            }
+            _ => Err(exceptions::PyTypeError::new_err(
+                "Only wildcards can be restricted.",
+            )),
+        }
+    }
+
+    /// Create a pattern restriction based on the tag of a matched variable or function.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x = S('x', tags=['a', 'b'])
+    /// >>> x_ = S('x_')
+    /// >>> e = x.replace(x_, 1, x_.req_tag('b'))
+    /// >>> print(e)
+    /// Yields `1`.
+    pub fn req_tag(&self, tag: &str) -> PyResult<PythonPatternRestriction> {
+        match self.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+
+                if tag.contains("::") {
+                    Ok(PythonPatternRestriction {
+                        condition: (name.filter_tag(tag.to_string())).into(),
+                    })
+                } else {
+                    Ok(PythonPatternRestriction {
+                        condition: (name.filter_tag(format!("python::{tag}"))).into(),
+                    })
+                }
             }
             _ => Err(exceptions::PyTypeError::new_err(
                 "Only wildcards can be restricted.",

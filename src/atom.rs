@@ -32,7 +32,7 @@
 //!
 //! ```
 //! use symbolica::{function, parse, symbol};
-//! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
+//! use symbolica::atom::{Symbol, SymbolAttribute, Atom, AtomCore};
 //!
 //! let f = symbol!("f"; Symmetric);
 //! let expr = function!(f, 3, 2) + (1, 4);
@@ -287,9 +287,9 @@ pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send 
 /// ```
 pub type DerivativeFunction = Box<dyn Fn(AtomView, usize, &mut Atom) -> bool + Send + Sync>;
 
-/// Attributes that can be assigned to functions.
-#[derive(Clone, Copy, PartialEq)]
-pub enum FunctionAttribute {
+/// Attributes that can be assigned to symbols.
+#[derive(Clone, PartialEq)]
+pub enum SymbolAttribute {
     /// The function is symmetric.
     Symmetric,
     /// The function is antisymmetric.
@@ -350,7 +350,8 @@ impl std::fmt::Display for Symbol {
 /// A builder for creating symbols with optional attributes.
 pub struct SymbolBuilder {
     symbol: NamespacedSymbol,
-    attributes: Option<Cow<'static, [FunctionAttribute]>>,
+    attributes: Option<Cow<'static, [SymbolAttribute]>>,
+    tags: Vec<String>,
     normalization_function: Option<NormalizationFunction>,
     print_function: Option<PrintFunction>,
     derivative_function: Option<DerivativeFunction>,
@@ -363,32 +364,41 @@ impl SymbolBuilder {
         SymbolBuilder {
             symbol,
             attributes: None,
+            tags: vec![],
             normalization_function: None,
             print_function: None,
             derivative_function: None,
         }
     }
 
-    /// Get the symbol associated with `name` if it is already registered,
-    /// otherwise define it with the given attributes.
-    ///
-    /// This function will return an error when an existing symbol is redefined
-    /// with different attributes.
-    ///
-    /// Use the [symbol!](crate::symbol) macro instead to define symbols with the current namespace.
+    /// Set symbol attributes.
     ///
     /// # Examples
     ///
     /// ```
-    /// use symbolica::{atom::{Symbol, FunctionAttribute}, wrap_symbol};
+    /// use symbolica::{atom::{Symbol, SymbolAttribute}, wrap_symbol};
     ///
-    /// let f = Symbol::new(wrap_symbol!("f")).with_attributes(&[FunctionAttribute::Symmetric]).build().unwrap();
+    /// let f = Symbol::new(wrap_symbol!("f")).with_attributes(&[SymbolAttribute::Symmetric]).build().unwrap();
     /// ```
     pub fn with_attributes(
         mut self,
-        attributes: impl Into<Cow<'static, [FunctionAttribute]>>,
+        attributes: impl Into<Cow<'static, [SymbolAttribute]>>,
     ) -> Self {
         self.attributes = Some(attributes.into());
+        self
+    }
+
+    /// Set symbol tag. The tag must contain a namespace.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::{atom::{Symbol, SymbolAttribute}, wrap_symbol};
+    ///
+    /// let f = Symbol::new(wrap_symbol!("f")).with_tags(["tag::real"]).build().unwrap();
+    /// ```
+    pub fn with_tags<T: AsRef<[U]>, U: AsRef<str>>(mut self, tags: T) -> Self {
+        self.tags = tags.as_ref().iter().map(|x| x.as_ref().into()).collect();
         self
     }
 
@@ -466,12 +476,18 @@ impl SymbolBuilder {
     /// with different attributes.
     pub fn build(self) -> Result<Symbol, SmartString<LazyCompact>> {
         let (namespace, partial_symbol) =
-            self.symbol.symbol.rsplit_once("::").unwrap_or_else(|| {
-                panic!(
+            self.symbol.symbol.rsplit_once("::").ok_or_else(|| {
+                SmartString::from(format!(
                     "Input {} does not contain a symbol in the format `namespace::symbol`.",
-                    self.symbol.symbol
-                )
-            });
+                    self.symbol.symbol,
+                ))
+            })?;
+
+        for tag in &self.tags {
+            if !tag.contains("::") {
+                return Err(format!("Tag {} must contain a namespace", tag).into());
+            }
+        }
 
         Token::check_symbol_name(namespace)?;
         Token::check_symbol_name(partial_symbol)?;
@@ -480,6 +496,7 @@ impl SymbolBuilder {
             && self.normalization_function.is_none()
             && self.print_function.is_none()
             && self.derivative_function.is_none()
+            && self.tags.is_empty()
         {
             State::get_state_mut().get_symbol(self.symbol)
         } else {
@@ -489,6 +506,7 @@ impl SymbolBuilder {
                 self.normalization_function,
                 self.print_function,
                 self.derivative_function,
+                self.tags,
             )
         }
     }
@@ -666,6 +684,17 @@ impl Symbol {
     /// Returns `true` iff this identifier is defined by Symbolica.
     pub fn is_builtin(self) -> bool {
         State::is_builtin(self)
+    }
+
+    /// Get all tags of the symbol.
+    pub fn get_tags(&self) -> &[String] {
+        &self.get_data().tags
+    }
+
+    /// Check if the symbol has the tag `tag`.
+    pub fn has_tag(&self, tag: impl AsRef<str>) -> bool {
+        let r = tag.as_ref();
+        self.get_data().tags.iter().any(|x| x == r)
     }
 
     /// Expert use: create a new variable symbol. This constructor should be used with care as there are no checks
@@ -1208,7 +1237,7 @@ impl AtomView<'_> {
 ///
 /// ```
 /// use symbolica::{function, parse, symbol};
-/// use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
+/// use symbolica::atom::{Symbol, Atom, AtomCore};
 ///
 /// let f = symbol!("f"; Symmetric);
 /// let expr = function!(f, 3, 2) + (1, 4);
@@ -1718,6 +1747,27 @@ macro_rules! function {
     };
 }
 
+/// Create a tag in the current project namespace if no explicit namespace is set.
+/// This macro can be used in the `symbol!` macro:
+/// ```
+/// use symbolica::{symbol, tag};
+/// let x = symbol!("tagged_x", tag = tag!("nonzero"));
+/// assert_eq!(x.has_tag("symbolica::nonzero"), true);
+/// ```
+#[macro_export]
+macro_rules! tag {
+    ($name: expr) => {
+        if !$name.contains("::") {
+            let mut s = String::from($crate::namespace!());
+            s.push_str("::");
+            s.push_str($name.as_ref());
+            s
+        } else {
+            String::from($name)
+        }
+    };
+}
+
 /// Create a new symbol or fetch the existing one with the same name.
 /// If no namespace is specified, the symbol is created in the
 /// current namespace.
@@ -1736,8 +1786,8 @@ macro_rules! function {
 ///
 /// You can specify attributes for the symbol, using `;` as a separator
 /// between symbol names and attributes. The options
-/// are [Symmetric](FunctionAttribute::Symmetric), [Antisymmetric](FunctionAttribute::Antisymmetric),
-/// [Cyclesymmetric](FunctionAttribute::Cyclesymmetric), and [Linear](FunctionAttribute::Linear).
+/// are [Symmetric](SymbolAttribute::Symmetric), [Antisymmetric](SymbolAttribute::Antisymmetric),
+/// [Cyclesymmetric](SymbolAttribute::Cyclesymmetric), and [Linear](SymbolAttribute::Linear).
 /// ```no_run
 /// use symbolica::symbol;
 /// let x = symbol!("x"; Symmetric, Linear);
@@ -1821,7 +1871,7 @@ macro_rules! symbol {
         $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build().unwrap()
     };
     ($id: expr; $($attr: ident),*) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build().unwrap()
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::SymbolAttribute::$attr,)*]).build().unwrap()
     };
     ($id: expr, $($a: tt = $value: expr),*) => {
         {
@@ -1836,7 +1886,7 @@ macro_rules! symbol {
     };
     ($id: expr; $($attr: ident),+; $($a: ident = $value: expr),*) => {
         {
-            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]);
+            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::SymbolAttribute::$attr,)*]);
 
             $(
                 b = $crate::symbol_set_attr!(b, $a = $value);
@@ -1858,7 +1908,7 @@ macro_rules! symbol {
         {
             macro_rules! gen_attr {
                 () => {
-                    &[$($crate::atom::FunctionAttribute::$attr,)*]
+                    &[$($crate::atom::SymbolAttribute::$attr,)*]
                 };
             }
 
@@ -1884,6 +1934,12 @@ macro_rules! symbol_set_attr {
     ($b: expr, der = $der: expr) => {
         $b.with_derivative_function($der)
     };
+    ($b: expr, tag = $tag: expr) => {
+        $b.with_tags(std::slice::from_ref(&$tag))
+    };
+    ($b: expr, tags = $tags: expr) => {
+        $b.with_tags($tags)
+    };
 }
 
 /// Try to create a new symbol or fetch the existing one with the same name.
@@ -1894,7 +1950,7 @@ macro_rules! try_symbol {
         $crate::atom::Symbol::new($crate::wrap_symbol!($id)).build()
     };
     ($id: expr; $($attr: ident),*) => {
-        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]).build()
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::SymbolAttribute::$attr,)*]).build()
     };
     ($id: expr, $($a: tt = $value: expr),*) => {
         {
@@ -1909,7 +1965,7 @@ macro_rules! try_symbol {
     };
     ($id: expr; $($attr: ident),+; $($a: ident = $value: expr),*) => {
         {
-            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::FunctionAttribute::$attr,)*]);
+            let mut b =  $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(&[$($crate::atom::SymbolAttribute::$attr,)*]);
 
             $(
                 b = $crate::symbol_set_attr!(b, $a = $value);
@@ -1931,7 +1987,7 @@ macro_rules! try_symbol {
         {
             macro_rules! gen_attr {
                 () => {
-                    &[$($crate::atom::FunctionAttribute::$attr,)*]
+                    &[$($crate::atom::SymbolAttribute::$attr,)*]
                 };
             }
 

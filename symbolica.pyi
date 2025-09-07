@@ -55,6 +55,7 @@ def S(name: str,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
+      tags: Optional[Sequence[str]] = None,
       custom_normalization: Optional[Transformer] = None,
       custom_print: Optional[Callable[..., Optional[str]]] = None,
       custom_derivative: Optional[Callable[[Expression, int], Expression]] = None) -> Expression:
@@ -126,6 +127,8 @@ def S(name: str,
         Set to true if the symbol is cyclesymmetric.
     is_linear : Optional[bool]
         Set to true if the symbol is linear.
+    tags: Optional[Sequence[str]] = None
+        A list of tags to associate with the symbol.
     custom_normalization : Optional[Transformer]
         A transformer that is called after every normalization. Note that the symbol
         name cannot be used in the transformer as this will lead to a definition of the
@@ -144,7 +147,8 @@ def S(*names: str,
       is_symmetric: Optional[bool] = None,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
-      is_linear: Optional[bool] = None) -> Sequence[Expression]:
+      is_linear: Optional[bool] = None,
+      tags: Optional[Sequence[str]] = None) -> Sequence[Expression]:
     """
     Create new symbols from `names`. Symbols can have attributes,
     such as symmetries. If no attributes
@@ -174,6 +178,8 @@ def S(*names: str,
         Set to true if the symbol is cyclesymmetric.
     is_linear : Optional[bool]
         Set to true if the symbol is multilinear.
+    tags: Optional[Sequence[str]] = None
+        A list of tags to associate with the symbol.
     """
 
 
@@ -329,6 +335,7 @@ class Expression:
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
                is_linear: Optional[bool] = None,
+               tags: Optional[Sequence[str]] = None,
                custom_normalization: Optional[Transformer] = None,
                custom_print: Optional[Callable[..., Optional[str]]] = None,
                custom_derivative: Optional[Callable[[Expression, int], Expression]] = None) -> Expression:
@@ -400,6 +407,8 @@ class Expression:
             Set to true if the symbol is cyclesymmetric.
         is_linear : Optional[bool]
             Set to true if the symbol is linear.
+        tags: Optional[Sequence[str]]
+            A list of tags to associate with the symbol.
         custom_normalization : Optional[Transformer]
             A transformer that is called after every normalization. Note that the symbol
             name cannot be used in the transformer as this will lead to a definition of the
@@ -419,7 +428,8 @@ class Expression:
                is_symmetric: Optional[bool] = None,
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
-               is_linear: Optional[bool] = None) -> Sequence[Expression]:
+               is_linear: Optional[bool] = None,
+               tags: Optional[Sequence[str]] = None) -> Sequence[Expression]:
         """
         Create new symbols from `names`. Symbols can have attributes,
         such as symmetries. If no attributes
@@ -449,6 +459,8 @@ class Expression:
             Set to true if the symbol is cyclesymmetric.
         is_linear : Optional[bool]
             Set to true if the symbol is multilinear.
+        tags: Optional[Sequence[str]]
+            A list of tags to associate with the symbol.
         """
 
     @overload
@@ -672,10 +684,16 @@ class Expression:
     def to_atom_tree(self) -> AtomTree:
         """Convert the expression to a tree."""
 
-    def get_name(self) -> Optional[str]:
+    def get_name(self) -> str:
         """
         Get the name of a variable or function if the current atom
-        is a variable or function.
+        is a variable or function, otherwise throw an error.
+        """
+
+    def get_tags(self) -> list[str]:
+        """
+        Get the tags of a variable or function if the current atom
+        is a variable or function, otherwise throw an error.
         """
 
     def __add__(self, other: Expression | int | float | complex | Decimal) -> Expression:
@@ -801,13 +819,28 @@ class Expression:
         Create a pattern restriction based on the wildcard length before downcasting.
         """
 
+    def req_tag(self, tag: str) -> PatternRestriction:
+        """
+        Create a pattern restriction based on the tag of a matched variable or function.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x = S('x', tags=['a', 'b'])
+        >>> x_ = S('x_')
+        >>> e = x.replace(x_, 1, x_.req_tag('b'))
+        >>> print(e)
+
+        Yields `1`.
+        """
+
     def req_type(self, atom_type: AtomType) -> PatternRestriction:
         """
         Create a pattern restriction that tests the type of the atom.
 
         Examples
         --------
-        >>> from symbolica import *, AtomType
+        >>> from symbolica import *
         >>> x, x_ = S('x', 'x_')
         >>> f = S('f')
         >>> e = f(x)*f(2)*f(f(3))

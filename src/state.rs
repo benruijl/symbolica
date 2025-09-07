@@ -19,7 +19,7 @@ use byteorder::LittleEndian;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
-use crate::atom::{DerivativeFunction, FunctionAttribute, NamespacedSymbol, NormalizationFunction};
+use crate::atom::{DerivativeFunction, NamespacedSymbol, NormalizationFunction, SymbolAttribute};
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
 use crate::printer::PrintFunction;
@@ -74,6 +74,7 @@ pub(crate) struct SymbolData {
     pub(crate) custom_normalization: Option<NormalizationFunction>,
     pub(crate) custom_print: Option<PrintFunction>,
     pub(crate) custom_derivative: Option<DerivativeFunction>,
+    pub(crate) tags: Vec<std::string::String>,
 }
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -149,7 +150,7 @@ impl State {
     /// that can be used in concurrently run unit tests without interference.
     #[cfg(test)]
     fn initialize_test(&mut self) {
-        use crate::atom::FunctionAttribute;
+        use crate::atom::SymbolAttribute;
 
         for i in 0..30 {
             let _ = self.get_symbol(wrap_symbol!(format!("v{}", i)));
@@ -160,46 +161,51 @@ impl State {
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fs{}", i)),
-                &[FunctionAttribute::Symmetric],
+                &[SymbolAttribute::Symmetric],
                 None,
                 None,
                 None,
+                vec![],
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fc{}", i)),
-                &[FunctionAttribute::Cyclesymmetric],
+                &[SymbolAttribute::Cyclesymmetric],
                 None,
                 None,
                 None,
+                vec![],
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fa{}", i)),
-                &[FunctionAttribute::Antisymmetric],
+                &[SymbolAttribute::Antisymmetric],
                 None,
                 None,
                 None,
+                vec![],
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fl{}", i)),
-                &[FunctionAttribute::Linear],
+                &[SymbolAttribute::Linear],
                 None,
                 None,
                 None,
+                vec![],
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes(
                 wrap_symbol!(format!("fsl{}", i)),
-                &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
+                &[SymbolAttribute::Symmetric, SymbolAttribute::Linear],
                 None,
                 None,
                 None,
+                vec![],
             );
         }
     }
@@ -316,6 +322,7 @@ impl State {
                         custom_normalization: None,
                         custom_print: None,
                         custom_derivative: None,
+                        tags: vec![],
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
@@ -339,10 +346,11 @@ impl State {
     pub(crate) fn get_symbol_with_attributes(
         &mut self,
         name: NamespacedSymbol,
-        attributes: &[FunctionAttribute],
+        attributes: &[SymbolAttribute],
         normalization_function: Option<NormalizationFunction>,
         print_function: Option<PrintFunction>,
         derivative_function: Option<DerivativeFunction>,
+        tags: Vec<std::string::String>,
     ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => {
@@ -351,16 +359,17 @@ impl State {
                 let new_id = Symbol::raw_fn(
                     r.get_id(),
                     r.get_wildcard_level(),
-                    attributes.contains(&FunctionAttribute::Symmetric),
-                    attributes.contains(&FunctionAttribute::Antisymmetric),
-                    attributes.contains(&FunctionAttribute::Cyclesymmetric),
-                    attributes.contains(&FunctionAttribute::Linear),
+                    attributes.contains(&SymbolAttribute::Symmetric),
+                    attributes.contains(&SymbolAttribute::Antisymmetric),
+                    attributes.contains(&SymbolAttribute::Cyclesymmetric),
+                    attributes.contains(&SymbolAttribute::Linear),
                 );
 
                 if r == new_id
                     && normalization_function.is_none()
                     && print_function.is_none()
                     && derivative_function.is_none()
+                    && tags == r.get_tags()
                 {
                     Ok(r)
                 } else {
@@ -395,10 +404,10 @@ impl State {
                 let new_symbol = Symbol::raw_fn(
                     id as u32,
                     wildcard_level,
-                    attributes.contains(&FunctionAttribute::Symmetric),
-                    attributes.contains(&FunctionAttribute::Antisymmetric),
-                    attributes.contains(&FunctionAttribute::Cyclesymmetric),
-                    attributes.contains(&FunctionAttribute::Linear),
+                    attributes.contains(&SymbolAttribute::Symmetric),
+                    attributes.contains(&SymbolAttribute::Antisymmetric),
+                    attributes.contains(&SymbolAttribute::Cyclesymmetric),
+                    attributes.contains(&SymbolAttribute::Linear),
                 );
 
                 let id_ret = ID_TO_STR.push((
@@ -411,6 +420,7 @@ impl State {
                         custom_normalization: normalization_function,
                         custom_print: print_function,
                         custom_derivative: derivative_function,
+                        tags,
                     },
                 )) - offset;
                 assert_eq!(id, id_ret);
@@ -538,6 +548,12 @@ impl State {
             dest.write_u8(s.is_antisymmetric() as u8)?;
             dest.write_u8(s.is_cyclesymmetric() as u8)?;
             dest.write_u8(s.is_linear() as u8)?;
+
+            dest.write_u16::<LittleEndian>(s.get_tags().len() as u16)?;
+            for t in s.get_tags() {
+                dest.write_u32::<LittleEndian>(t.len() as u32)?;
+                dest.write_all(t.as_bytes())?;
+            }
         }
 
         dest.write_u64::<LittleEndian>(FINITE_FIELDS.len() as u64)?;
@@ -596,7 +612,10 @@ impl State {
         if version != EXPORT_FORMAT_VERSION {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Invalid export format version",
+                format!(
+                    "Invalid export format version: expected {} but got {}",
+                    EXPORT_FORMAT_VERSION, version
+                ),
             ));
         }
 
@@ -613,13 +632,17 @@ impl State {
             let mut v = vec![0; l as usize];
             source.read_exact(&mut v)?;
 
-            let mut str: String = std::string::String::from_utf8(v).unwrap().into();
+            let mut str: String = std::string::String::from_utf8(v)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+                .into();
 
             let l = source.read_u32::<LittleEndian>()?;
             let mut v = vec![0; l as usize];
             source.read_exact(&mut v)?;
 
-            let namespace: String = std::string::String::from_utf8(v).unwrap().into();
+            let namespace: String = std::string::String::from_utf8(v)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+                .into();
 
             let wildcard_level = source.read_u8()?;
             let is_symmetric = source.read_u8()? != 0;
@@ -627,18 +650,33 @@ impl State {
             let is_cyclesymmetric = source.read_u8()? != 0;
             let is_linear = source.read_u8()? != 0;
 
+            let mut tags = vec![];
+            let num_tags = source.read_u16::<LittleEndian>()?;
+
+            for _ in 0..num_tags {
+                let l = source.read_u32::<LittleEndian>()?;
+                let mut v = vec![0; l as usize];
+                source.read_exact(&mut v)?;
+
+                let tag: String = std::string::String::from_utf8(v)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+                    .into();
+
+                tags.push(tag);
+            }
+
             attributes.clear();
             if is_antisymmetric {
-                attributes.push(FunctionAttribute::Antisymmetric);
+                attributes.push(SymbolAttribute::Antisymmetric);
             }
             if is_symmetric {
-                attributes.push(FunctionAttribute::Symmetric);
+                attributes.push(SymbolAttribute::Symmetric);
             }
             if is_cyclesymmetric {
-                attributes.push(FunctionAttribute::Cyclesymmetric);
+                attributes.push(SymbolAttribute::Cyclesymmetric);
             }
             if is_linear {
-                attributes.push(FunctionAttribute::Linear);
+                attributes.push(SymbolAttribute::Linear);
             }
 
             loop {
@@ -649,6 +687,7 @@ impl State {
                     line: 0,
                 })
                 .with_attributes(attributes.clone())
+                .with_tags(tags.clone())
                 .build()
                 {
                     Ok(id) => {

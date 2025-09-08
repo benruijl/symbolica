@@ -1781,13 +1781,23 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         F::export_cpp(self, &function_name, settings)
     }
 
-    pub fn export_simd_str(&self, function_name: &str, settings: ExportSettings) -> String {
+    pub fn export_simd_str(
+        &self,
+        function_name: &str,
+        settings: ExportSettings,
+        complex: bool,
+    ) -> String {
         let mut res = String::new();
         if settings.include_header {
-            res += &"#include \"xsimd/xsimd.hpp\"\n";
+            res += "#include \"xsimd/xsimd.hpp\"\n";
         }
 
-        res += "using simd = xsimd::batch<double, xsimd::best_arch>;\n";
+        if complex {
+            res += "#include <complex>\n";
+            res += "using simd = xsimd::batch<std::complex<double>, xsimd::best_arch>;\n";
+        } else {
+            res += "using simd = xsimd::batch<double, xsimd::best_arch>;\n";
+        }
 
         res += &self.export_generic_cpp_str(function_name, &settings, NumberClass::RealF64);
 
@@ -5320,7 +5330,7 @@ struct EvaluatorFunctionsSimdRealf64<'lib> {
 
 impl<'lib> EvaluatorFunctionsSimdRealf64<'lib> {
     fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
-        let function_name = SimdRealf64::construct_function_name(function_name);
+        let function_name = wide::f64x4::construct_function_name(function_name);
         unsafe {
             let eval: EvalTypeWithBuffer<'lib, wide::f64x4> = lib
                 .get(format!("{}", function_name).as_bytes())
@@ -5329,6 +5339,38 @@ impl<'lib> EvaluatorFunctionsSimdRealf64<'lib> {
                 .get(format!("{}_get_buffer_len", function_name).as_bytes())
                 .map_err(|e| e.to_string())?;
             Ok(EvaluatorFunctionsSimdRealf64 {
+                eval,
+                get_buffer_len,
+            })
+        }
+    }
+}
+
+self_cell!(
+    struct LibrarySimdComplexf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsSimdComplexf64,
+    }
+);
+
+struct EvaluatorFunctionsSimdComplexf64<'lib> {
+    eval: EvalTypeWithBuffer<'lib, Complex<wide::f64x4>>,
+    get_buffer_len: GetBufferLenType<'lib>,
+}
+
+impl<'lib> EvaluatorFunctionsSimdComplexf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = Complex::<wide::f64x4>::construct_function_name(function_name);
+        unsafe {
+            let eval: EvalTypeWithBuffer<'lib, Complex<wide::f64x4>> = lib
+                .get(format!("{}", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let get_buffer_len: GetBufferLenType<'lib> = lib
+                .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsSimdComplexf64 {
                 eval,
                 get_buffer_len,
             })
@@ -5789,9 +5831,9 @@ impl Clone for CompiledComplexEvaluator {
 /// Make sure you add arguments such as `-march=native` to enable full SIMD support for your platform.
 ///
 /// Failure to add this, may result in only two double-precision numbers being evaluated in parallel.
-pub struct SimdRealf64 {}
-
-impl CompiledNumber for SimdRealf64 {
+///
+/// The compilation requires the `xsimd` C++ library to be installed.
+impl CompiledNumber for wide::f64x4 {
     type Evaluator = CompiledSimdRealEvaluator;
     type Settings = ();
     const SUFFIX: &'static str = "simd_realf64";
@@ -5807,7 +5849,7 @@ impl CompiledNumber for SimdRealf64 {
             );
         }
 
-        Ok(eval.export_simd_str(function_name, settings))
+        Ok(eval.export_simd_str(function_name, settings, false))
     }
 }
 
@@ -5818,7 +5860,7 @@ pub struct CompiledSimdRealEvaluator {
     buffer: Vec<wide::f64x4>,
 }
 
-impl EvaluatorLoader<SimdRealf64> for CompiledSimdRealEvaluator {
+impl EvaluatorLoader<wide::f64x4> for CompiledSimdRealEvaluator {
     fn load(path: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
         CompiledSimdRealEvaluator::load_with_settings(path, function_name, ())
     }
@@ -5949,6 +5991,174 @@ impl<Context> bincode::Decode<Context> for CompiledSimdRealEvaluator {
         let file: PathBuf = bincode::Decode::decode(decoder)?;
         let fn_name: String = bincode::Decode::decode(decoder)?;
         CompiledSimdRealEvaluator::load(&file, &fn_name)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
+    }
+}
+
+/// Evaluate 4 double-precision floating point numbers in parallel using SIMD instructions.
+/// Make sure you add arguments such as `-march=native` to enable full SIMD support for your platform.
+///
+/// Failure to add this, may result in only two double-precision numbers being evaluated in parallel.
+///
+/// The compilation requires the `xsimd` C++ library to be installed.
+impl CompiledNumber for Complex<wide::f64x4> {
+    type Evaluator = CompiledSimdComplexEvaluator;
+    type Settings = ();
+    const SUFFIX: &'static str = "simd_complexf64";
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        if !eval.stack.iter().all(|x| x.is_real()) {
+            return Err(
+                "Cannot create real evaluator with complex coefficients. Use Complex<f64>".into(),
+            );
+        }
+
+        Ok(eval.export_simd_str(function_name, settings, true))
+    }
+}
+
+pub struct CompiledSimdComplexEvaluator {
+    path: PathBuf,
+    fn_name: String,
+    library: LibrarySimdComplexf64,
+    buffer: Vec<Complex<wide::f64x4>>,
+}
+
+impl EvaluatorLoader<Complex<wide::f64x4>> for CompiledSimdComplexEvaluator {
+    fn load(path: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
+        CompiledSimdComplexEvaluator::load_with_settings(path, function_name, ())
+    }
+
+    fn load_with_settings(
+        path: impl AsRef<Path>,
+        function_name: &str,
+        _settings: (),
+    ) -> Result<Self, String> {
+        CompiledSimdComplexEvaluator::load(path, function_name)
+    }
+}
+
+impl CompiledSimdComplexEvaluator {
+    pub fn load_new_function(
+        &self,
+        function_name: &str,
+    ) -> Result<CompiledSimdComplexEvaluator, String> {
+        let library = LibrarySimdComplexf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsSimdComplexf64::new(lib, function_name)
+        })?;
+
+        Ok(CompiledSimdComplexEvaluator {
+            path: self.path.clone(),
+            fn_name: function_name.to_string(),
+            buffer: vec![
+                Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO);
+                unsafe { (library.borrow_dependent().get_buffer_len)() } as usize
+            ],
+            library,
+        })
+    }
+
+    pub fn load(
+        path: impl AsRef<Path>,
+        function_name: &str,
+    ) -> Result<CompiledSimdComplexEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(path.as_ref()) {
+                Ok(lib) => lib,
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
+            };
+            let library = LibrarySimdComplexf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsSimdComplexf64::new(lib, function_name)
+            })?;
+
+            Ok(CompiledSimdComplexEvaluator {
+                path: path.as_ref().to_path_buf(),
+                fn_name: function_name.to_string(),
+                buffer: vec![
+                    Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO);
+                    (library.borrow_dependent().get_buffer_len)() as usize
+                ],
+                library,
+            })
+        }
+    }
+
+    /// Evaluate the compiled code with 4 double-precision floating point numbers.
+    /// The `args` must be of length `number_of_evaluations * input`, where `input` is the number of inputs to the function.
+    /// The `out` must be of length `number_of_evaluations * output`,
+    /// where `output` is the number of outputs of the function.
+    #[inline(always)]
+    pub fn evaluate(
+        &mut self,
+        args: &[Complex<wide::f64x4>],
+        out: &mut [Complex<wide::f64x4>],
+    ) -> Result<(), String> {
+        unsafe {
+            (self.library.borrow_dependent().eval)(
+                args.as_ptr(),
+                self.buffer.as_mut_ptr(),
+                out.as_mut_ptr(),
+            )
+        }
+        Ok(())
+    }
+}
+
+unsafe impl Send for CompiledSimdComplexEvaluator {}
+
+impl std::fmt::Debug for CompiledSimdComplexEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledSimdComplexEvaluator({})", self.fn_name)
+    }
+}
+
+impl Clone for CompiledSimdComplexEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledSimdComplexEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.path, &self.fn_names).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledSimdComplexEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name) = <(PathBuf, String)>::deserialize(deserializer)?;
+        CompiledSimdComplexEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledSimdComplexEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)?;
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledSimdComplexEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledSimdComplexEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        CompiledSimdComplexEvaluator::load(&file, &fn_name)
             .map_err(|e| bincode::error::DecodeError::OtherString(e))
     }
 }

@@ -374,10 +374,59 @@ impl State {
                     Ok(r)
                 } else {
                     let data = &ID_TO_STR[r.get_id() as usize].1;
+
+                    let mut diff_attr = String::new();
+                    if r.is_antisymmetric() != new_id.is_antisymmetric() {
+                        diff_attr.push_str(&format!(
+                            "\tAntisymmetric: {} vs {}\n",
+                            r.is_antisymmetric(),
+                            new_id.is_antisymmetric()
+                        ));
+                    }
+                    if r.is_symmetric() != new_id.is_symmetric() {
+                        diff_attr.push_str(&format!(
+                            "\tSymmetric: {} vs {}\n",
+                            r.is_symmetric(),
+                            new_id.is_symmetric()
+                        ));
+                    }
+                    if r.is_cyclesymmetric() != new_id.is_cyclesymmetric() {
+                        diff_attr.push_str(&format!(
+                            "\tCyclesymmetric: {} vs {}\n",
+                            r.is_cyclesymmetric(),
+                            new_id.is_cyclesymmetric()
+                        ));
+                    }
+                    if r.is_linear() != new_id.is_linear() {
+                        diff_attr.push_str(&format!(
+                            "\tLinear: {} vs {}\n",
+                            r.is_linear(),
+                            new_id.is_linear()
+                        ));
+                    }
+
+                    if tags != r.get_tags() {
+                        diff_attr.push_str(&format!("\tTags: {:?} vs {:?}\n", r.get_tags(), tags));
+                    }
+
+                    if normalization_function.is_some() {
+                        diff_attr.push_str("\tNew normalization function specified.\n");
+                    }
+                    if print_function.is_some() {
+                        diff_attr.push_str("\tNew print function specified.\n");
+                    }
+                    if derivative_function.is_some() {
+                        diff_attr.push_str("\tNew derivative function specified.\n");
+                    }
+
                     if data.file.is_empty() {
-                        Err(format!("Symbol {} redefined with new attributes.", data.name).into())
+                        Err(format!(
+                            "Symbol {} redefined with new attributes:\n{}",
+                            data.name, diff_attr
+                        )
+                        .into())
                     } else {
-                        Err(format!("Symbol {} redefined with new attributes. The first definition occurred here: {}:{}.", data.name, data.file, data.line).into())
+                        Err(format!("Symbol {} redefined with new attributes: {}The first definition occurred here: {}:{}.", data.name, diff_attr, data.file, data.line).into())
                     }
                 }
             }

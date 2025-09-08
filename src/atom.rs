@@ -1805,7 +1805,18 @@ macro_rules! tag {
 /// Special settings can be defined for a single symbol by following
 /// the symbol name with a `,` as shown next.
 ///
-/// You can specify a normalization function for the symbol using the `norm` flag:
+/// ### Tags
+/// You can set tags using `tag` or `tags` flags:
+/// ```no_run
+/// use symbolica::{symbol, tag};
+/// let x = symbol!("x", tag = tag!("nonzero"));
+/// let y = symbol!("y", tags = ["test::a", "test::b"]);
+/// let (w, z) = symbol!("w", "z"; tags = ["test::a", "test::b"]);
+/// ```
+/// Tags can be used to create logical groups and can be queried and filtered on.
+///
+/// ### Normalization
+/// You can specify a normalization function for the symbol using `norm` flag:
 ///
 /// ```no_run
 /// use symbolica::symbol;
@@ -1821,6 +1832,7 @@ macro_rules! tag {
 /// });
 /// ```
 ///
+/// ### Printing
 /// You can define a custom printing function using the `print` flag:
 /// ```no_run
 /// use symbolica::symbol;
@@ -1849,6 +1861,7 @@ macro_rules! tag {
 /// ```
 /// which renders the symbol/function as `\mu_{...}` in LaTeX.
 ///
+/// ### Derivatives
 /// You can define a custom derivative function using the `der` flag:
 /// ```no_run
 /// use symbolica::{atom::Atom, symbol};
@@ -1904,6 +1917,24 @@ macro_rules! symbol {
             )
         }
     };
+    ($($id: expr),*; tag = $tag: expr) => {
+        {
+                (
+                $(
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_tags(std::slice::from_ref(&$tag)).build().unwrap(),
+                )+
+            )
+        }
+    };
+    ($($id: expr),*; tags = $tags: expr) => {
+        {
+                (
+                $(
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_tags($tags).build().unwrap(),
+                )+
+            )
+        }
+    };
     ($($id: expr),*; $($attr: ident),*) => {
         {
             macro_rules! gen_attr {
@@ -1915,6 +1946,36 @@ macro_rules! symbol {
             (
                 $(
                     $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).build().unwrap(),
+                )+
+            )
+        }
+    };
+    ($($id: expr),*; $($attr: ident),*; tag = $tag: expr) => {
+        {
+            macro_rules! gen_attr {
+                () => {
+                    &[$($crate::atom::SymbolAttribute::$attr,)*]
+                };
+            }
+
+            (
+                $(
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).with_tags(std::slice::from_ref(&$tag)).build().unwrap(),
+                )+
+            )
+        }
+    };
+    ($($id: expr),*; $($attr: ident),*; tags = $tags: expr) => {
+        {
+            macro_rules! gen_attr {
+                () => {
+                    &[$($crate::atom::SymbolAttribute::$attr,)*]
+                };
+            }
+
+            (
+                $(
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)).with_attributes(gen_attr!()).with_tags($tags).build().unwrap(),
                 )+
             )
         }

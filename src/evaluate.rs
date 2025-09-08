@@ -1782,6 +1782,86 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
         F::export_cpp(self, &function_name, settings)
     }
 
+    pub fn export_simd_str(
+        &self,
+        function_name: &str,
+        settings: ExportSettings,
+        complex: bool,
+        asm: InlineASM,
+    ) -> String {
+        let mut res = String::new();
+        if settings.include_header {
+            res += "#include \"xsimd/xsimd.hpp\"\n";
+        }
+
+        if complex {
+            res += "#include <complex>\n";
+            res += "using simd = xsimd::batch<std::complex<double>, xsimd::best_arch>;\n";
+        } else {
+            res += "using simd = xsimd::batch<double, xsimd::best_arch>;\n";
+        }
+
+        match asm {
+            InlineASM::AVX2 => {
+                res += &format!(
+                    "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
+                    function_name,
+                    self.stack.len()
+                );
+
+                if complex {
+                    res += &format!(
+                        "static const simd {}_CONSTANTS_complex[{}] = {{{}}};\n\n",
+                        function_name,
+                        self.reserved_indices - self.param_count + 1,
+                        {
+                            let mut nums = (self.param_count..self.reserved_indices)
+                                .map(|i| format!("simd({})", self.stack[i].export()))
+                                .collect::<Vec<_>>();
+                            nums.push("-0.".to_string()); // used for inversion
+                            nums.join(",")
+                        }
+                    );
+                } else {
+                    res += &format!(
+                        "static const simd {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+                        function_name,
+                        self.reserved_indices - self.param_count + 1,
+                        {
+                            let mut nums = (self.param_count..self.reserved_indices)
+                                .map(|i| format!("simd({})", self.stack[i].export()))
+                                .collect::<Vec<_>>();
+                            nums.push("1".to_string()); // used for inversion
+                            nums.join(",")
+                        }
+                    );
+                }
+
+                res += &format!(
+                    "\nextern \"C\" void {function_name}(simd *params, simd *Z, simd *out) {{\n"
+                );
+
+                if complex {
+                    self.export_asm_complex_impl(&self.instructions, function_name, asm, &mut res);
+                } else {
+                    self.export_asm_double_impl(&self.instructions, function_name, asm, &mut res);
+                }
+
+                res += "\treturn;\n}\n";
+            }
+            InlineASM::None => {
+                res += &self.export_generic_cpp_str(function_name, &settings, NumberClass::RealF64);
+
+                res += &format!(
+                    "\nextern \"C\" {{\n\tvoid {function_name}(simd *params, simd *buffer, simd *out) {{\n\t\t{function_name}_gen(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n"
+                );
+            }
+            _ => panic!("Bad inline ASM option: {:?}", asm),
+        }
+
+        res
+    }
+
     pub fn export_cuda_str(
         &self,
         function_name: &str,
@@ -2257,6 +2337,16 @@ extern "C" {{
                             format!("{}(%0)", $i * 8)
                         }
                     }
+                    InlineASM::AVX2 => {
+                        if $i < self.param_count {
+                            format!("{}(%2)", $i * 32)
+                        } else if $i < self.reserved_indices {
+                            format!("{}(%1)", ($i - self.param_count) * 32)
+                        } else {
+                            // TODO: subtract reserved indices
+                            format!("{}(%0)", $i * 32)
+                        }
+                    }
                     InlineASM::AArch64 => {
                         if $i < self.param_count {
                             let dest = $i * 8;
@@ -2326,6 +2416,9 @@ extern "C" {{
                     match asm_flavour {
                         InlineASM::X64 => {
                             *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
+                        }
+                        InlineASM::AVX2 => {
+                            *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"ymm0\", \"ymm1\", \"ymm2\", \"ymm3\", \"ymm4\", \"ymm5\", \"ymm6\", \"ymm7\", \"ymm8\", \"ymm9\", \"ymm10\", \"ymm11\", \"ymm12\", \"ymm13\", \"ymm14\", \"ymm15\");\n",  function_name);
                         }
                         InlineASM::AArch64 => {
                             *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"x8\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
@@ -2544,6 +2637,11 @@ extern "C" {{
                                                         "\t\t\"{oper}sd %%xmm{k}, %%xmm{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
+                                                InlineASM::AVX2 => {
+                                                    *out += &format!(
+                                                        "\t\t\"v{oper}pd %%ymm{k}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n",
+                                                    );
+                                                }
                                                 InlineASM::AArch64 => {
                                                     *out += &format!(
                                                         "\t\t\"f{oper} d{out_reg}, d{k}, d{out_reg}\\n\\t\"\n",
@@ -2556,6 +2654,12 @@ extern "C" {{
                                                     let addr = asm_load!(*k);
                                                     *out += &format!(
                                                         "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
+                                                    );
+                                                }
+                                                InlineASM::AVX2 => {
+                                                    let addr = asm_load!(*k);
+                                                    *out += &format!(
+                                                        "\t\t\"v{oper}pd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
@@ -2583,6 +2687,11 @@ extern "C" {{
                                             "\t\t\"movapd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                         );
                                     }
+                                    InlineASM::AVX2 => {
+                                        *out += &format!(
+                                            "\t\t\"vmovapd %%ymm{j}, %%ymm{out_reg}\\n\\t\"\n"
+                                        );
+                                    }
                                     InlineASM::AArch64 => {
                                         *out += &format!("\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n");
                                     }
@@ -2599,6 +2708,11 @@ extern "C" {{
                                                         "\t\t\"{oper}sd %%xmm{k}, %%xmm{out_reg}\\n\\t\"\n",
                                                     );
                                                 }
+                                                InlineASM::AVX2 => {
+                                                    *out += &format!(
+                                                        "\t\t\"v{oper}pd %%ymm{k}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n",
+                                                    );
+                                                }
                                                 InlineASM::AArch64 => {
                                                     *out += &format!(
                                                         "\t\t\"f{oper} d{out_reg}, d{k}, d{out_reg}\\n\\t\"\n",
@@ -2611,6 +2725,12 @@ extern "C" {{
                                                     let addr = asm_load!(*k);
                                                     *out += &format!(
                                                         "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
+                                                    );
+                                                }
+                                                InlineASM::AVX2 => {
+                                                    let addr = asm_load!(*k);
+                                                    *out += &format!(
+                                                        "\t\t\"v{oper}pd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
@@ -2638,6 +2758,12 @@ extern "C" {{
                                                 "\t\t\"movsd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                             );
                                         }
+                                        InlineASM::AVX2 => {
+                                            let addr = asm_load!(*k);
+                                            *out += &format!(
+                                                "\t\t\"vmovapd {addr}, %%ymm{out_reg}\\n\\t\"\n"
+                                            );
+                                        }
                                         InlineASM::AArch64 => {
                                             let addr = asm_load!(*k);
                                             *out +=
@@ -2656,6 +2782,12 @@ extern "C" {{
                                                 let addr = asm_load!(*k);
                                                 *out += &format!(
                                                     "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
+                                                );
+                                            }
+                                            InlineASM::AVX2 => {
+                                                let addr = asm_load!(*k);
+                                                *out += &format!(
+                                                    "\t\t\"v{oper}pd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
@@ -2685,6 +2817,11 @@ extern "C" {{
                                                 "\t\t\"movapd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                             );
                                         }
+                                        InlineASM::AVX2 => {
+                                            *out += &format!(
+                                                "\t\t\"vmovapd %%ymm{j}, %%ymm{out_reg}\\n\\t\"\n"
+                                            );
+                                        }
                                         InlineASM::AArch64 => {
                                             *out +=
                                                 &format!("\t\t\"fmov d{out_reg}, d{j}\\n\\t\"\n");
@@ -2702,6 +2839,11 @@ extern "C" {{
                                                             "\t\t\"{oper}sd %%xmm{k}, %%xmm{out_reg}\\n\\t\"\n"
                                                         );
                                                     }
+                                                    InlineASM::AVX2 => {
+                                                        *out += &format!(
+                                                            "\t\t\"v{oper}pd %%ymm{k}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
+                                                        );
+                                                    }
                                                     InlineASM::AArch64 => {
                                                         *out += &format!(
                                                             "\t\t\"f{oper} d{out_reg}, d{k}, d{out_reg}\\n\\t\"\n"
@@ -2714,6 +2856,12 @@ extern "C" {{
                                                         let addr = asm_load!(*k);
                                                         *out += &format!(
                                                             "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
+                                                        );
+                                                    }
+                                                    InlineASM::AVX2 => {
+                                                        let addr = asm_load!(*k);
+                                                        *out += &format!(
+                                                            "\t\t\"v{oper}pd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
                                                         );
                                                     }
                                                     InlineASM::AArch64 => {
@@ -2742,6 +2890,11 @@ extern "C" {{
                                                     "\t\t\"movsd {addr}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
+                                            InlineASM::AVX2 => {
+                                                *out += &format!(
+                                                    "\t\t\"vmovapd {addr}, %%ymm{out_reg}\\n\\t\"\n"
+                                                );
+                                            }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
                                                     "\t\t\"ldr d{out_reg}, {addr}\\n\\t\"\n",
@@ -2760,6 +2913,11 @@ extern "C" {{
                                                 InlineASM::X64 => {
                                                     *out += &format!(
                                                         "\t\t\"{oper}sd {addr}, %%xmm{out_reg}\\n\\t\"\n"
+                                                    );
+                                                }
+                                                InlineASM::AVX2 => {
+                                                    *out += &format!(
+                                                        "\t\t\"v{oper}pd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
@@ -2782,6 +2940,11 @@ extern "C" {{
                                     InlineASM::X64 => {
                                         *out += &format!(
                                             "\t\t\"movsd %%xmm{out_reg}, {addr}\\n\\t\"\n"
+                                        );
+                                    }
+                                    InlineASM::AVX2 => {
+                                        *out += &format!(
+                                            "\t\t\"vmovupd %%ymm{out_reg}, {addr}\\n\\t\"\n"
                                         );
                                     }
                                     InlineASM::AArch64 => {
@@ -2829,6 +2992,27 @@ extern "C" {{
                                                 panic!("No free registers for division")
                                             }
                                         }
+                                        InlineASM::AVX2 => {
+                                            if let Some(tmp_reg) =
+                                                (0..16).position(|k| free & (1 << k) != 0)
+                                            {
+                                                *out += &format!(
+                                                    "\t\t\"vmovapd %%ymm{out_reg}, %%ymm{tmp_reg}\\n\\t\"\n"
+                                                );
+
+                                                *out += &format!(
+                                                    "\t\t\"vmovupd {}(%1), %%ymm{}\\n\\t\"\n",
+                                                    (self.reserved_indices - self.param_count) * 32,
+                                                    out_reg
+                                                );
+
+                                                *out += &format!(
+                                                    "\t\t\"vdivsd %%ymm{tmp_reg}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
+                                                );
+                                            } else {
+                                                panic!("No free registers for division")
+                                            }
+                                        }
                                         InlineASM::AArch64 => {
                                             *out += &format!(
                                                 "\t\t\"ldr d31, [%1, {}]\\n\\t\"\n",
@@ -2850,6 +3034,13 @@ extern "C" {{
                                                 out_reg,
                                             );
                                         }
+                                        InlineASM::AVX2 => {
+                                            *out += &format!(
+                                                "\t\t\"vmovupd {}(%1), %%ymm{}\\n\\t\"\n",
+                                                (self.reserved_indices - self.param_count) * 32,
+                                                out_reg,
+                                            );
+                                        }
                                         InlineASM::AArch64 => {
                                             *out += &format!(
                                                 "\t\t\"ldr d{}, [%1, {}]\\n\\t\"\n",
@@ -2867,6 +3058,11 @@ extern "C" {{
                                                     "\t\t\"divsd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
+                                            InlineASM::AVX2 => {
+                                                *out += &format!(
+                                                    "\t\t\"vdivpd %%ymm{j}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
+                                                );
+                                            }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{out_reg}, d{out_reg}, d{j}\\n\\t\"\n"
@@ -2879,6 +3075,12 @@ extern "C" {{
                                                 let addr = asm_load!(*k);
                                                 *out += &format!(
                                                     "\t\t\"divsd {addr}, %%xmm{out_reg}\\n\\t\"\n",
+                                                );
+                                            }
+                                            InlineASM::AVX2 => {
+                                                let addr = asm_load!(*k);
+                                                *out += &format!(
+                                                    "\t\t\"vdivpd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n",
                                                 );
                                             }
                                             InlineASM::AArch64 => {
@@ -2904,6 +3106,13 @@ extern "C" {{
                                                 out_reg
                                             );
                                         }
+                                        InlineASM::AVX2 => {
+                                            *out += &format!(
+                                                "\t\t\"vmovupd {}(%1), %%ymm{}\\n\\t\"\n",
+                                                (self.reserved_indices - self.param_count) * 32,
+                                                out_reg
+                                            );
+                                        }
                                         InlineASM::AArch64 => {
                                             *out += &format!(
                                                 "\t\t\"ldr d{}, [%1, {}]\\n\\t\"\n",
@@ -2921,6 +3130,11 @@ extern "C" {{
                                                     "\t\t\"divsd %%xmm{j}, %%xmm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
+                                            InlineASM::AVX2 => {
+                                                *out += &format!(
+                                                    "\t\t\"vdivpd %%ymm{j}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
+                                                );
+                                            }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{out_reg}, d{out_reg}, d{j}\\n\\t\"\n"
@@ -2933,6 +3147,12 @@ extern "C" {{
                                                 let addr = asm_load!(*k);
                                                 *out += &format!(
                                                     "\t\t\"divsd {addr}, %%xmm{out_reg}\\n\\t\"\n"
+                                                );
+                                            }
+                                            InlineASM::AVX2 => {
+                                                let addr = asm_load!(*k);
+                                                *out += &format!(
+                                                    "\t\t\"vdivpd {addr}, %%ymm{out_reg}, %%ymm{out_reg}\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::AArch64 => {
@@ -2953,6 +3173,11 @@ extern "C" {{
                                         InlineASM::X64 => {
                                             *out += &format!(
                                                 "\t\t\"movsd %%xmm{out_reg}, {addr}\\n\\t\"\n"
+                                            );
+                                        }
+                                        InlineASM::AVX2 => {
+                                            *out += &format!(
+                                                "\t\t\"vmovupd %%ymm{out_reg}, {addr}\\n\\t\"\n"
                                             );
                                         }
                                         InlineASM::AArch64 => {
@@ -3026,6 +3251,10 @@ extern "C" {{
                     InlineASM::X64 => {
                         *out += &format!("\t\t\"movsd {}(%3), %%xmm{}\\n\\t\"\n", r * 8, regcount);
                     }
+                    InlineASM::AVX2 => {
+                        *out +=
+                            &format!("\t\t\"vmovupd {}(%3), %%ymm{}\\n\\t\"\n", r * 32, regcount);
+                    }
                     InlineASM::AArch64 => {
                         *out += &format!("\t\t\"ldr d{}, [%3, {}]\\n\\t\"\n", regcount, r * 8);
                     }
@@ -3037,6 +3266,13 @@ extern "C" {{
                         *out += &format!(
                             "\t\t\"movsd {}(%2), %%xmm{}\\n\\t\"\n",
                             (r - self.param_count) * 8,
+                            regcount
+                        );
+                    }
+                    InlineASM::AVX2 => {
+                        *out += &format!(
+                            "\t\t\"vmovupd {}(%2), %%ymm{}\\n\\t\"\n",
+                            (r - self.param_count) * 32,
                             regcount
                         );
                     }
@@ -3054,6 +3290,10 @@ extern "C" {{
                     InlineASM::X64 => {
                         *out += &format!("\t\t\"movsd {}(%1), %%xmm{}\\n\\t\"\n", r * 8, regcount);
                     }
+                    InlineASM::AVX2 => {
+                        *out +=
+                            &format!("\t\t\"vmovupd {}(%1), %%ymm{}\\n\\t\"\n", r * 32, regcount);
+                    }
                     InlineASM::AArch64 => {
                         *out += &format!("\t\t\"ldr d{}, [%1, {}]\\n\\t\"\n", regcount, r * 8);
                     }
@@ -3064,6 +3304,9 @@ extern "C" {{
             match asm_flavour {
                 InlineASM::X64 => {
                     *out += &format!("\t\t\"movsd %%xmm{}, {}(%0)\\n\\t\"\n", regcount, i * 8);
+                }
+                InlineASM::AVX2 => {
+                    *out += &format!("\t\t\"vmovupd %%ymm{}, {}(%0)\\n\\t\"\n", regcount, i * 32);
                 }
                 InlineASM::AArch64 => {
                     *out += &format!("\t\t\"str d{}, [%0, {}]\\n\\t\"\n", regcount, i * 8);
@@ -3077,6 +3320,11 @@ extern "C" {{
             InlineASM::X64 => {
                 *out += &format!(
                     "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n"
+                );
+            }
+            InlineASM::AVX2 => {
+                *out += &format!(
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"ymm0\", \"ymm1\", \"ymm2\", \"ymm3\", \"ymm4\", \"ymm5\", \"ymm6\", \"ymm7\", \"ymm8\", \"ymm9\", \"ymm10\", \"ymm11\", \"ymm12\", \"ymm13\", \"ymm14\", \"ymm15\");\n"
                 );
             }
             InlineASM::AArch64 => {
@@ -3129,6 +3377,19 @@ extern "C" {{
                         } else {
                             // TODO: subtract reserved indices
                             (format!("{}(%0)", $i * 16), String::new())
+                        }
+                    }
+                    InlineASM::AVX2 => {
+                        if $i < self.param_count {
+                            (format!("{}(%2)", $i * 64), format!("{}(%2)", $i * 64 + 32))
+                        } else if $i < self.reserved_indices {
+                            (
+                                format!("{}(%1)", ($i - self.param_count) * 64),
+                                format!("{}(%1)", ($i - self.param_count) * 64 + 32),
+                            )
+                        } else {
+                            // TODO: subtract reserved indices
+                            (format!("{}(%0)", $i * 64), format!("{}(%0)", $i * 64 + 32))
                         }
                     }
                     InlineASM::AArch64 => {
@@ -3201,6 +3462,9 @@ extern "C" {{
                         InlineASM::X64 => {
                             *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                         }
+                        InlineASM::AVX2 => {
+                            *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"ymm0\", \"ymm1\", \"ymm2\", \"ymm3\", \"ymm4\", \"ymm5\", \"ymm6\", \"ymm7\", \"ymm8\", \"ymm9\", \"ymm10\", \"ymm11\", \"ymm12\", \"ymm13\", \"ymm14\", \"ymm15\");\n",  function_name);
+                        }
                         InlineASM::AArch64 => {
                             *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"x8\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
                         }
@@ -3232,6 +3496,22 @@ extern "C" {{
                             let (addr, _) = asm_load!(*o);
                             *out += &format!("\t\t\"movupd %%xmm0, {addr}\\n\\t\"\n");
                         }
+                        InlineASM::AVX2 => {
+                            let (addr, comp_addr) = asm_load!(a[0]);
+                            *out += &format!("\t\t\"vmovupd {addr}, %%ymm0\\n\\t\"\n");
+                            *out += &format!("\t\t\"vmovupd {comp_addr}, %%ymm1\\n\\t\"\n");
+
+                            // TODO: try loading in multiple registers for better instruction-level parallelism?
+                            for i in &a[1..] {
+                                let (addr, imag_addr) = asm_load!(*i);
+                                *out += &format!("\t\t\"vaddpd {addr}, %%ymm0, %%ymm0\\n\\t\"\n");
+                                *out +=
+                                    &format!("\t\t\"vaddpd {imag_addr}, %%ymm1, %%ymm1\\n\\t\"\n");
+                            }
+                            let (addr, imag_addr) = asm_load!(*o);
+                            *out += &format!("\t\t\"vmovupd %%ymm0, {addr}\\n\\t\"\n");
+                            *out += &format!("\t\t\"vmovupd %%ymm1, {imag_addr}\\n\\t\"\n");
+                        }
                         InlineASM::AArch64 => {
                             let (addr, _) = asm_load!(a[0]);
                             *out += &format!("\t\t\"ldr q0, {addr}\\n\\t\"\n");
@@ -3249,7 +3529,7 @@ extern "C" {{
                     }
                 }
                 Instr::Mul(o, a) => {
-                    if a.len() < 15 {
+                    if !matches!(asm_flavour, InlineASM::AVX2) && a.len() < 15 || a.len() < 8 {
                         if !in_asm_block {
                             *out += "\t__asm__(\n";
                             in_asm_block = true;
@@ -3264,6 +3544,18 @@ extern "C" {{
                                         "\t\t\"movupd {}, %%xmm{}\\n\\t\"\n",
                                         addr_re,
                                         i + 1,
+                                    );
+                                }
+                                InlineASM::AVX2 => {
+                                    *out += &format!(
+                                        "\t\t\"vmovupd {}, %%ymm{}\\n\\t\"\n",
+                                        addr_re,
+                                        2 * i,
+                                    );
+                                    *out += &format!(
+                                        "\t\t\"vmovupd {}, %%ymm{}\\n\\t\"\n",
+                                        addr_im,
+                                        2 * i + 1,
                                     );
                                 }
                                 InlineASM::AArch64 => {
@@ -3305,6 +3597,18 @@ extern "C" {{
                                         i + 1
                                     );
                                 }
+                                InlineASM::AVX2 => {
+                                    *out += &format!(
+                                        "\t\t\"vmulpd %%ymm0, %%ymm{0}, %%ymm14\\n\\t\"
+\t\t\"vmulpd %%ymm0, %%ymm{1}, %%ymm15\\n\\t\"
+\t\t\"vmulpd %%ymm1, %%ymm{1}, %%ymm0\\n\\t\"
+\t\t\"vmulpd %%ymm1, %%ymm{0}, %%ymm{1}\\n\\t\"
+\t\t\"vsubpd %%ymm0, %%ymm14, %%ymm0\\n\\t\"
+\t\t\"vaddpd %%ymm15, %%ymm{1}, %%ymm1\\n\\t\"\n",
+                                        2 * i,
+                                        2 * i + 1,
+                                    );
+                                }
                                 InlineASM::AArch64 => {
                                     *out += &format!(
                                         "
@@ -3324,6 +3628,10 @@ extern "C" {{
                         match asm_flavour {
                             InlineASM::X64 => {
                                 *out += &format!("\t\t\"movupd %%xmm1, {addr_re}\\n\\t\"\n");
+                            }
+                            InlineASM::AVX2 => {
+                                *out += &format!("\t\t\"vmovupd %%ymm0, {addr_re}\\n\\t\"\n");
+                                *out += &format!("\t\t\"vmovupd %%ymm1, {addr_im}\\n\\t\"\n");
                             }
                             InlineASM::AArch64 => {
                                 if *o * 16 < 450 {
@@ -3372,6 +3680,27 @@ extern "C" {{
                                     addr_b.0,
                                     (self.reserved_indices - self.param_count) * 16,
                                     addr_o.0
+                                );
+                            }
+                            InlineASM::AVX2 => {
+                                // TODO: do FMA on top?
+                                *out += &format!(
+                                    "\t\t\"vmovupd {0}, %%ymm0\\n\\t\"
+\t\t\"vmovupd {1}, %%ymm1\\n\\t\"
+\t\t\"vmulpd %%ymm0, %%ymm0, %%ymm3\\n\\t\"
+\t\t\"vmulpd %%ymm1, %%ymm1, %%ymm4\\n\\t\"
+\t\t\"vaddpd %%ymm3, %%ymm4, %%ymm3\\n\\t\"
+\t\t\"vdivpd %%ymm3, %%ymm0, %%ymm0\\n\\t\"
+\t\t\"vbroadcastsd {2}(%1), %%ymm4\\n\\t\"
+\t\t\"vxorpd %%ymm4, %%ymm1, %%ymm1\\n\\t\"
+\t\t\"vdivpd %%ymm3, %%ymm1, %%ymm1\\n\\t\"
+\t\t\"vmovupd %%ymm0, {3}\\n\\t\"
+\t\t\"vmovupd %%ymm1, {4}\\n\\t\"\n",
+                                    addr_b.0,
+                                    addr_b.1,
+                                    (self.reserved_indices - self.param_count) * 64,
+                                    addr_o.0,
+                                    addr_o.1
                                 );
                             }
                             InlineASM::AArch64 => {
@@ -3455,6 +3784,10 @@ extern "C" {{
                     InlineASM::X64 => {
                         *out += &format!("\t\t\"movupd {}(%3), %%xmm0\\n\\t\"\n", r * 16);
                     }
+                    InlineASM::AVX2 => {
+                        *out += &format!("\t\t\"vmovupd {}(%3), %%ymm0\\n\\t\"\n", r * 64);
+                        *out += &format!("\t\t\"vmovupd {}(%3), %%ymm1\\n\\t\"\n", r * 64 + 32);
+                    }
                     InlineASM::AArch64 => {
                         *out += &format!("\t\t\"ldr q0, [%3, {}]\\n\\t\"\n", r * 16);
                     }
@@ -3466,6 +3799,16 @@ extern "C" {{
                         *out += &format!(
                             "\t\t\"movupd {}(%2), %%xmm0\\n\\t\"\n",
                             (r - self.param_count) * 16
+                        );
+                    }
+                    InlineASM::AVX2 => {
+                        *out += &format!(
+                            "\t\t\"vmovupd {}(%2), %%ymm0\\n\\t\"\n",
+                            (r - self.param_count) * 64
+                        );
+                        *out += &format!(
+                            "\t\t\"vmovupd {}(%2), %%ymm1\\n\\t\"\n",
+                            (r - self.param_count) * 64 + 32
                         );
                     }
                     InlineASM::AArch64 => {
@@ -3482,6 +3825,10 @@ extern "C" {{
                     InlineASM::X64 => {
                         *out += &format!("\t\t\"movupd {}(%1), %%xmm0\\n\\t\"\n", r * 16);
                     }
+                    InlineASM::AVX2 => {
+                        *out += &format!("\t\t\"vmovupd {}(%1), %%ymm0\\n\\t\"\n", r * 64);
+                        *out += &format!("\t\t\"vmovupd {}(%1), %%ymm1\\n\\t\"\n", r * 64 + 32);
+                    }
                     InlineASM::AArch64 => {
                         *out += &format!("\t\t\"ldr q0, [%1, {}]\\n\\t\"\n", r * 16);
                     }
@@ -3492,6 +3839,10 @@ extern "C" {{
             match asm_flavour {
                 InlineASM::X64 => {
                     *out += &format!("\t\t\"movupd %%xmm0, {}(%0)\\n\\t\"\n", i * 16);
+                }
+                InlineASM::AVX2 => {
+                    *out += &format!("\t\t\"vmovupd %%ymm0, {}(%0)\\n\\t\"\n", i * 64);
+                    *out += &format!("\t\t\"vmovupd %%ymm1, {}(%0)\\n\\t\"\n", i * 64 + 32);
                 }
                 InlineASM::AArch64 => {
                     *out += &format!("\t\t\"str q0, [%0, {}]\\n\\t\"\n", i * 16);
@@ -3504,6 +3855,11 @@ extern "C" {{
             InlineASM::X64 => {
                 *out += &format!(
                     "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n"
+                );
+            }
+            InlineASM::AVX2 => {
+                *out += &format!(
+                    "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({function_name}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"ymm0\", \"ymm1\", \"ymm2\", \"ymm3\", \"ymm4\", \"ymm5\", \"ymm6\", \"ymm7\", \"ymm8\", \"ymm9\", \"ymm10\", \"ymm11\", \"ymm12\", \"ymm13\", \"ymm14\", \"ymm15\");\n"
                 );
             }
             InlineASM::AArch64 => {
@@ -5322,6 +5678,70 @@ self_cell!(
     }
 );
 
+struct EvaluatorFunctionsSimdRealf64<'lib> {
+    eval: EvalTypeWithBuffer<'lib, wide::f64x4>,
+    get_buffer_len: GetBufferLenType<'lib>,
+}
+
+impl<'lib> EvaluatorFunctionsSimdRealf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = wide::f64x4::construct_function_name(function_name);
+        unsafe {
+            let eval: EvalTypeWithBuffer<'lib, wide::f64x4> = lib
+                .get(format!("{}", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let get_buffer_len: GetBufferLenType<'lib> = lib
+                .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsSimdRealf64 {
+                eval,
+                get_buffer_len,
+            })
+        }
+    }
+}
+
+self_cell!(
+    struct LibrarySimdComplexf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsSimdComplexf64,
+    }
+);
+
+struct EvaluatorFunctionsSimdComplexf64<'lib> {
+    eval: EvalTypeWithBuffer<'lib, Complex<wide::f64x4>>,
+    get_buffer_len: GetBufferLenType<'lib>,
+}
+
+impl<'lib> EvaluatorFunctionsSimdComplexf64<'lib> {
+    fn new(lib: &'lib libloading::Library, function_name: &str) -> Result<Self, String> {
+        let function_name = Complex::<wide::f64x4>::construct_function_name(function_name);
+        unsafe {
+            let eval: EvalTypeWithBuffer<'lib, Complex<wide::f64x4>> = lib
+                .get(format!("{}", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            let get_buffer_len: GetBufferLenType<'lib> = lib
+                .get(format!("{}_get_buffer_len", function_name).as_bytes())
+                .map_err(|e| e.to_string())?;
+            Ok(EvaluatorFunctionsSimdComplexf64 {
+                eval,
+                get_buffer_len,
+            })
+        }
+    }
+}
+
+self_cell!(
+    struct LibrarySimdRealf64 {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctionsSimdRealf64,
+    }
+);
+
 struct EvaluatorFunctionsComplexf64<'lib> {
     eval: EvalTypeWithBuffer<'lib, Complex<f64>>,
     get_buffer_len: GetBufferLenType<'lib>,
@@ -5479,6 +5899,9 @@ impl CompiledNumber for f64 {
         Ok(match settings.inline_asm {
             InlineASM::X64 => eval.export_asm_real_str(function_name, &settings),
             InlineASM::AArch64 => eval.export_asm_real_str(function_name, &settings),
+            InlineASM::AVX2 => {
+                Err("AVX2 not supported for complexf64: use Complex<f64x6> instead".to_owned())?
+            }
             InlineASM::None => {
                 let r = eval.export_generic_cpp_str(function_name, &settings, NumberClass::RealF64);
                 r + format!("\nextern \"C\" {{\n\tvoid {function_name}(double *params, double *buffer, double *out) {{\n\t\t{function_name}_gen(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
@@ -5500,6 +5923,9 @@ impl CompiledNumber for Complex<f64> {
         Ok(match settings.inline_asm {
             InlineASM::X64 => eval.export_asm_complex_str(function_name, &settings),
             InlineASM::AArch64 => eval.export_asm_complex_str(function_name, &settings),
+            InlineASM::AVX2 => {
+                Err("AVX2 not supported for complexf64: use Complex<f64x6> instead".to_owned())?
+            }
             InlineASM::None => {
                 let r =
                     eval.export_generic_cpp_str(function_name, &settings, NumberClass::ComplexF64);
@@ -5759,6 +6185,357 @@ impl std::fmt::Debug for CompiledComplexEvaluator {
 impl Clone for CompiledComplexEvaluator {
     fn clone(&self) -> Self {
         self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+/// Evaluate 4 double-precision floating point numbers in parallel using SIMD instructions.
+/// Make sure you add arguments such as `-march=native` to enable full SIMD support for your platform.
+///
+/// Failure to add this, may result in only two double-precision numbers being evaluated in parallel.
+///
+/// The compilation requires the `xsimd` C++ library to be installed.
+impl CompiledNumber for wide::f64x4 {
+    type Evaluator = CompiledSimdRealEvaluator;
+    type Settings = ();
+    const SUFFIX: &'static str = "simd_realf64";
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        if !eval.stack.iter().all(|x| x.is_real()) {
+            return Err(
+                "Cannot create real evaluator with complex coefficients. Use Complex<f64>".into(),
+            );
+        }
+
+        Ok(match settings.inline_asm {
+            InlineASM::X64 => {
+                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
+            }
+            InlineASM::AArch64 => {
+                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
+            }
+            asm @ InlineASM::AVX2 | asm @ InlineASM::None => {
+                eval.export_simd_str(function_name, settings, false, asm)
+            }
+        })
+    }
+}
+
+pub struct CompiledSimdRealEvaluator {
+    path: PathBuf,
+    fn_name: String,
+    library: LibrarySimdRealf64,
+    buffer: Vec<wide::f64x4>,
+}
+
+impl EvaluatorLoader<wide::f64x4> for CompiledSimdRealEvaluator {
+    fn load(path: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
+        CompiledSimdRealEvaluator::load_with_settings(path, function_name, ())
+    }
+
+    fn load_with_settings(
+        path: impl AsRef<Path>,
+        function_name: &str,
+        _settings: (),
+    ) -> Result<Self, String> {
+        CompiledSimdRealEvaluator::load(path, function_name)
+    }
+}
+
+impl CompiledSimdRealEvaluator {
+    pub fn load_new_function(
+        &self,
+        function_name: &str,
+    ) -> Result<CompiledSimdRealEvaluator, String> {
+        let library = LibrarySimdRealf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsSimdRealf64::new(lib, function_name)
+        })?;
+
+        Ok(CompiledSimdRealEvaluator {
+            path: self.path.clone(),
+            fn_name: function_name.to_string(),
+            buffer: vec![
+                wide::f64x4::ZERO;
+                unsafe { (library.borrow_dependent().get_buffer_len)() } as usize
+            ],
+            library,
+        })
+    }
+
+    pub fn load(
+        path: impl AsRef<Path>,
+        function_name: &str,
+    ) -> Result<CompiledSimdRealEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(path.as_ref()) {
+                Ok(lib) => lib,
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
+            };
+            let library = LibrarySimdRealf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsSimdRealf64::new(lib, function_name)
+            })?;
+
+            Ok(CompiledSimdRealEvaluator {
+                path: path.as_ref().to_path_buf(),
+                fn_name: function_name.to_string(),
+                buffer: vec![
+                    wide::f64x4::ZERO;
+                    (library.borrow_dependent().get_buffer_len)() as usize
+                ],
+                library,
+            })
+        }
+    }
+
+    /// Evaluate the compiled code with 4 double-precision floating point numbers.
+    /// The `args` must be of length `number_of_evaluations * input`, where `input` is the number of inputs to the function.
+    /// The `out` must be of length `number_of_evaluations * output`,
+    /// where `output` is the number of outputs of the function.
+    #[inline(always)]
+    pub fn evaluate(&mut self, args: &[wide::f64x4], out: &mut [wide::f64x4]) {
+        unsafe {
+            (self.library.borrow_dependent().eval)(
+                args.as_ptr(),
+                self.buffer.as_mut_ptr(),
+                out.as_mut_ptr(),
+            )
+        }
+    }
+}
+
+unsafe impl Send for CompiledSimdRealEvaluator {}
+
+impl std::fmt::Debug for CompiledSimdRealEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledSimdRealEvaluator({})", self.fn_name)
+    }
+}
+
+impl Clone for CompiledSimdRealEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledSimdRealEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.path, &self.fn_name).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledSimdRealEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name) = <(PathBuf, String)>::deserialize(deserializer)?;
+        CompiledSimdRealEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledSimdRealEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)?;
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledSimdRealEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledSimdRealEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        CompiledSimdRealEvaluator::load(&file, &fn_name)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
+    }
+}
+
+/// Evaluate 4 double-precision floating point numbers in parallel using SIMD instructions.
+/// Make sure you add arguments such as `-march=native` to enable full SIMD support for your platform.
+///
+/// Failure to add this, may result in only two double-precision numbers being evaluated in parallel.
+///
+/// The compilation requires the `xsimd` C++ library to be installed.
+impl CompiledNumber for Complex<wide::f64x4> {
+    type Evaluator = CompiledSimdComplexEvaluator;
+    type Settings = ();
+    const SUFFIX: &'static str = "simd_complexf64";
+
+    fn export_cpp<T: ExportNumber + SingleFloat>(
+        eval: &ExpressionEvaluator<T>,
+        function_name: &str,
+        settings: ExportSettings,
+    ) -> Result<String, String> {
+        if !eval.stack.iter().all(|x| x.is_real()) {
+            return Err(
+                "Cannot create real evaluator with complex coefficients. Use Complex<f64>".into(),
+            );
+        }
+
+        Ok(match settings.inline_asm {
+            InlineASM::X64 => {
+                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
+            }
+            InlineASM::AArch64 => {
+                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
+            }
+            asm @ InlineASM::AVX2 | asm @ InlineASM::None => {
+                eval.export_simd_str(function_name, settings, true, asm)
+            }
+        })
+    }
+}
+
+pub struct CompiledSimdComplexEvaluator {
+    path: PathBuf,
+    fn_name: String,
+    library: LibrarySimdComplexf64,
+    buffer: Vec<Complex<wide::f64x4>>,
+}
+
+impl EvaluatorLoader<Complex<wide::f64x4>> for CompiledSimdComplexEvaluator {
+    fn load(path: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
+        CompiledSimdComplexEvaluator::load_with_settings(path, function_name, ())
+    }
+
+    fn load_with_settings(
+        path: impl AsRef<Path>,
+        function_name: &str,
+        _settings: (),
+    ) -> Result<Self, String> {
+        CompiledSimdComplexEvaluator::load(path, function_name)
+    }
+}
+
+impl CompiledSimdComplexEvaluator {
+    pub fn load_new_function(
+        &self,
+        function_name: &str,
+    ) -> Result<CompiledSimdComplexEvaluator, String> {
+        let library = LibrarySimdComplexf64::try_new(self.library.borrow_owner().clone(), |lib| {
+            EvaluatorFunctionsSimdComplexf64::new(lib, function_name)
+        })?;
+
+        Ok(CompiledSimdComplexEvaluator {
+            path: self.path.clone(),
+            fn_name: function_name.to_string(),
+            buffer: vec![
+                Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO);
+                unsafe { (library.borrow_dependent().get_buffer_len)() } as usize
+            ],
+            library,
+        })
+    }
+
+    pub fn load(
+        path: impl AsRef<Path>,
+        function_name: &str,
+    ) -> Result<CompiledSimdComplexEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(path.as_ref()) {
+                Ok(lib) => lib,
+                Err(_) => libloading::Library::new(PathBuf::new().join("./").join(&path))
+                    .map_err(|e| e.to_string())?,
+            };
+            let library = LibrarySimdComplexf64::try_new(std::sync::Arc::new(lib), |lib| {
+                EvaluatorFunctionsSimdComplexf64::new(lib, function_name)
+            })?;
+
+            Ok(CompiledSimdComplexEvaluator {
+                path: path.as_ref().to_path_buf(),
+                fn_name: function_name.to_string(),
+                buffer: vec![
+                    Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO);
+                    (library.borrow_dependent().get_buffer_len)() as usize
+                ],
+                library,
+            })
+        }
+    }
+
+    /// Evaluate the compiled code with 4 double-precision floating point numbers.
+    /// The `args` must be of length `number_of_evaluations * input`, where `input` is the number of inputs to the function.
+    /// The `out` must be of length `number_of_evaluations * output`,
+    /// where `output` is the number of outputs of the function.
+    #[inline(always)]
+    pub fn evaluate(
+        &mut self,
+        args: &[Complex<wide::f64x4>],
+        out: &mut [Complex<wide::f64x4>],
+    ) -> Result<(), String> {
+        unsafe {
+            (self.library.borrow_dependent().eval)(
+                args.as_ptr(),
+                self.buffer.as_mut_ptr(),
+                out.as_mut_ptr(),
+            )
+        }
+        Ok(())
+    }
+}
+
+unsafe impl Send for CompiledSimdComplexEvaluator {}
+
+impl std::fmt::Debug for CompiledSimdComplexEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledSimdComplexEvaluator({})", self.fn_name)
+    }
+}
+
+impl Clone for CompiledSimdComplexEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.fn_name).unwrap()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for CompiledSimdComplexEvaluator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        (&self.path, &self.fn_name).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for CompiledSimdComplexEvaluator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (file, fn_name) = <(PathBuf, String)>::deserialize(deserializer)?;
+        CompiledSimdComplexEvaluator::load(&file, &fn_name).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for CompiledSimdComplexEvaluator {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        bincode::Encode::encode(&self.path, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)?;
+    }
+}
+
+#[cfg(feature = "bincode")]
+bincode::impl_borrow_decode!(CompiledSimdComplexEvaluator);
+#[cfg(feature = "bincode")]
+impl<Context> bincode::Decode<Context> for CompiledSimdComplexEvaluator {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let file: PathBuf = bincode::Decode::decode(decoder)?;
+        let fn_name: String = bincode::Decode::decode(decoder)?;
+        CompiledSimdComplexEvaluator::load(&file, &fn_name)
+            .map_err(|e| bincode::error::DecodeError::OtherString(e))
     }
 }
 
@@ -6298,6 +7075,8 @@ pub enum FormatCPP {
 pub enum InlineASM {
     /// Use instructions suitable for x86_64 machines.
     X64,
+    /// Use instructions suitable for x86_64 machines with AVX2 support.
+    AVX2,
     /// Use instructions suitable for ARM64 machines.
     AArch64,
     /// Do not generate inline assembly.

@@ -61,10 +61,10 @@ use crate::{
     },
     evaluate::{
         CompileOptions, CompiledComplexEvaluator, CompiledCudaComplexEvaluator,
-        CompiledCudaRealEvaluator, CompiledRealEvaluator, CudaComplexf64, CudaLoadSettings,
-        CudaRealf64, EvaluationFn, EvaluatorLoader, ExportSettings, ExpressionEvaluator,
-        ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM, Instruction,
-        OptimizationSettings, Slot,
+        CompiledCudaRealEvaluator, CompiledNumber, CompiledRealEvaluator, CudaComplexf64,
+        CudaLoadSettings, CudaRealf64, EvaluationFn, EvaluatorLoader, ExportSettings,
+        ExpressionEvaluator, ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM,
+        Instruction, OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -12231,6 +12231,7 @@ impl PythonExpressionEvaluator {
         number_type,
         inline_asm = "default",
         optimization_level = 3,
+        native = true,
         compiler_path = None,
         compiler_flags = None,
         custom_header = None,
@@ -12245,6 +12246,7 @@ impl PythonExpressionEvaluator {
         number_type: &str,
         inline_asm: &str,
         optimization_level: u8,
+        native: bool,
         compiler_path: Option<&str>,
         compiler_flags: Option<Vec<String>>,
         custom_header: Option<String>,
@@ -12252,32 +12254,41 @@ impl PythonExpressionEvaluator {
         cuda_block_size: usize,
         py: Python<'_>,
     ) -> PyResult<PyObject> {
-        let mut options = CompileOptions {
-            optimization_level: optimization_level as usize,
-            ..Default::default()
+        let mut options = match number_type {
+            "real" | "complex" => CompileOptions {
+                optimization_level: optimization_level as usize,
+                native,
+                ..f64::get_default_compile_options()
+            },
+            "real_4x" | "complex_4x" => CompileOptions {
+                optimization_level: optimization_level as usize,
+                native,
+                ..<wide::f64x4>::get_default_compile_options()
+            },
+            "cuda_real" | "cuda_complex" => CompileOptions {
+                optimization_level: optimization_level as usize,
+                ..CudaRealf64::get_default_compile_options()
+            },
+            _ => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Invalid number type {} specified.",
+                    number_type,
+                )));
+            }
         };
 
         if let Some(compiler_path) = compiler_path {
             options.compiler = compiler_path.to_string();
-        } else {
-            if number_type == "cuda_real" || number_type == "cuda_complex" {
-                options.compiler = "nvcc".to_string();
-            } else {
-                options.compiler = "g++".to_string();
-            }
         }
 
         if let Some(compiler_flags) = compiler_flags {
             options.args = compiler_flags;
-        } else {
-            if number_type == "cuda_real" || number_type == "cuda_complex" {
-                options.args = vec!["-x".to_string(), "cu".to_string()];
-            }
         }
 
         let inline_asm = match inline_asm.to_lowercase().as_str() {
             "default" => InlineASM::default(),
             "x64" => InlineASM::X64,
+            "avx2" => InlineASM::AVX2,
             "aarch64" => InlineASM::AArch64,
             "none" => InlineASM::None,
             _ => {

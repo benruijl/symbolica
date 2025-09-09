@@ -1749,6 +1749,32 @@ impl Default for ExportSettings {
 impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
     /// The resulting source code can be compiled and loaded.
+    ///
+    /// You can also call `export_cpp` with types [f64], [wide::f64x4] for SIMD, [Complex] over [f64] and [wide::f64x4] for Complex SIMD, and [CudaRealf64] or
+    /// [CudaComplexf64] for CUDA output.
+    ///
+    /// # Examples
+    ///
+    /// Create a C++ library that evaluates the function `x + y` for `f64` inputs:
+    /// ```rust
+    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::evaluate::{CompiledNumber, FunctionMap, OptimizationSettings};
+    /// let fn_map = FunctionMap::new();
+    /// let params = vec![parse!("x"), parse!("y")];
+    /// let optimization_settings = OptimizationSettings::default();
+    /// let evaluator = parse!("x + y")
+    ///     .evaluator(&fn_map, &params, optimization_settings)
+    ///     .unwrap()
+    ///     .map_coeff(&|x| x.to_real().unwrap().to_f64());
+    ///
+    /// let code = evaluator.export_cpp::<f64>("output.cpp", "my_function", Default::default()).unwrap();
+    /// let lib = code.compile("out.so", f64::get_default_compile_options()).unwrap();
+    /// let mut compiled_eval = lib.load().unwrap();
+    ///
+    /// let mut res = [0.];
+    /// compiled_eval.evaluate(&[1., 2.], &mut res);
+    /// assert_eq!(res, [3.]);
+    /// ```
     pub fn export_cpp<F: CompiledNumber>(
         &self,
         path: impl AsRef<Path>,
@@ -1760,11 +1786,18 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             filename.set_extension("cpp");
         }
 
-        let cpp = &self
+        let mut source_code = format!(
+            "// Auto-generated with Symbolica {}\n// Default build instructions: {} {}\n\n",
+            env!("CARGO_PKG_VERSION"),
+            F::get_default_compile_options().to_string(),
+            filename.to_string_lossy(),
+        );
+
+        source_code += &self
             .export_cpp_str::<F>(function_name, settings)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
-        std::fs::write(&filename, cpp)?;
+        std::fs::write(&filename, source_code)?;
         Ok(ExportedCode::<F> {
             path: filename,
             function_name: function_name.to_string(),
@@ -5866,6 +5899,10 @@ pub trait CompiledNumber: Sized {
     fn construct_function_name(function_name: &str) -> String {
         format!("{}_{}", function_name, Self::SUFFIX)
     }
+
+    /// Get the default compilation options for C++ code generated
+    /// for this number type.
+    fn get_default_compile_options() -> CompileOptions;
 }
 
 pub trait EvaluatorLoader<T: CompiledNumber>: Sized {
@@ -5908,6 +5945,10 @@ impl CompiledNumber for f64 {
             }
         })
     }
+
+    fn get_default_compile_options() -> CompileOptions {
+        CompileOptions::default()
+    }
 }
 
 impl CompiledNumber for Complex<f64> {
@@ -5932,6 +5973,10 @@ impl CompiledNumber for Complex<f64> {
                 r + format!("\nextern \"C\" {{\n\tvoid {function_name}(std::complex<double> *params, std::complex<double> *buffer, std::complex<double> *out) {{\n\t\t{function_name}_gen(params, buffer, out);\n\t\treturn;\n\t}}\n}}\n").as_str()
             }
         })
+    }
+
+    fn get_default_compile_options() -> CompileOptions {
+        CompileOptions::default()
     }
 }
 
@@ -6211,16 +6256,19 @@ impl CompiledNumber for wide::f64x4 {
         }
 
         Ok(match settings.inline_asm {
-            InlineASM::X64 => {
-                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
-            }
+            // assume AVX2 for X64
+            InlineASM::X64 => eval.export_simd_str(function_name, settings, false, InlineASM::AVX2),
             InlineASM::AArch64 => {
-                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
+                Err("Inline assembly not supported yet for SIMD f64x4".to_owned())?
             }
             asm @ InlineASM::AVX2 | asm @ InlineASM::None => {
                 eval.export_simd_str(function_name, settings, false, asm)
             }
         })
+    }
+
+    fn get_default_compile_options() -> CompileOptions {
+        CompileOptions::default()
     }
 }
 
@@ -6343,7 +6391,7 @@ impl bincode::Encode for CompiledSimdRealEvaluator {
         encoder: &mut E,
     ) -> core::result::Result<(), bincode::error::EncodeError> {
         bincode::Encode::encode(&self.path, encoder)?;
-        bincode::Encode::encode(&self.fn_name, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)
     }
 }
 
@@ -6384,9 +6432,8 @@ impl CompiledNumber for Complex<wide::f64x4> {
         }
 
         Ok(match settings.inline_asm {
-            InlineASM::X64 => {
-                Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
-            }
+            // assume AVX2 for X64
+            InlineASM::X64 => eval.export_simd_str(function_name, settings, true, InlineASM::AVX2),
             InlineASM::AArch64 => {
                 Err("X64 inline assembly not supported for SIMD f64x4: use AVX2".to_owned())?
             }
@@ -6394,6 +6441,10 @@ impl CompiledNumber for Complex<wide::f64x4> {
                 eval.export_simd_str(function_name, settings, true, asm)
             }
         })
+    }
+
+    fn get_default_compile_options() -> CompileOptions {
+        CompileOptions::default()
     }
 }
 
@@ -6521,7 +6572,7 @@ impl bincode::Encode for CompiledSimdComplexEvaluator {
         encoder: &mut E,
     ) -> core::result::Result<(), bincode::error::EncodeError> {
         bincode::Encode::encode(&self.path, encoder)?;
-        bincode::Encode::encode(&self.fn_name, encoder)?;
+        bincode::Encode::encode(&self.fn_name, encoder)
     }
 }
 
@@ -6560,6 +6611,10 @@ impl CompiledNumber for CudaRealf64 {
 
         Ok(eval.export_cuda_str(function_name, settings, NumberClass::RealF64))
     }
+
+    fn get_default_compile_options() -> CompileOptions {
+        CompileOptions::cuda()
+    }
 }
 
 /// CUDA complex number type.
@@ -6576,6 +6631,10 @@ impl CompiledNumber for CudaComplexf64 {
         settings: ExportSettings,
     ) -> Result<String, String> {
         Ok(eval.export_cuda_str(function_name, settings, NumberClass::ComplexF64))
+    }
+
+    fn get_default_compile_options() -> CompileOptions {
+        CompileOptions::cuda()
     }
 }
 
@@ -6956,6 +7015,8 @@ pub struct CompileOptions {
     pub optimization_level: usize,
     pub fast_math: bool,
     pub unsafe_math: bool,
+    /// Compile for the native architecture.
+    pub native: bool,
     pub compiler: String,
     /// Arguments for the compiler call. Arguments with spaces
     /// must be split into a separate strings.
@@ -6965,12 +7026,13 @@ pub struct CompileOptions {
 }
 
 impl Default for CompileOptions {
-    /// Default compile options: `g++ -O3 -ffast-math -funsafe-math-optimizations`.
+    /// Default compile options.
     fn default() -> Self {
         CompileOptions {
             optimization_level: 3,
             fast_math: true,
             unsafe_math: true,
+            native: true,
             compiler: "g++".to_string(),
             args: vec![],
         }
@@ -6978,15 +7040,50 @@ impl Default for CompileOptions {
 }
 
 impl CompileOptions {
-    /// CUDA compile options: `nvcc -O3 -Xcompiler -fPIC -x cu`.
+    /// Set the compiler to `nvcc`.
     pub fn cuda() -> Self {
         CompileOptions {
             optimization_level: 3,
             fast_math: false,
             unsafe_math: false,
+            native: false,
             compiler: "nvcc".to_string(),
-            args: vec!["-x".to_string(), "cu".to_string()],
+            args: vec![],
         }
+    }
+}
+
+impl ToString for CompileOptions {
+    /// Convert the compilation options to the string that would be used
+    /// in the compiler call.
+    fn to_string(&self) -> String {
+        let mut s = self.compiler.clone();
+
+        s += &format!(" -shared -O{}", self.optimization_level);
+
+        let nvcc = self.compiler.contains("nvcc");
+
+        if !nvcc {
+            s += " -fPIC";
+        } else {
+            // order is important here for nvcc
+            s += " -Xcompiler -fPIC -x cu";
+        }
+
+        if self.fast_math && !nvcc {
+            s += " -ffast-math";
+        }
+        if self.unsafe_math && !nvcc {
+            s += " -funsafe-math-optimizations";
+        }
+        if self.native && !nvcc {
+            s += " -march=native";
+        }
+        for arg in &self.args {
+            s += " ";
+            s += arg;
+        }
+        s
     }
 }
 
@@ -7013,18 +7110,25 @@ impl<T: CompiledNumber> ExportedCode<T> {
         builder
             .arg("-shared")
             .arg(format!("-O{}", options.optimization_level));
+
         if !options.compiler.contains("nvcc") {
             builder.arg("-fPIC");
         } else {
             // order is important here for nvcc
             builder.arg("-Xcompiler");
             builder.arg("-fPIC");
+            builder.arg("-x");
+            builder.arg("cu");
         }
         if options.fast_math && !options.compiler.contains("nvcc") {
             builder.arg("-ffast-math");
         }
         if options.unsafe_math && !options.compiler.contains("nvcc") {
             builder.arg("-funsafe-math-optimizations");
+        }
+
+        if options.native && !options.compiler.contains("nvcc") {
+            builder.arg("-march=native");
         }
 
         for c in &options.args {

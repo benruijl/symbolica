@@ -5917,6 +5917,18 @@ pub trait EvaluatorLoader<T: CompiledNumber>: Sized {
     ) -> Result<Self, String>;
 }
 
+/// Batch-evaluate the compiled code with basic types such as [f64] or [Complex<f64>],
+/// automatically reorganizing the batches if necessary.
+pub trait BatchEvaluator<T: CompiledNumber> {
+    /// Evaluate the compiled code with batched input with the given input parameters, writing the results to `out`.
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[T],
+        out: &mut [T],
+    ) -> Result<(), String>;
+}
+
 impl CompiledNumber for f64 {
     type Evaluator = CompiledRealEvaluator;
     type Settings = ();
@@ -5951,6 +5963,38 @@ impl CompiledNumber for f64 {
     }
 }
 
+impl BatchEvaluator<f64> for CompiledRealEvaluator {
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[f64],
+        out: &mut [f64],
+    ) -> Result<(), String> {
+        if params.len() % batch_size != 0 {
+            return Err(format!(
+                "Parameter length {} not divisible by batch size {}",
+                params.len(),
+                batch_size
+            ));
+        }
+        if out.len() % batch_size != 0 {
+            return Err(format!(
+                "Output length {} not divisible by batch size {}",
+                out.len(),
+                batch_size
+            ));
+        }
+
+        let n_params = params.len() / batch_size;
+        let n_out = out.len() / batch_size;
+        for (o, i) in out.chunks_mut(n_out).zip(params.chunks(n_params)) {
+            self.evaluate(i, o);
+        }
+
+        Ok(())
+    }
+}
+
 impl CompiledNumber for Complex<f64> {
     type Evaluator = CompiledComplexEvaluator;
     type Settings = ();
@@ -5977,6 +6021,38 @@ impl CompiledNumber for Complex<f64> {
 
     fn get_default_compile_options() -> CompileOptions {
         CompileOptions::default()
+    }
+}
+
+impl BatchEvaluator<Complex<f64>> for CompiledComplexEvaluator {
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[Complex<f64>],
+        out: &mut [Complex<f64>],
+    ) -> Result<(), String> {
+        if params.len() % batch_size != 0 {
+            return Err(format!(
+                "Parameter length {} not divisible by batch size {}",
+                params.len(),
+                batch_size
+            ));
+        }
+        if out.len() % batch_size != 0 {
+            return Err(format!(
+                "Output length {} not divisible by batch size {}",
+                out.len(),
+                batch_size
+            ));
+        }
+
+        let n_params = params.len() / batch_size;
+        let n_out = out.len() / batch_size;
+        for (o, i) in out.chunks_mut(n_out).zip(params.chunks(n_params)) {
+            self.evaluate(i, o);
+        }
+
+        Ok(())
     }
 }
 
@@ -6272,11 +6348,103 @@ impl CompiledNumber for wide::f64x4 {
     }
 }
 
+impl BatchEvaluator<f64> for CompiledSimdRealEvaluator {
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[f64],
+        out: &mut [f64],
+    ) -> Result<(), String> {
+        if params.len() % batch_size != 0 {
+            return Err(format!(
+                "Parameter length {} not divisible by batch size {}",
+                params.len(),
+                batch_size
+            ));
+        }
+        if out.len() % batch_size != 0 {
+            return Err(format!(
+                "Output length {} not divisible by batch size {}",
+                out.len(),
+                batch_size
+            ));
+        }
+
+        let n_params = params.len() / batch_size;
+        let n_out = out.len() / batch_size;
+
+        self.batch_input_buffer
+            .resize(batch_size.div_ceil(4) * n_params, wide::f64x4::ZERO);
+
+        for (dest, i) in self
+            .batch_input_buffer
+            .chunks_mut(n_params)
+            .zip(params.chunks(4 * n_params))
+        {
+            if i.len() / n_params == 4 {
+                for (j, d) in dest.iter_mut().enumerate() {
+                    *d = wide::f64x4::from([
+                        i[j],
+                        i[j + n_params],
+                        i[j + 2 * n_params],
+                        i[j + 3 * n_params],
+                    ]);
+                }
+            } else {
+                for (j, d) in dest.iter_mut().enumerate() {
+                    *d = wide::f64x4::from([
+                        i[j],
+                        if j + n_params < i.len() {
+                            i[j + n_params]
+                        } else {
+                            0.0
+                        },
+                        if j + 2 * n_params < i.len() {
+                            i[j + 2 * n_params]
+                        } else {
+                            0.0
+                        },
+                        if j + 3 * n_params < i.len() {
+                            i[j + 3 * n_params]
+                        } else {
+                            0.0
+                        },
+                    ]);
+                }
+            }
+        }
+
+        self.batch_output_buffer
+            .resize(batch_size.div_ceil(4) * n_out, wide::f64x4::ZERO);
+
+        let param_buffer = std::mem::take(&mut self.batch_input_buffer);
+        let mut output_buffer = std::mem::take(&mut self.batch_output_buffer);
+
+        for (o, i) in output_buffer
+            .chunks_mut(n_out)
+            .zip(param_buffer.chunks(n_params))
+        {
+            self.evaluate(i, o);
+        }
+
+        for (o, i) in out.chunks_mut(4 * n_out).zip(&output_buffer) {
+            o.copy_from_slice(&i.as_array_ref()[..o.len()]);
+        }
+
+        self.batch_input_buffer = param_buffer;
+        self.batch_output_buffer = output_buffer;
+
+        Ok(())
+    }
+}
+
 pub struct CompiledSimdRealEvaluator {
     path: PathBuf,
     fn_name: String,
     library: LibrarySimdRealf64,
     buffer: Vec<wide::f64x4>,
+    batch_input_buffer: Vec<wide::f64x4>,
+    batch_output_buffer: Vec<wide::f64x4>,
 }
 
 impl EvaluatorLoader<wide::f64x4> for CompiledSimdRealEvaluator {
@@ -6309,6 +6477,8 @@ impl CompiledSimdRealEvaluator {
                 wide::f64x4::ZERO;
                 unsafe { (library.borrow_dependent().get_buffer_len)() } as usize
             ],
+            batch_input_buffer: Vec::new(),
+            batch_output_buffer: Vec::new(),
             library,
         })
     }
@@ -6334,6 +6504,8 @@ impl CompiledSimdRealEvaluator {
                     wide::f64x4::ZERO;
                     (library.borrow_dependent().get_buffer_len)() as usize
                 ],
+                batch_input_buffer: Vec::new(),
+                batch_output_buffer: Vec::new(),
                 library,
             })
         }
@@ -6448,11 +6620,134 @@ impl CompiledNumber for Complex<wide::f64x4> {
     }
 }
 
+impl BatchEvaluator<Complex<f64>> for CompiledSimdComplexEvaluator {
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[Complex<f64>],
+        out: &mut [Complex<f64>],
+    ) -> Result<(), String> {
+        if params.len() % batch_size != 0 {
+            return Err(format!(
+                "Parameter length {} not divisible by batch size {}",
+                params.len(),
+                batch_size
+            ));
+        }
+        if out.len() % batch_size != 0 {
+            return Err(format!(
+                "Output length {} not divisible by batch size {}",
+                out.len(),
+                batch_size
+            ));
+        }
+
+        let n_params = params.len() / batch_size;
+        let n_out = out.len() / batch_size;
+
+        self.batch_input_buffer.resize(
+            batch_size.div_ceil(4) * n_params,
+            Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO),
+        );
+
+        for (dest, i) in self
+            .batch_input_buffer
+            .chunks_mut(n_params)
+            .zip(params.chunks(4 * n_params))
+        {
+            if i.len() / n_params == 4 {
+                for (j, d) in dest.iter_mut().enumerate() {
+                    d.re = wide::f64x4::from([
+                        i[j].re,
+                        i[j + n_params].re,
+                        i[j + 2 * n_params].re,
+                        i[j + 3 * n_params].re,
+                    ]);
+                    d.im = wide::f64x4::from([
+                        i[j].im,
+                        i[j + n_params].im,
+                        i[j + 2 * n_params].im,
+                        i[j + 3 * n_params].im,
+                    ]);
+                }
+            } else {
+                for (j, d) in dest.iter_mut().enumerate() {
+                    d.re = wide::f64x4::from([
+                        i[j].re,
+                        if j + n_params < i.len() {
+                            i[j + n_params].re
+                        } else {
+                            0.0
+                        },
+                        if j + 2 * n_params < i.len() {
+                            i[j + 2 * n_params].re
+                        } else {
+                            0.0
+                        },
+                        if j + 3 * n_params < i.len() {
+                            i[j + 3 * n_params].re
+                        } else {
+                            0.0
+                        },
+                    ]);
+                    d.im = wide::f64x4::from([
+                        i[j].im,
+                        if j + n_params < i.len() {
+                            i[j + n_params].im
+                        } else {
+                            0.0
+                        },
+                        if j + 2 * n_params < i.len() {
+                            i[j + 2 * n_params].im
+                        } else {
+                            0.0
+                        },
+                        if j + 3 * n_params < i.len() {
+                            i[j + 3 * n_params].im
+                        } else {
+                            0.0
+                        },
+                    ]);
+                }
+            }
+        }
+
+        self.batch_output_buffer.resize(
+            batch_size.div_ceil(4) * n_out,
+            Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO),
+        );
+
+        let param_buffer = std::mem::take(&mut self.batch_input_buffer);
+        let mut output_buffer = std::mem::take(&mut self.batch_output_buffer);
+
+        for (o, i) in output_buffer
+            .chunks_mut(n_out)
+            .zip(param_buffer.chunks(n_params))
+        {
+            self.evaluate(i, o);
+        }
+
+        for (o, i) in out.chunks_mut(4 * n_out).zip(&output_buffer) {
+            for (j, d) in o.iter_mut().enumerate() {
+                d.re = i.re.as_array_ref()[j];
+                d.im = i.im.as_array_ref()[j];
+            }
+        }
+
+        self.batch_input_buffer = param_buffer;
+        self.batch_output_buffer = output_buffer;
+
+        Ok(())
+    }
+}
+
 pub struct CompiledSimdComplexEvaluator {
     path: PathBuf,
     fn_name: String,
     library: LibrarySimdComplexf64,
     buffer: Vec<Complex<wide::f64x4>>,
+    batch_input_buffer: Vec<Complex<wide::f64x4>>,
+    batch_output_buffer: Vec<Complex<wide::f64x4>>,
 }
 
 impl EvaluatorLoader<Complex<wide::f64x4>> for CompiledSimdComplexEvaluator {
@@ -6485,6 +6780,8 @@ impl CompiledSimdComplexEvaluator {
                 Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO);
                 unsafe { (library.borrow_dependent().get_buffer_len)() } as usize
             ],
+            batch_input_buffer: Vec::new(),
+            batch_output_buffer: Vec::new(),
             library,
         })
     }
@@ -6510,6 +6807,8 @@ impl CompiledSimdComplexEvaluator {
                     Complex::new(wide::f64x4::ZERO, wide::f64x4::ZERO);
                     (library.borrow_dependent().get_buffer_len)() as usize
                 ],
+                batch_input_buffer: Vec::new(),
+                batch_output_buffer: Vec::new(),
                 library,
             })
         }
@@ -6520,11 +6819,7 @@ impl CompiledSimdComplexEvaluator {
     /// The `out` must be of length `number_of_evaluations * output`,
     /// where `output` is the number of outputs of the function.
     #[inline(always)]
-    pub fn evaluate(
-        &mut self,
-        args: &[Complex<wide::f64x4>],
-        out: &mut [Complex<wide::f64x4>],
-    ) -> Result<(), String> {
+    pub fn evaluate(&mut self, args: &[Complex<wide::f64x4>], out: &mut [Complex<wide::f64x4>]) {
         unsafe {
             (self.library.borrow_dependent().eval)(
                 args.as_ptr(),
@@ -6532,7 +6827,6 @@ impl CompiledSimdComplexEvaluator {
                 out.as_mut_ptr(),
             )
         }
-        Ok(())
     }
 }
 
@@ -6752,6 +7046,24 @@ impl EvaluatorLoader<CudaRealf64> for CompiledCudaRealEvaluator {
     }
 }
 
+impl BatchEvaluator<f64> for CompiledCudaRealEvaluator {
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[f64],
+        out: &mut [f64],
+    ) -> Result<(), String> {
+        if self.settings.number_of_evaluations != batch_size {
+            return Err(format!(
+                "Number of CUDA evaluations {} does not equal batch size {}",
+                self.settings.number_of_evaluations, batch_size
+            ));
+        }
+
+        self.evaluate(params, out)
+    }
+}
+
 impl CompiledCudaRealEvaluator {
     pub fn load_new_function(
         &self,
@@ -6862,6 +7174,24 @@ impl EvaluatorLoader<CudaComplexf64> for CompiledCudaComplexEvaluator {
         settings: CudaLoadSettings,
     ) -> Result<Self, String> {
         CompiledCudaComplexEvaluator::load(path, function_name, settings)
+    }
+}
+
+impl BatchEvaluator<Complex<f64>> for CompiledCudaComplexEvaluator {
+    fn evaluate_batch(
+        &mut self,
+        batch_size: usize,
+        params: &[Complex<f64>],
+        out: &mut [Complex<f64>],
+    ) -> Result<(), String> {
+        if self.settings.number_of_evaluations != batch_size {
+            return Err(format!(
+                "Number of CUDA evaluations {} does not equal batch size {}",
+                self.settings.number_of_evaluations, batch_size
+            ));
+        }
+
+        self.evaluate(params, out)
     }
 }
 

@@ -4314,6 +4314,7 @@ class Evaluator:
         number_type: Literal['real'],
         inline_asm: str = 'default',
         optimization_level: int = 3,
+        native: bool = True,
         compiler_path: Optional[str] = None,
         compiler_flags: Optional[Sequence[str]] = None,
         custom_header: Optional[str] = None,
@@ -4335,6 +4336,8 @@ class Evaluator:
             The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        native: bool
+            If `True`, compile for the native architecture. This may produce faster code, but is less portable.
         compiler_path : Optional[str]
             The custom path to the compiler executable.
         compiler_flags : Optional[Sequence[str]]
@@ -4352,6 +4355,7 @@ class Evaluator:
         number_type: Literal['complex'],
         inline_asm: str = 'default',
         optimization_level: int = 3,
+        native: bool = True,
         compiler_path: Optional[str] = None,
         compiler_flags: Optional[Sequence[str]] = None,
         custom_header: Optional[str] = None,
@@ -4373,6 +4377,8 @@ class Evaluator:
             The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        native: bool
+            If `True`, compile for the native architecture. This may produce faster code, but is less portable.
         compiler_path : Optional[str]
             The custom path to the compiler executable.
         compiler_flags : Optional[Sequence[str]]
@@ -4390,6 +4396,7 @@ class Evaluator:
         number_type: Literal['cuda_real'],
         inline_asm: str = 'default',
         optimization_level: int = 3,
+        native: bool = True,
         compiler_path: Optional[str] = None,
         compiler_flags: Optional[Sequence[str]] = None,
         custom_header: Optional[str] = None,
@@ -4416,6 +4423,8 @@ class Evaluator:
             The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        native: bool
+            If `True`, compile for the native architecture. This may produce faster code, but is less portable.
         compiler_path : Optional[str]
             The custom path to the compiler executable.
         compiler_flags : Optional[Sequence[str]]
@@ -4438,6 +4447,7 @@ class Evaluator:
         number_type: Literal['cuda_complex'],
         inline_asm: str = 'default',
         optimization_level: int = 3,
+        native: bool = True,
         compiler_path: Optional[str] = None,
         compiler_flags: Optional[Sequence[str]] = None,
         custom_header: Optional[str] = None,
@@ -4464,6 +4474,8 @@ class Evaluator:
             The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        native: bool
+            If `True`, compile for the native architecture. This may produce faster code, but is less portable.
         compiler_path : Optional[str]
             The custom path to the compiler executable.
         compiler_flags : Optional[Sequence[str]]

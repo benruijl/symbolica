@@ -55,6 +55,10 @@ def S(name: str,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
+      is_scalar: Optional[bool] = None,
+      is_real: Optional[bool] = None,
+      is_integer: Optional[bool] = None,
+      is_positive: Optional[bool] = None,
       tags: Optional[Sequence[str]] = None,
       custom_normalization: Optional[Transformer] = None,
       custom_print: Optional[Callable[..., Optional[str]]] = None,
@@ -127,6 +131,14 @@ def S(name: str,
         Set to true if the symbol is cyclesymmetric.
     is_linear : Optional[bool]
         Set to true if the symbol is linear.
+    is_scalar : Optional[bool]
+        Set to true if the symbol is a scalar. It will be moved out of linear functions.
+    is_real : Optional[bool]
+        Set to true if the symbol is a real number.
+    is_integer : Optional[bool]
+        Set to true if the symbol is an integer.
+    is_positive : Optional[bool]
+        Set to true if the symbol is a positive number.
     tags: Optional[Sequence[str]] = None
         A list of tags to associate with the symbol.
     custom_normalization : Optional[Transformer]
@@ -148,6 +160,10 @@ def S(*names: str,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
       is_linear: Optional[bool] = None,
+      is_scalar: Optional[bool] = None,
+      is_real: Optional[bool] = None,
+      is_integer: Optional[bool] = None,
+      is_positive: Optional[bool] = None,
       tags: Optional[Sequence[str]] = None) -> Sequence[Expression]:
     """
     Create new symbols from `names`. Symbols can have attributes,
@@ -178,6 +194,14 @@ def S(*names: str,
         Set to true if the symbol is cyclesymmetric.
     is_linear : Optional[bool]
         Set to true if the symbol is multilinear.
+    is_scalar : Optional[bool]
+        Set to true if the symbol is a scalar. It will be moved out of linear functions.
+    is_real : Optional[bool]
+        Set to true if the symbol is a real number.
+    is_integer : Optional[bool]
+        Set to true if the symbol is an integer.
+    is_positive : Optional[bool]
+        Set to true if the symbol is a positive number.
     tags: Optional[Sequence[str]] = None
         A list of tags to associate with the symbol.
     """
@@ -248,6 +272,27 @@ class AtomType(Enum):
     """The expression is a product."""
     Pow = 6
     """The expression is a power."""
+
+
+class SymbolAttribute(Enum):
+    """Specifies the attributes of a symbol."""
+
+    Symmetric = 1,
+    """ The function is symmetric. """
+    Antisymmetric = 2,
+    """ The function is antisymmetric."""
+    Cyclesymmetric = 3,
+    """ The function is cyclesymmetric."""
+    Linear = 4,
+    """The function is linear."""
+    Scalar = 5,
+    """The symbol represents a scalar. It will be moved out of linear functions."""
+    Real = 6,
+    """The symbol represents a real number."""
+    Integer = 7,
+    """The symbol represents an integer."""
+    Positive = 8,
+    """The symbol represents a positive number."""
 
 
 class AtomTree:
@@ -335,6 +380,10 @@ class Expression:
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
                is_linear: Optional[bool] = None,
+               is_scalar: Optional[bool] = None,
+               is_real: Optional[bool] = None,
+               is_integer: Optional[bool] = None,
+               is_positive: Optional[bool] = None,
                tags: Optional[Sequence[str]] = None,
                custom_normalization: Optional[Transformer] = None,
                custom_print: Optional[Callable[..., Optional[str]]] = None,
@@ -407,6 +456,14 @@ class Expression:
             Set to true if the symbol is cyclesymmetric.
         is_linear : Optional[bool]
             Set to true if the symbol is linear.
+        is_scalar : Optional[bool]
+            Set to true if the symbol is a scalar. It will be moved out of linear functions.
+        is_real : Optional[bool]
+            Set to true if the symbol is a real number.
+        is_integer : Optional[bool]
+            Set to true if the symbol is an integer.
+        is_positive : Optional[bool]
+            Set to true if the symbol is a positive number.
         tags: Optional[Sequence[str]]
             A list of tags to associate with the symbol.
         custom_normalization : Optional[Transformer]
@@ -429,6 +486,10 @@ class Expression:
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
                is_linear: Optional[bool] = None,
+               is_real: Optional[bool] = None,
+               is_scalar: Optional[bool] = None,
+               is_integer: Optional[bool] = None,
+               is_positive: Optional[bool] = None,
                tags: Optional[Sequence[str]] = None) -> Sequence[Expression]:
         """
         Create new symbols from `names`. Symbols can have attributes,
@@ -459,6 +520,14 @@ class Expression:
             Set to true if the symbol is cyclesymmetric.
         is_linear : Optional[bool]
             Set to true if the symbol is multilinear.
+        is_scalar : Optional[bool]
+            Set to true if the symbol is a scalar. It will be moved out of linear functions.
+        is_real : Optional[bool]
+            Set to true if the symbol is a real number.
+        is_integer : Optional[bool]
+            Set to true if the symbol is an integer.
+        is_positive : Optional[bool]
+            Set to true if the symbol is a positive number.
         tags: Optional[Sequence[str]]
             A list of tags to associate with the symbol.
         """
@@ -696,6 +765,60 @@ class Expression:
         is a variable or function, otherwise throw an error.
         """
 
+    def get_attributes(self) -> list[SymbolAttribute]:
+        """
+        Get the attributes of a variable or function if the current atom
+        is a variable or function, otherwise throw an error.
+        """
+
+    def is_scalar(self) -> bool:
+        """
+        Check if the expression is a scalar. Symbols must have the scalar attribute.
+
+        Examples
+        --------
+        >>> x = S('x', is_scalar=True)
+        >>> e = (x + 1)**2 + 5
+        >>> print(e.is_scalar())
+        True
+        """
+
+    def is_real(self) -> bool:
+        """
+        Check if the expression is real. Symbols must have the real attribute.
+
+        Examples
+        --------
+        >>> x = S('x', is_real=True)
+        >>> e = (x + 1)**2 / 2 + 5
+        >>> print(e.is_real())
+        True
+        """
+
+    def is_integer(self) -> bool:
+        """
+        Check if the expression is integer. Symbols must have the integer attribute.
+
+        Examples
+        --------
+        >>> x = S('x', is_integer=True)
+        >>> e = (x + 1)**2 + 5
+        >>> print(e.is_integer())
+        True
+        """
+
+    def is_positive(self) -> bool:
+        """
+        Check if the expression is a positive scalar. Symbols must have the positive attribute.
+
+        Examples
+        --------
+        >>> x = S('x', is_positive=True)
+        >>> e = (x + 1)**2 + 5
+        >>> print(e.is_positive())
+        True
+        """
+
     def __add__(self, other: Expression | int | float | complex | Decimal) -> Expression:
         """
         Add this expression to `other`, returning the result.
@@ -832,6 +955,21 @@ class Expression:
         >>> print(e)
 
         Yields `1`.
+        """
+
+    def req_attr(self, tag: SymbolAttribute) -> PatternRestriction:
+        """
+        Create a pattern restriction based on the attributes of a matched variable or function.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x = S('f', is_linear=True)
+        >>> x_ = S('x_')
+        >>> print(E('f(x)').replace(E('x_(x)'), 1, ~S('x_').req_attr(SymbolAttribute.Linear)))
+        >>> print(e)
+
+        Yields `f(x)`.
         """
 
     def req_type(self, atom_type: AtomType) -> PatternRestriction:

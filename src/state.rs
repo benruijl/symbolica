@@ -100,16 +100,26 @@ impl Default for State {
 }
 
 impl State {
-    pub(crate) const ARG: Symbol = Symbol::raw_fn(0, 0, false, false, false, false);
-    pub(crate) const COEFF: Symbol = Symbol::raw_fn(1, 0, false, false, false, false);
-    pub(crate) const EXP: Symbol = Symbol::raw_fn(2, 0, false, false, false, false);
-    pub(crate) const LOG: Symbol = Symbol::raw_fn(3, 0, false, false, false, false);
-    pub(crate) const SIN: Symbol = Symbol::raw_fn(4, 0, false, false, false, false);
-    pub(crate) const COS: Symbol = Symbol::raw_fn(5, 0, false, false, false, false);
-    pub(crate) const SQRT: Symbol = Symbol::raw_fn(6, 0, false, false, false, false);
-    pub(crate) const DERIVATIVE: Symbol = Symbol::raw_fn(7, 0, false, false, false, false);
-    pub(crate) const E: Symbol = Symbol::raw_var(8, 0);
-    pub(crate) const PI: Symbol = Symbol::raw_var(9, 0);
+    pub(crate) const ARG: Symbol =
+        Symbol::raw_fn(0, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const COEFF: Symbol =
+        Symbol::raw_fn(1, 0, false, false, false, false, true, false, false, false);
+    pub(crate) const EXP: Symbol =
+        Symbol::raw_fn(2, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const LOG: Symbol =
+        Symbol::raw_fn(3, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const SIN: Symbol =
+        Symbol::raw_fn(4, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const COS: Symbol =
+        Symbol::raw_fn(5, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const SQRT: Symbol =
+        Symbol::raw_fn(6, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const DERIVATIVE: Symbol =
+        Symbol::raw_fn(7, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const E: Symbol =
+        Symbol::raw_fn(8, 0, false, false, false, false, true, true, false, true);
+    pub(crate) const PI: Symbol =
+        Symbol::raw_fn(9, 0, false, false, false, false, true, true, false, true);
 
     /// The list of built-in symbols.
     pub const BUILTIN_SYMBOL_NAMES: [&'static str; 10] = [
@@ -363,6 +373,10 @@ impl State {
                     attributes.contains(&SymbolAttribute::Antisymmetric),
                     attributes.contains(&SymbolAttribute::Cyclesymmetric),
                     attributes.contains(&SymbolAttribute::Linear),
+                    attributes.contains(&SymbolAttribute::Scalar),
+                    attributes.contains(&SymbolAttribute::Real),
+                    attributes.contains(&SymbolAttribute::Integer),
+                    attributes.contains(&SymbolAttribute::Positive),
                 );
 
                 if r == new_id
@@ -457,6 +471,10 @@ impl State {
                     attributes.contains(&SymbolAttribute::Antisymmetric),
                     attributes.contains(&SymbolAttribute::Cyclesymmetric),
                     attributes.contains(&SymbolAttribute::Linear),
+                    attributes.contains(&SymbolAttribute::Scalar),
+                    attributes.contains(&SymbolAttribute::Real),
+                    attributes.contains(&SymbolAttribute::Integer),
+                    attributes.contains(&SymbolAttribute::Positive),
                 );
 
                 let id_ret = ID_TO_STR.push((
@@ -592,11 +610,9 @@ impl State {
             dest.write_u32::<LittleEndian>(namespace.len() as u32)?;
             dest.write_all(namespace.as_bytes())?;
 
-            dest.write_u8(s.get_wildcard_level())?;
-            dest.write_u8(s.is_symmetric() as u8)?;
-            dest.write_u8(s.is_antisymmetric() as u8)?;
-            dest.write_u8(s.is_cyclesymmetric() as u8)?;
-            dest.write_u8(s.is_linear() as u8)?;
+            let (flags, extra_flags) = s.encode_flags();
+            dest.write_u8(flags)?;
+            dest.write_u32::<LittleEndian>(extra_flags)?;
 
             dest.write_u16::<LittleEndian>(s.get_tags().len() as u16)?;
             for t in s.get_tags() {
@@ -693,11 +709,10 @@ impl State {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
                 .into();
 
-            let wildcard_level = source.read_u8()?;
-            let is_symmetric = source.read_u8()? != 0;
-            let is_antisymmetric = source.read_u8()? != 0;
-            let is_cyclesymmetric = source.read_u8()? != 0;
-            let is_linear = source.read_u8()? != 0;
+            let flags = source.read_u8()?;
+            let extra_flags = source.read_u32::<LittleEndian>()?;
+
+            let s = Symbol::decode_flags(0, flags, extra_flags);
 
             let mut tags = vec![];
             let num_tags = source.read_u16::<LittleEndian>()?;
@@ -715,17 +730,29 @@ impl State {
             }
 
             attributes.clear();
-            if is_antisymmetric {
+            if s.is_antisymmetric() {
                 attributes.push(SymbolAttribute::Antisymmetric);
             }
-            if is_symmetric {
+            if s.is_symmetric() {
                 attributes.push(SymbolAttribute::Symmetric);
             }
-            if is_cyclesymmetric {
+            if s.is_cyclesymmetric() {
                 attributes.push(SymbolAttribute::Cyclesymmetric);
             }
-            if is_linear {
+            if s.is_linear() {
                 attributes.push(SymbolAttribute::Linear);
+            }
+            if s.is_scalar() {
+                attributes.push(SymbolAttribute::Scalar);
+            }
+            if s.is_real() {
+                attributes.push(SymbolAttribute::Real);
+            }
+            if s.is_integer() {
+                attributes.push(SymbolAttribute::Integer);
+            }
+            if s.is_positive() {
+                attributes.push(SymbolAttribute::Positive);
             }
 
             loop {
@@ -757,7 +784,7 @@ impl State {
                                 new_wildcard_level += 1;
                             }
 
-                            if wildcard_level == new_wildcard_level {
+                            if s.get_wildcard_level() == new_wildcard_level {
                                 str = new_name;
                             }
                         } else {

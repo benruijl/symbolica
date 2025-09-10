@@ -1232,6 +1232,62 @@ pub trait AtomCore {
         self.as_atom_view().contains(s.as_atom_view())
     }
 
+    /// Returns true iff `self` is scalar, i.e. contains only numbers and symbols with the `Scalar` attribute.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let _ = symbol!("x_scalar"; Scalar);
+    /// let expr = parse!("3*2^x_scalar + (1+x_scalar)^2");
+    /// assert!(expr.is_scalar());
+    /// ```
+    fn is_scalar(&self) -> bool {
+        self.as_atom_view().is_scalar()
+    }
+
+    /// Returns true iff an expression is real. Symbols must have the `Real` attribute.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let _ = symbol!("x_real"; Real);
+    /// let expr = parse!("3*2^x_real + (1+x_real)^2 + (1/2)^x_real");
+    /// assert!(expr.is_real());
+    /// ```
+    fn is_real(&self) -> bool {
+        self.as_atom_view().is_real()
+    }
+
+    /// Returns true iff an expression only consists of integer numbers and symbols with the `Integer` attribute.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let _ = symbol!("x_integer"; Integer);
+    /// let expr = parse!("3*2^x_integer + (1+x_integer)^2");
+    /// assert!(expr.is_integer());
+    /// ```
+    fn is_integer(&self) -> bool {
+        self.as_atom_view().is_integer()
+    }
+
+    /// Returns true iff an expression is positive. Symbols must have the `Positive` attribute.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let _ = symbol!("x_p"; Positive);
+    /// let expr = parse!("3*2^x_p + (1+x_p)^2 + (1/2)^x_p");
+    /// assert!(expr.is_positive());
+    /// ```
+    fn is_positive(&self) -> bool {
+        self.as_atom_view().is_positive()
+    }
+
     /// Check if the expression can be considered a polynomial in some variables, including
     /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
     /// `f(x)+x` is not a polynomial.

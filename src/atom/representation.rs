@@ -26,17 +26,22 @@ const FUN_ID: u8 = 3;
 const MUL_ID: u8 = 4;
 const ADD_ID: u8 = 5;
 const POW_ID: u8 = 6;
-const TYPE_MASK: u8 = 0b00000111;
-const NOT_NORMALIZED: u8 = 0b10000000;
-const VAR_WILDCARD_LEVEL_MASK: u8 = 0b00011000;
-const VAR_WILDCARD_LEVEL_1: u8 = 0b00001000;
-const VAR_WILDCARD_LEVEL_2: u8 = 0b00010000;
-const VAR_WILDCARD_LEVEL_3: u8 = 0b00011000;
-const FUN_SYMMETRIC_FLAG: u8 = 0b00100000;
-const FUN_LINEAR_FLAG: u8 = 0b01000000;
-const VAR_ANTISYMMETRIC_FLAG: u8 = 0b10000000;
-const VAR_CYCLESYMMETRIC_FLAG: u8 = 0b10100000; // coded as symmetric | antisymmetric
-const FUN_ANTISYMMETRIC_FLAG: u64 = 1 << 32; // stored in the function id
+const TYPE_MASK: u8 = 0b00000_111;
+const NOT_NORMALIZED: u8 = 0b10000_000;
+const SYM_LINEAR_FLAG: u8 = 0b01000_000;
+const SYM_SYMMETRIC_FLAG: u8 = 0b00100_000;
+const SYM_ANTISYMMETRIC_FLAG: u8 = 0b00010_000;
+/// Coded as symmetric | antisymmetric
+const SYM_CYCLESYMMETRIC_FLAG: u8 = 0b00110_000;
+const SYM_SCALAR_FLAG: u8 = 0b00001_000;
+const SYM_EXTRA_REAL_FLAG: u32 = 0b01;
+const SYM_EXTRA_INTEGER_FLAG: u32 = 0b10;
+const SYM_EXTRA_POSITIVE_FLAG: u32 = 0b100;
+const SYM_EXTRA_WILDCARD_LEVEL_MASK: u32 = 0b11_000;
+const SYM_EXTRA_WILDCARD_LEVEL_1: u32 = 0b01_000;
+const SYM_EXTRA_WILDCARD_LEVEL_2: u32 = 0b10_000;
+const SYM_EXTRA_WILDCARD_LEVEL_3: u32 = 0b11_000;
+
 const MUL_HAS_COEFF_FLAG: u8 = 0b01000000;
 
 const ZERO_DATA: [u8; 3] = [NUM_ID, 1, 0];
@@ -64,6 +69,83 @@ pub trait KeyLookup: Borrow<BorrowedRawAtom> + Eq + Hash {}
 impl KeyLookup for Atom {}
 impl KeyLookup for AtomView<'_> {}
 
+impl Symbol {
+    #[inline]
+    pub(crate) fn encode_flags(&self) -> (u8, u32) {
+        let mut flags = 0u8;
+        if self.is_symmetric {
+            flags |= SYM_SYMMETRIC_FLAG;
+        }
+        if self.is_linear {
+            flags |= SYM_LINEAR_FLAG;
+        }
+        if self.is_cyclesymmetric {
+            flags |= SYM_CYCLESYMMETRIC_FLAG;
+        }
+        if self.is_antisymmetric {
+            flags |= SYM_ANTISYMMETRIC_FLAG;
+        }
+        if self.is_scalar {
+            flags |= SYM_SCALAR_FLAG;
+        }
+
+        let mut extra = 0;
+
+        if self.is_real {
+            extra |= SYM_EXTRA_REAL_FLAG;
+        }
+
+        if self.is_integer {
+            extra |= SYM_EXTRA_INTEGER_FLAG;
+        }
+
+        if self.is_positive {
+            extra |= SYM_EXTRA_POSITIVE_FLAG;
+        }
+
+        match self.wildcard_level {
+            0 => {}
+            1 => extra |= SYM_EXTRA_WILDCARD_LEVEL_1,
+            2 => extra |= SYM_EXTRA_WILDCARD_LEVEL_2,
+            _ => extra |= SYM_EXTRA_WILDCARD_LEVEL_3,
+        }
+
+        (flags, extra)
+    }
+
+    #[inline]
+    pub(crate) fn decode_flags(id: u32, flags: u8, extra: u32) -> Symbol {
+        let is_cyclesymmetric = (flags & SYM_CYCLESYMMETRIC_FLAG) == SYM_CYCLESYMMETRIC_FLAG;
+        let is_symmetric = !is_cyclesymmetric && (flags & SYM_SYMMETRIC_FLAG) != 0;
+        let is_antisymmetric = !is_cyclesymmetric && (flags & SYM_ANTISYMMETRIC_FLAG) != 0;
+        let is_linear = (flags & SYM_LINEAR_FLAG) != 0;
+        let is_scalar = (flags & SYM_SCALAR_FLAG) != 0;
+
+        let is_real = (extra & SYM_EXTRA_REAL_FLAG) != 0;
+        let is_integer = (extra & SYM_EXTRA_INTEGER_FLAG) != 0;
+        let is_positive = (extra & SYM_EXTRA_POSITIVE_FLAG) != 0;
+        let wildcard_level = match extra & SYM_EXTRA_WILDCARD_LEVEL_MASK {
+            SYM_EXTRA_WILDCARD_LEVEL_1 => 1,
+            SYM_EXTRA_WILDCARD_LEVEL_2 => 2,
+            SYM_EXTRA_WILDCARD_LEVEL_3 => 3,
+            _ => 0,
+        };
+
+        Symbol {
+            id,
+            is_symmetric,
+            is_linear,
+            is_antisymmetric,
+            is_cyclesymmetric,
+            is_scalar,
+            is_real,
+            is_integer,
+            is_positive,
+            wildcard_level,
+        }
+    }
+}
+
 /// An inline variable.
 #[derive(Copy, Clone)]
 pub struct InlineVar {
@@ -75,31 +157,11 @@ impl InlineVar {
     /// Create a new inline variable.
     pub fn new(symbol: Symbol) -> InlineVar {
         let mut data = [0; 16];
-        let mut flags = VAR_ID;
-        match symbol.wildcard_level {
-            0 => {}
-            1 => flags |= VAR_WILDCARD_LEVEL_1,
-            2 => flags |= VAR_WILDCARD_LEVEL_2,
-            _ => flags |= VAR_WILDCARD_LEVEL_3,
-        }
+        let (flags, extra) = symbol.encode_flags();
+        data[0] = flags | VAR_ID;
 
-        if symbol.is_symmetric {
-            flags |= FUN_SYMMETRIC_FLAG;
-        }
-        if symbol.is_linear {
-            flags |= FUN_LINEAR_FLAG;
-        }
-        if symbol.is_antisymmetric {
-            flags |= VAR_ANTISYMMETRIC_FLAG;
-        }
-        if symbol.is_cyclesymmetric {
-            flags |= VAR_CYCLESYMMETRIC_FLAG;
-        }
-
-        data[0] = flags;
-
-        let size = 1 + (symbol.id as u64, 1).get_packed_size() as u8;
-        (symbol.id as u64, 1).write_packed_fixed(&mut data[1..]);
+        let size = 1 + (symbol.id as u64, extra as u64).get_packed_size() as u8;
+        (symbol.id as u64, extra as u64).write_packed_fixed(&mut data[1..]);
         InlineVar { data, size }
     }
 
@@ -474,30 +536,10 @@ impl Var {
     pub fn set_from_symbol(&mut self, symbol: Symbol) {
         self.data.clear();
 
-        let mut flags = VAR_ID;
-        match symbol.wildcard_level {
-            0 => {}
-            1 => flags |= VAR_WILDCARD_LEVEL_1,
-            2 => flags |= VAR_WILDCARD_LEVEL_2,
-            _ => flags |= VAR_WILDCARD_LEVEL_3,
-        }
+        let (flags, extra) = symbol.encode_flags();
+        self.data.put_u8(flags | VAR_ID);
 
-        if symbol.is_symmetric {
-            flags |= FUN_SYMMETRIC_FLAG;
-        }
-        if symbol.is_linear {
-            flags |= FUN_LINEAR_FLAG;
-        }
-        if symbol.is_antisymmetric {
-            flags |= VAR_ANTISYMMETRIC_FLAG;
-        }
-        if symbol.is_cyclesymmetric {
-            flags |= VAR_CYCLESYMMETRIC_FLAG;
-        }
-
-        self.data.put_u8(flags);
-
-        (symbol.id as u64, 1).write_packed(&mut self.data);
+        (symbol.id as u64, extra as u64).write_packed(&mut self.data);
     }
 
     #[inline]
@@ -557,34 +599,14 @@ impl Fun {
     pub(crate) fn set_from_symbol(&mut self, symbol: Symbol) {
         self.data.clear();
 
-        let mut flags = FUN_ID | NOT_NORMALIZED;
-        match symbol.wildcard_level {
-            0 => {}
-            1 => flags |= VAR_WILDCARD_LEVEL_1,
-            2 => flags |= VAR_WILDCARD_LEVEL_2,
-            _ => flags |= VAR_WILDCARD_LEVEL_3,
-        }
-
-        if symbol.is_symmetric || symbol.is_cyclesymmetric {
-            flags |= FUN_SYMMETRIC_FLAG;
-        }
-        if symbol.is_linear {
-            flags |= FUN_LINEAR_FLAG;
-        }
-
-        self.data.put_u8(flags);
+        let (flags, extra) = symbol.encode_flags();
+        self.data.put_u8(flags | FUN_ID | NOT_NORMALIZED);
 
         self.data.put_u32_le(0_u32);
 
         let buf_pos = self.data.len();
 
-        let id = if symbol.is_antisymmetric || symbol.is_cyclesymmetric {
-            symbol.id as u64 | FUN_ANTISYMMETRIC_FLAG
-        } else {
-            symbol.id as u64
-        };
-
-        (id, 0).write_packed(&mut self.data);
+        ((extra as u64) << 32 | symbol.id as u64, 0).write_packed(&mut self.data);
 
         let new_buf_pos = self.data.len();
         let mut cursor = &mut self.data[1..];
@@ -1086,27 +1108,13 @@ impl<'a> VarView<'a> {
 
     #[inline(always)]
     pub fn get_symbol(&self) -> Symbol {
-        let is_cyclesymmetric = self.data[0] & VAR_CYCLESYMMETRIC_FLAG == VAR_CYCLESYMMETRIC_FLAG;
-
-        Symbol::raw_fn(
-            self.data[1..].get_frac_u64().0 as u32,
-            self.get_wildcard_level(),
-            !is_cyclesymmetric && self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG,
-            !is_cyclesymmetric && self.data[0] & VAR_ANTISYMMETRIC_FLAG == VAR_ANTISYMMETRIC_FLAG,
-            is_cyclesymmetric,
-            self.data[0] & FUN_LINEAR_FLAG == FUN_LINEAR_FLAG,
-        )
+        let (id, attrs, _) = self.data[1..].get_frac_u64();
+        Symbol::decode_flags(id as u32, self.data[0], attrs as u32)
     }
 
     #[inline(always)]
     pub fn get_wildcard_level(&self) -> u8 {
-        match self.data[0] & VAR_WILDCARD_LEVEL_MASK {
-            0 => 0,
-            VAR_WILDCARD_LEVEL_1 => 1,
-            VAR_WILDCARD_LEVEL_2 => 2,
-            VAR_WILDCARD_LEVEL_3 => 3,
-            _ => 0,
-        }
+        self.get_symbol().get_wildcard_level()
     }
 
     #[inline]
@@ -1180,65 +1188,37 @@ impl<'a> FunView<'a> {
 
     #[inline(always)]
     pub fn get_symbol(&self) -> Symbol {
-        let id = self.data[1 + 4..].get_frac_u64().0;
-
-        let is_cyclesymmetric = self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG
-            && id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG;
-
-        Symbol::raw_fn(
-            id as u32,
-            self.get_wildcard_level(),
-            !is_cyclesymmetric && self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG,
-            !is_cyclesymmetric && id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG,
-            is_cyclesymmetric,
-            self.is_linear(),
+        let (id_and_attrs, _, _) = self.data[1 + 4..].get_frac_u64();
+        Symbol::decode_flags(
+            id_and_attrs as u32,
+            self.data[0],
+            (id_and_attrs >> 32) as u32,
         )
     }
 
     #[inline(always)]
     pub fn is_symmetric(&self) -> bool {
-        if self.data[0] & FUN_SYMMETRIC_FLAG == 0 {
-            return false;
-        }
-
-        let id = self.data[1 + 4..].get_frac_u64().0;
-        id & FUN_ANTISYMMETRIC_FLAG == 0
+        self.data[0] & SYM_CYCLESYMMETRIC_FLAG == SYM_SYMMETRIC_FLAG
     }
 
     #[inline(always)]
     pub fn is_antisymmetric(&self) -> bool {
-        if self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG {
-            return false;
-        }
-
-        let id = self.data[1 + 4..].get_frac_u64().0;
-        id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG
+        self.data[0] & SYM_CYCLESYMMETRIC_FLAG == SYM_ANTISYMMETRIC_FLAG
     }
 
     #[inline(always)]
     pub fn is_cyclesymmetric(&self) -> bool {
-        if self.data[0] & FUN_SYMMETRIC_FLAG == 0 {
-            return false;
-        }
-
-        let id = self.data[1 + 4..].get_frac_u64().0;
-        id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG
+        self.data[0] & SYM_CYCLESYMMETRIC_FLAG == SYM_CYCLESYMMETRIC_FLAG
     }
 
     #[inline(always)]
     pub fn is_linear(&self) -> bool {
-        self.data[0] & FUN_LINEAR_FLAG == FUN_LINEAR_FLAG
+        self.data[0] & SYM_LINEAR_FLAG == SYM_LINEAR_FLAG
     }
 
     #[inline(always)]
     pub fn get_wildcard_level(&self) -> u8 {
-        match self.data[0] & VAR_WILDCARD_LEVEL_MASK {
-            0 => 0,
-            VAR_WILDCARD_LEVEL_1 => 1,
-            VAR_WILDCARD_LEVEL_2 => 2,
-            VAR_WILDCARD_LEVEL_3 => 3,
-            _ => 0,
-        }
+        self.get_symbol().get_wildcard_level()
     }
 
     #[inline(always)]

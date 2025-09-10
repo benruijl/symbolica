@@ -3,7 +3,7 @@ use std::{cmp::Ordering, ops::DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    atom::{Atom, AtomView, Fun, Symbol, representation::InlineNum},
+    atom::{Atom, AtomCore, AtomView, Fun, Symbol, representation::InlineNum},
     coefficient::{Coefficient, CoefficientView},
     domains::{
         float::{Complex, Real},
@@ -939,6 +939,23 @@ impl AtomView<'_> {
                     }
                 }
 
+                // simplify log(exp(real)) = real
+                if id == Symbol::LOG && out_f.to_fun_view().get_nargs() == 1 {
+                    let arg = out_f.to_fun_view().iter().next().unwrap();
+
+                    if let AtomView::Fun(f2) = arg {
+                        if f2.get_symbol() == Symbol::EXP && f2.get_nargs() == 1 {
+                            let exp_arg = f2.iter().next().unwrap();
+                            if exp_arg.is_real() {
+                                let mut buffer = workspace.new_atom();
+                                buffer.set_from_view(&exp_arg);
+                                out.set_from_view(&buffer.as_view());
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 if id == Symbol::EXP && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     // simplify logs inside exp
@@ -1016,7 +1033,7 @@ impl AtomView<'_> {
                     // linearize products
                     if out_f.to_fun_view().iter().any(|a| {
                         if let AtomView::Mul(m) = a {
-                            m.has_coefficient()
+                            m.has_coefficient() || m.iter().any(|a| a.is_scalar())
                         } else {
                             false
                         }
@@ -1028,22 +1045,20 @@ impl AtomView<'_> {
                         let mut coeff: Coefficient = 1.into();
                         for a in out_f.to_fun_view().iter() {
                             if let AtomView::Mul(m) = a {
-                                if m.has_coefficient() {
-                                    let mut stripped = workspace.new_atom();
-                                    let mul = stripped.to_mul();
+                                let mut stripped = workspace.new_atom();
+                                let mul = stripped.to_mul();
 
-                                    for a in m {
-                                        if let AtomView::Num(n) = a {
-                                            coeff = coeff * n.get_coeff_view().to_owned();
-                                        } else {
-                                            mul.extend(a);
-                                        }
+                                for a in m {
+                                    if let AtomView::Num(n) = a {
+                                        coeff = coeff * n.get_coeff_view().to_owned();
+                                    } else if a.is_scalar() {
+                                        t.extend(a);
+                                    } else {
+                                        mul.extend(a);
                                     }
-
-                                    nf.add_arg(stripped.as_view());
-                                } else {
-                                    nf.add_arg(a);
                                 }
+
+                                nf.add_arg(stripped.as_view());
                             } else {
                                 nf.add_arg(a);
                             }
@@ -1264,6 +1279,22 @@ impl AtomView<'_> {
                                 mul_h.as_view().normalize(workspace, out);
                                 break 'pow_simplify;
                             }
+                        }
+                    } else if let AtomView::Pow(p_base) = base_handle.as_view() {
+                        if exp_handle.is_integer() {
+                            // rewrite (x^y)^z as x^(z*y) if z is integer
+                            let (p_base_base, p_base_exp) = p_base.get_base_exp();
+
+                            let mut mul_h = workspace.new_atom();
+                            let mul = mul_h.to_mul();
+                            mul.extend(p_base_exp);
+                            mul.extend(exp_handle.as_view());
+                            let mut exp_h = workspace.new_atom();
+                            mul.as_view().normalize(workspace, &mut exp_h);
+
+                            mul_h.to_pow(p_base_base, exp_h.as_view());
+                            mul_h.as_view().normalize(workspace, out);
+                            break 'pow_simplify;
                         }
                     }
                     out.to_pow(base_handle.as_view(), exp_handle.as_view());

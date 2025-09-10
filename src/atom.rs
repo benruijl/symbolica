@@ -288,7 +288,7 @@ pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send 
 pub type DerivativeFunction = Box<dyn Fn(AtomView, usize, &mut Atom) -> bool + Send + Sync>;
 
 /// Attributes that can be assigned to symbols.
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SymbolAttribute {
     /// The function is symmetric.
     Symmetric,
@@ -298,6 +298,14 @@ pub enum SymbolAttribute {
     Cyclesymmetric,
     /// The function is linear.
     Linear,
+    /// The symbol represents a scalar. It will be moved out of linear functions.
+    Scalar,
+    /// The symbol represents a real number.
+    Real,
+    /// The symbol represents an integer.
+    Integer,
+    /// The symbol represents a positive number.
+    Positive,
 }
 
 /// A symbol, for example the name of a variable or the name of a function,
@@ -329,6 +337,10 @@ pub struct Symbol {
     is_antisymmetric: bool,
     is_cyclesymmetric: bool,
     is_linear: bool,
+    is_scalar: bool,
+    is_real: bool,
+    is_integer: bool,
+    is_positive: bool,
 }
 
 impl std::fmt::Debug for Symbol {
@@ -681,6 +693,62 @@ impl Symbol {
         self.is_linear
     }
 
+    /// Check if the symbol is scalar.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::symbol;
+    ///
+    /// let f = symbol!("f"; Scalar);
+    /// assert!(f.is_scalar());
+    /// ```
+    pub fn is_scalar(&self) -> bool {
+        self.is_scalar
+    }
+
+    /// Check if the symbol is real.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::symbol;
+    ///
+    /// let f = symbol!("f"; Real);
+    /// assert!(f.is_real());
+    /// ```
+    pub fn is_real(&self) -> bool {
+        self.is_real
+    }
+
+    /// Check if the symbol is integer.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::symbol;
+    ///
+    /// let f = symbol!("f"; Integer);
+    /// assert!(f.is_integer());
+    /// ```
+    pub fn is_integer(&self) -> bool {
+        self.is_integer
+    }
+
+    /// Check if the symbol is positive.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::symbol;
+    ///
+    /// let f = symbol!("f"; Positive);
+    /// assert!(f.is_positive());
+    /// ```
+    pub fn is_positive(&self) -> bool {
+        self.is_positive
+    }
+
     /// Returns `true` iff this identifier is defined by Symbolica.
     pub fn is_builtin(self) -> bool {
         State::is_builtin(self)
@@ -697,6 +765,36 @@ impl Symbol {
         self.get_data().tags.iter().any(|x| x == r)
     }
 
+    /// Get all tags of the symbol.
+    pub fn get_attributes(&self) -> Vec<SymbolAttribute> {
+        let mut attrs = vec![];
+        if self.is_symmetric {
+            attrs.push(SymbolAttribute::Symmetric);
+        }
+        if self.is_antisymmetric {
+            attrs.push(SymbolAttribute::Antisymmetric);
+        }
+        if self.is_cyclesymmetric {
+            attrs.push(SymbolAttribute::Cyclesymmetric);
+        }
+        if self.is_linear {
+            attrs.push(SymbolAttribute::Linear);
+        }
+        if self.is_scalar {
+            attrs.push(SymbolAttribute::Scalar);
+        }
+        if self.is_real {
+            attrs.push(SymbolAttribute::Real);
+        }
+        if self.is_integer {
+            attrs.push(SymbolAttribute::Integer);
+        }
+        if self.is_positive {
+            attrs.push(SymbolAttribute::Positive);
+        }
+        attrs
+    }
+
     /// Expert use: create a new variable symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
     pub const fn raw_var(id: u32, wildcard_level: u8) -> Self {
@@ -707,11 +805,17 @@ impl Symbol {
             is_antisymmetric: false,
             is_cyclesymmetric: false,
             is_linear: false,
+            is_scalar: false,
+            is_real: false,
+            is_integer: false,
+            is_positive: false,
         }
     }
 
     /// Expert use: create a new function symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
+    ///
+    /// Sets related attributes automatically, e.g., a symbol that is marked as `integer` is also marked as `real` and `scalar`.
     pub const fn raw_fn(
         id: u32,
         wildcard_level: u8,
@@ -719,6 +823,10 @@ impl Symbol {
         is_antisymmetric: bool,
         is_cyclesymmetric: bool,
         is_linear: bool,
+        is_scalar: bool,
+        is_real: bool,
+        is_integer: bool,
+        is_positive: bool,
     ) -> Self {
         Symbol {
             id,
@@ -727,6 +835,10 @@ impl Symbol {
             is_antisymmetric,
             is_cyclesymmetric,
             is_linear,
+            is_scalar: is_scalar || is_real || is_integer || is_positive,
+            is_real: is_real || is_integer || is_positive,
+            is_integer,
+            is_positive,
         }
     }
 
@@ -1785,9 +1897,8 @@ macro_rules! tag {
 /// created with the default attributes.
 ///
 /// You can specify attributes for the symbol, using `;` as a separator
-/// between symbol names and attributes. The options
-/// are [Symmetric](SymbolAttribute::Symmetric), [Antisymmetric](SymbolAttribute::Antisymmetric),
-/// [Cyclesymmetric](SymbolAttribute::Cyclesymmetric), and [Linear](SymbolAttribute::Linear).
+/// between symbol names and attributes. See [SymbolAttribute] for all options.
+///
 /// ```no_run
 /// use symbolica::symbol;
 /// let x = symbol!("x"; Symmetric, Linear);

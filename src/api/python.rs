@@ -236,6 +236,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
+    m.add_class::<PythonSymbolAttribute>()?;
     m.add_class::<PythonPrintMode>()?;
     m.add_class::<PythonReplacement>()?;
     m.add_class::<PythonExpressionEvaluator>()?;
@@ -345,7 +346,7 @@ fn get_license_key(email: String) -> PyResult<()> {
         .map_err(exceptions::PyConnectionError::new_err)
 }
 
-#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,tags=None,custom_normalization=None,custom_print=None,custom_derivative=None))]
+#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,is_scalar=None,is_real=None,is_integer=None,is_positive=None,tags=None,custom_normalization=None,custom_print=None,custom_derivative=None))]
 /// Shorthand notation for :func:`Expression.symbol`.
 fn symbol_shorthand(
     names: &Bound<'_, PyTuple>,
@@ -353,6 +354,10 @@ fn symbol_shorthand(
     is_antisymmetric: Option<bool>,
     is_cyclesymmetric: Option<bool>,
     is_linear: Option<bool>,
+    is_scalar: Option<bool>,
+    is_real: Option<bool>,
+    is_integer: Option<bool>,
+    is_positive: Option<bool>,
     tags: Option<Vec<String>>,
     custom_normalization: Option<PythonTransformer>,
     custom_print: Option<PyObject>,
@@ -367,6 +372,10 @@ fn symbol_shorthand(
         is_antisymmetric,
         is_cyclesymmetric,
         is_linear,
+        is_scalar,
+        is_real,
+        is_integer,
+        is_positive,
         tags,
         custom_normalization,
         custom_print,
@@ -455,6 +464,47 @@ pub enum PythonAtomType {
     Mul,
     /// The expression is a power.
     Pow,
+}
+
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass_enum(module = "symbolica.core")
+)]
+#[pyclass(name = "SymbolAttribute", eq, eq_int)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// Specifies the attributes of a symbol.
+pub enum PythonSymbolAttribute {
+    /// The function is symmetric.
+    Symmetric,
+    /// The function is antisymmetric.
+    Antisymmetric,
+    /// The function is cyclesymmetric.
+    Cyclesymmetric,
+    /// The function is linear.
+    Linear,
+    /// The symbol represents a scalar. It will be moved out of linear functions.
+    Scalar,
+    /// The symbol represents a real number.
+    Real,
+    /// The symbol represents an integer.
+    Integer,
+    /// The symbol represents a positive number.
+    Positive,
+}
+
+impl From<SymbolAttribute> for PythonSymbolAttribute {
+    fn from(attr: SymbolAttribute) -> Self {
+        match attr {
+            SymbolAttribute::Symmetric => PythonSymbolAttribute::Symmetric,
+            SymbolAttribute::Antisymmetric => PythonSymbolAttribute::Antisymmetric,
+            SymbolAttribute::Cyclesymmetric => PythonSymbolAttribute::Cyclesymmetric,
+            SymbolAttribute::Linear => PythonSymbolAttribute::Linear,
+            SymbolAttribute::Scalar => PythonSymbolAttribute::Scalar,
+            SymbolAttribute::Real => PythonSymbolAttribute::Real,
+            SymbolAttribute::Integer => PythonSymbolAttribute::Integer,
+            SymbolAttribute::Positive => PythonSymbolAttribute::Positive,
+        }
+    }
 }
 
 /// A Python representation of a Symbolica expression.
@@ -2896,7 +2946,7 @@ impl PythonExpression {
     /// Define a custom normalization function:
     /// >>> e = S('real_log', custom_normalization=Transformer().replace(E("x_(exp(x1_))"), E("x1_")))
     /// >>> E("real_log(exp(x)) + real_log(5)")
-    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,tags=None,custom_normalization=None, custom_print=None, custom_derivative=None))]
+    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,is_scalar=None,is_real=None,is_integer=None,is_positive=None,tags=None,custom_normalization=None, custom_print=None, custom_derivative=None))]
     #[classmethod]
     pub fn symbol(
         _cls: &Bound<'_, PyType>,
@@ -2906,6 +2956,10 @@ impl PythonExpression {
         is_antisymmetric: Option<bool>,
         is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
+        is_scalar: Option<bool>,
+        is_real: Option<bool>,
+        is_integer: Option<bool>,
+        is_positive: Option<bool>,
         tags: Option<Vec<String>>,
         custom_normalization: Option<PythonTransformer>,
         custom_print: Option<PyObject>,
@@ -2928,6 +2982,10 @@ impl PythonExpression {
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
             && is_linear.is_none()
+            && is_scalar.is_none()
+            && is_real.is_none()
+            && is_integer.is_none()
+            && is_positive.is_none()
             && tags.is_none()
             && custom_normalization.is_none()
             && custom_print.is_none()
@@ -2983,6 +3041,22 @@ impl PythonExpression {
 
         if let Some(true) = is_linear {
             opts.push(SymbolAttribute::Linear);
+        }
+
+        if let Some(true) = is_scalar {
+            opts.push(SymbolAttribute::Scalar);
+        }
+
+        if let Some(true) = is_real {
+            opts.push(SymbolAttribute::Real);
+        }
+
+        if let Some(true) = is_integer {
+            opts.push(SymbolAttribute::Integer);
+        }
+
+        if let Some(true) = is_positive {
+            opts.push(SymbolAttribute::Positive);
         }
 
         if names.len() == 1 {
@@ -3547,6 +3621,29 @@ impl PythonExpression {
         }
     }
 
+    /// Get the attributes of a variable or function if the current atom
+    /// is a variable or function, otherwise throw an error.
+    pub fn get_attributes(&self) -> PyResult<Vec<PythonSymbolAttribute>> {
+        match self.expr.as_ref() {
+            Atom::Var(v) => Ok(v
+                .get_symbol()
+                .get_attributes()
+                .into_iter()
+                .map(|a| a.into())
+                .collect()),
+            Atom::Fun(f) => Ok(f
+                .get_symbol()
+                .get_attributes()
+                .into_iter()
+                .map(|a| a.into())
+                .collect()),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "The exxpression {} is not a symbol or atom",
+                self.expr
+            ))),
+        }
+    }
+
     /// Get the tags of a variable or function if the current atom
     /// is a variable or function, otherwise throw an error.
     pub fn get_tags(&self) -> PyResult<Vec<String>> {
@@ -3558,6 +3655,54 @@ impl PythonExpression {
                 self.expr
             ))),
         }
+    }
+
+    /// Check if the expression is a scalar. Symbols must have the scalar attribute.
+    ///
+    /// Examples
+    /// --------
+    /// >>> x = S('x', is_scalar=True)
+    /// >>> e = (x +1)**2 + 5
+    /// >>> print(e.is_scalar())
+    /// True
+    pub fn is_scalar(&self) -> bool {
+        self.expr.is_scalar()
+    }
+
+    /// Check if the expression is real. Symbols must have the real attribute.
+    ///
+    /// Examples
+    /// --------
+    /// >>> x = S('x', is_real=True)
+    /// >>> e = (x + 1)**2 / 2 + 5
+    /// >>> print(e.is_real())
+    /// True
+    pub fn is_real(&self) -> bool {
+        self.expr.is_real()
+    }
+
+    /// Check if the expression is integer. Symbols must have the integer attribute.
+    ///
+    /// Examples
+    /// --------
+    /// >>> x = S('x', is_integer=True)
+    /// >>> e = (x + 1)**2 + 5
+    /// >>> print(e.is_integer())
+    /// True
+    pub fn is_integer(&self) -> bool {
+        self.expr.is_integer()
+    }
+
+    /// Check if the expression is a positive scalar. Symbols must have the positive attribute.
+    ///
+    /// Examples
+    /// --------
+    /// >>> x = S('x', is_positive=True)
+    /// >>> e = (x + 1)**2 + 5
+    /// >>> print(e.is_positive())
+    /// True
+    pub fn is_positive(&self) -> bool {
+        self.expr.is_positive()
     }
 
     /// Add this expression to `other`, returning the result.
@@ -3950,6 +4095,54 @@ impl PythonExpression {
                         condition: (name.filter_tag(format!("python::{tag}"))).into(),
                     })
                 }
+            }
+            _ => Err(exceptions::PyTypeError::new_err(
+                "Only wildcards can be restricted.",
+            )),
+        }
+    }
+
+    /// Create a pattern restriction based on the attribute of a matched variable or function.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x = S('f', is_linear=True)
+    /// >>> x_ = S('x_')
+    /// >>> print(E('f(x)').replace(E('x_(x)'), 1, ~S('x_').req_attr(SymbolAttribute.Linear)))
+    /// >>> print(e)
+    ///
+    /// Yields `f(x)`.
+    pub fn req_attr(&self, attribute: PythonSymbolAttribute) -> PyResult<PythonPatternRestriction> {
+        match self.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+
+                let f = move |s: Symbol| match attribute {
+                    PythonSymbolAttribute::Symmetric => s.is_symmetric(),
+                    PythonSymbolAttribute::Antisymmetric => s.is_antisymmetric(),
+                    PythonSymbolAttribute::Cyclesymmetric => s.is_cyclesymmetric(),
+                    PythonSymbolAttribute::Linear => s.is_linear(),
+                    PythonSymbolAttribute::Scalar => s.is_scalar(),
+                    PythonSymbolAttribute::Real => s.is_real(),
+                    PythonSymbolAttribute::Integer => s.is_integer(),
+                    PythonSymbolAttribute::Positive => s.is_positive(),
+                };
+
+                Ok(PythonPatternRestriction {
+                    condition: name
+                        .filter(move |m| match m {
+                            Match::Single(v) => v.get_symbol().map(|s| f(s)).unwrap_or(false),
+                            Match::Multiple(_, _) => false,
+                            Match::FunctionName(n) => f(*n),
+                        })
+                        .into(),
+                })
             }
             _ => Err(exceptions::PyTypeError::new_err(
                 "Only wildcards can be restricted.",

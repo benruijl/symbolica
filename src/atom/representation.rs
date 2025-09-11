@@ -160,8 +160,8 @@ impl InlineVar {
         let (flags, extra) = symbol.encode_flags();
         data[0] = flags | VAR_ID;
 
-        let size = 1 + (symbol.id as u64, extra as u64).get_packed_size() as u8;
-        (symbol.id as u64, extra as u64).write_packed_fixed(&mut data[1..]);
+        let size = 1 + (symbol.id as u64, (extra * 2) as u64 + 1).get_packed_size() as u8;
+        (symbol.id as u64, (extra * 2) as u64 + 1).write_packed_fixed(&mut data[1..]);
         InlineVar { data, size }
     }
 
@@ -539,7 +539,8 @@ impl Var {
         let (flags, extra) = symbol.encode_flags();
         self.data.put_u8(flags | VAR_ID);
 
-        (symbol.id as u64, extra as u64).write_packed(&mut self.data);
+        // shift by 1, so that the no-flag case does not take up extra space
+        (symbol.id as u64, (extra * 2) as u64 + 1).write_packed(&mut self.data);
     }
 
     #[inline]
@@ -1109,7 +1110,9 @@ impl<'a> VarView<'a> {
     #[inline(always)]
     pub fn get_symbol(&self) -> Symbol {
         let (id, attrs, _) = self.data[1..].get_frac_u64();
-        Symbol::decode_flags(id as u32, self.data[0], attrs as u32)
+
+        // attrs are shifted to improve the packing efficiency
+        Symbol::decode_flags(id as u32, self.data[0], (attrs >> 1) as u32)
     }
 
     #[inline(always)]

@@ -126,6 +126,20 @@ impl State {
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝜋",
     ];
 
+    /// The list of built-in symbols.
+    pub const BUILTIN_SYMBOLS: [Symbol; 10] = [
+        Self::ARG,
+        Self::COEFF,
+        Self::EXP,
+        Self::LOG,
+        Self::SIN,
+        Self::COS,
+        Self::SQRT,
+        Self::DERIVATIVE,
+        Self::E,
+        Self::PI,
+    ];
+
     pub fn is_builtin_name<S: AsRef<str>>(str: S) -> bool {
         Self::BUILTIN_SYMBOL_NAMES.contains(&str.as_ref())
     }
@@ -137,8 +151,28 @@ impl State {
             str_to_id: HashMap::new(),
         };
 
-        for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol(wrap_symbol!(x)).unwrap();
+        for (name, symbol) in Self::BUILTIN_SYMBOL_NAMES
+            .iter()
+            .zip(&Self::BUILTIN_SYMBOLS)
+        {
+            let r = wrap_symbol!(name);
+
+            let index = ID_TO_STR.push((
+                *symbol,
+                SymbolData {
+                    name: r.symbol.clone().into(),
+                    file: r.file.into(),
+                    namespace: r.namespace.into(),
+                    line: r.line,
+                    custom_normalization: None,
+                    custom_print: None,
+                    custom_derivative: None,
+                    tags: vec![],
+                },
+            ));
+            assert_eq!(symbol.get_id() as usize, index);
+
+            state.str_to_id.insert(r.symbol.into(), *symbol);
         }
 
         #[cfg(test)]
@@ -237,8 +271,30 @@ impl State {
         state.str_to_id.clear();
         SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
 
-        for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol(wrap_symbol!(x)).unwrap();
+        let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
+
+        for (name, symbol) in Self::BUILTIN_SYMBOL_NAMES
+            .iter()
+            .zip(&Self::BUILTIN_SYMBOLS)
+        {
+            let r = wrap_symbol!(name);
+
+            let index = ID_TO_STR.push((
+                *symbol,
+                SymbolData {
+                    name: r.symbol.clone().into(),
+                    file: r.file.into(),
+                    namespace: r.namespace.into(),
+                    line: r.line,
+                    custom_normalization: None,
+                    custom_print: None,
+                    custom_derivative: None,
+                    tags: vec![],
+                },
+            ));
+            assert_eq!(symbol.get_id() as usize, index - offset);
+
+            state.str_to_id.insert(r.symbol.into(), *symbol);
         }
 
         #[cfg(test)]
@@ -416,6 +472,34 @@ impl State {
                             "\tLinear: {} vs {}\n",
                             r.is_linear(),
                             new_id.is_linear()
+                        ));
+                    }
+                    if r.is_scalar() != new_id.is_scalar() {
+                        diff_attr.push_str(&format!(
+                            "\tScalar: {} vs {}\n",
+                            r.is_scalar(),
+                            new_id.is_scalar()
+                        ));
+                    }
+                    if r.is_real() != new_id.is_real() {
+                        diff_attr.push_str(&format!(
+                            "\tReal: {} vs {}\n",
+                            r.is_real(),
+                            new_id.is_real()
+                        ));
+                    }
+                    if r.is_integer() != new_id.is_integer() {
+                        diff_attr.push_str(&format!(
+                            "\tInteger: {} vs {}\n",
+                            r.is_integer(),
+                            new_id.is_integer()
+                        ));
+                    }
+                    if r.is_positive() != new_id.is_positive() {
+                        diff_attr.push_str(&format!(
+                            "\tPositive: {} vs {}\n",
+                            r.is_positive(),
+                            new_id.is_positive()
                         ));
                     }
 
@@ -772,7 +856,7 @@ impl State {
                         }
                         break;
                     }
-                    Err(_) => {
+                    Err(e) => {
                         if let Some(f) = &conflict_fn {
                             let new_name = f(&str);
 
@@ -790,7 +874,7 @@ impl State {
                         } else {
                             return Err(std::io::Error::new(
                                 std::io::ErrorKind::InvalidData,
-                                format!("Symbol conflict for {namespace}::{str}"),
+                                format!("Symbol conflict: {e}"),
                             ));
                         }
                     }

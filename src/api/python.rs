@@ -9,6 +9,10 @@ use std::{
 
 use ahash::HashMap;
 use brotli::CompressorWriter;
+use numpy::{
+    Complex64, IntoPyArray, PyArrayDyn, PyArrayLike1, PyReadonlyArrayDyn, TypeMustMatch,
+    ndarray::{ArrayD, Axis},
+};
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyObject, PyRef,
     PyResult, PyTypeInfo, Python,
@@ -12151,21 +12155,36 @@ impl PythonExpressionEvaluator {
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate`.
-    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> PyResult<Vec<f64>> {
+    fn evaluate_flat<'py>(
+        &mut self,
+        inputs: PyArrayLike1<'py, f64, TypeMustMatch>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
         let eval = self.eval.as_mut().ok_or(exceptions::PyValueError::new_err(
             "Evaluator contains complex coefficients. Use evaluate_complex_flat instead.",
         ))?;
 
-        let n_inputs = inputs.len() / self.eval_rat.get_input_len();
+        let n_inputs = inputs.len().unwrap() / self.eval_rat.get_input_len();
         let mut res = vec![0.; self.eval_rat.get_output_len() * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.eval_rat.get_output_len())
-            .zip(inputs.chunks(self.eval_rat.get_input_len()))
-        {
-            eval.evaluate(s, r);
+        for (r, s) in res.chunks_mut(self.eval_rat.get_output_len()).zip(
+            inputs
+                .as_array()
+                .axis_chunks_iter(Axis(0), self.eval_rat.get_input_len()),
+        ) {
+            eval.evaluate(
+                s.as_slice().ok_or_else(|| {
+                    exceptions::PyValueError::new_err("Failed to convert input to slice")
+                })?,
+                r,
+            );
         }
 
-        Ok(res)
+        ArrayD::from_shape_vec(
+            &[(self.eval_rat.get_output_len() * n_inputs), 1][..], // TODO: use 2d arrays
+            res,
+        )
+        .map(|x| x.into_pyarray(py))
+        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))
     }
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
@@ -12173,20 +12192,28 @@ impl PythonExpressionEvaluator {
     fn evaluate_complex_flat<'py>(
         &mut self,
         py: Python<'py>,
-        inputs: Vec<Complex<f64>>,
-    ) -> Vec<Bound<'py, PyComplex>> {
-        let n_inputs = inputs.len() / self.eval_rat.get_input_len();
-        let mut res = vec![Complex::new(0., 0.); self.eval_rat.get_output_len() * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.eval_rat.get_output_len())
-            .zip(inputs.chunks(self.eval_rat.get_output_len()))
-        {
-            self.eval_complex.evaluate(s, r);
-        }
+        inputs: PyReadonlyArrayDyn<'py, Complex64>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
+        let n_inputs = inputs.len().unwrap() / self.eval_rat.get_input_len();
+        let mut res = vec![Complex::new_zero(); self.eval_rat.get_output_len() * n_inputs];
+        for (r, s) in res.chunks_mut(self.eval_rat.get_output_len()).zip(
+            inputs
+                .as_array()
+                .axis_chunks_iter(Axis(0), self.eval_rat.get_input_len()),
+        ) {
+            let s = s.as_slice().ok_or_else(|| {
+                exceptions::PyValueError::new_err("Failed to convert input to slice")
+            })?;
+            let sc = unsafe { std::mem::transmute::<&[Complex64], &[Complex<f64>]>(s) };
 
-        res.into_iter()
-            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
-            .collect()
+            self.eval_complex.evaluate(sc, r);
+        }
+        ArrayD::from_shape_vec(
+            &[(self.eval_rat.get_output_len() * n_inputs), 1][..], // TODO: use 2d arrays
+            unsafe { std::mem::transmute::<Vec<Complex<f64>>, Vec<Complex64>>(res) },
+        )
+        .map(|x| x.into_pyarray(py))
+        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))
     }
 
     /// Evaluate the expression for multiple inputs and return the results.

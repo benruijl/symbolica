@@ -18,6 +18,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Callable, Literal, overload, Iterator, Optional, Sequence, Tuple, List
 from decimal import Decimal
+import numpy as np
+import numpy.typing as npt
 
 
 def get_version() -> str:
@@ -4280,14 +4282,14 @@ class Evaluator:
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_flat(self, inputs: Sequence[float]) -> List[float]:
+    def evaluate_flat(self, inputs: npt.ArrayLike) -> npt.NDArray[np.float64]:
         """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
         This method has less overhead than `evaluate`."""
 
     def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_complex_flat(self, inputs: Sequence[complex]) -> List[complex]:
+    def evaluate_complex_flat(self, inputs: npt.ArrayLike) -> npt.NDArray[np.complex128]:
         """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
         This method has less overhead than `evaluate_complex`."""
 

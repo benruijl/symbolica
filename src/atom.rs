@@ -324,7 +324,7 @@ pub enum SymbolAttribute {
 /// let (x, y) = symbol!("x", "y");
 /// let f = symbol!("f"; Symmetric);
 /// ```
-#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "bincode",
     derive(bincode_trait_derive::BorrowDecodeFromDecode),
@@ -341,16 +341,6 @@ pub struct Symbol {
     is_real: bool,
     is_integer: bool,
     is_positive: bool,
-}
-
-impl std::fmt::Debug for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", self.id))?;
-        for _ in 0..self.wildcard_level {
-            f.write_str("_")?;
-        }
-        Ok(())
-    }
 }
 
 impl std::fmt::Display for Symbol {

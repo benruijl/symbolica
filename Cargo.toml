@@ -48,7 +48,7 @@ bincode = ["dep:bincode", "dep:bincode-trait-derive"]
 experimental_poly_gcd = []
 
 [dependencies.pyo3]
-features = ["abi3", "py-clone"]
+features = ["abi3", "py-clone", "num-complex"]
 optional = true
 version = "0.25"
 

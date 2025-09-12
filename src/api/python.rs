@@ -10,7 +10,7 @@ use std::{
 use ahash::HashMap;
 use brotli::CompressorWriter;
 use numpy::{
-    Complex64, IntoPyArray, PyArrayDyn, PyArrayLike1, PyReadonlyArrayDyn, TypeMustMatch,
+    Complex64, IntoPyArray, PyArrayDyn, PyArrayLike2, PyUntypedArrayMethods, TypeMustMatch,
     ndarray::{ArrayD, Axis},
 };
 use pyo3::{
@@ -12155,99 +12155,70 @@ impl PythonExpressionEvaluator {
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate`.
-    fn evaluate_flat<'py>(
+    fn evaluate<'py>(
         &mut self,
-        inputs: PyArrayLike1<'py, f64, TypeMustMatch>,
+        inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
         let eval = self.eval.as_mut().ok_or(exceptions::PyValueError::new_err(
             "Evaluator contains complex coefficients. Use evaluate_complex_flat instead.",
         ))?;
 
-        let n_inputs = inputs.len().unwrap() / self.eval_rat.get_input_len();
-        let mut res = vec![0.; self.eval_rat.get_output_len() * n_inputs];
-        for (r, s) in res.chunks_mut(self.eval_rat.get_output_len()).zip(
-            inputs
-                .as_array()
-                .axis_chunks_iter(Axis(0), self.eval_rat.get_input_len()),
-        ) {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.eval_rat.get_input_len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.eval_rat.get_input_len(),
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.eval_rat.get_output_len()][..]);
+        for (i, mut o) in arr.axis_iter(Axis(0)).zip(out.axis_iter_mut(Axis(0))) {
             eval.evaluate(
-                s.as_slice().ok_or_else(|| {
+                i.as_slice().ok_or_else(|| {
                     exceptions::PyValueError::new_err("Failed to convert input to slice")
                 })?,
-                r,
+                o.as_slice_mut().unwrap(),
             );
         }
 
-        ArrayD::from_shape_vec(
-            &[(self.eval_rat.get_output_len() * n_inputs), 1][..], // TODO: use 2d arrays
-            res,
-        )
-        .map(|x| x.into_pyarray(py))
-        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))
+        Ok(out.into_pyarray(py))
     }
 
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate_complex`.
-    fn evaluate_complex_flat<'py>(
-        &mut self,
-        py: Python<'py>,
-        inputs: PyReadonlyArrayDyn<'py, Complex64>,
-    ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
-        let n_inputs = inputs.len().unwrap() / self.eval_rat.get_input_len();
-        let mut res = vec![Complex::new_zero(); self.eval_rat.get_output_len() * n_inputs];
-        for (r, s) in res.chunks_mut(self.eval_rat.get_output_len()).zip(
-            inputs
-                .as_array()
-                .axis_chunks_iter(Axis(0), self.eval_rat.get_input_len()),
-        ) {
-            let s = s.as_slice().ok_or_else(|| {
-                exceptions::PyValueError::new_err("Failed to convert input to slice")
-            })?;
-            let sc = unsafe { std::mem::transmute::<&[Complex64], &[Complex<f64>]>(s) };
-
-            self.eval_complex.evaluate(sc, r);
-        }
-        ArrayD::from_shape_vec(
-            &[(self.eval_rat.get_output_len() * n_inputs), 1][..], // TODO: use 2d arrays
-            unsafe { std::mem::transmute::<Vec<Complex<f64>>, Vec<Complex64>>(res) },
-        )
-        .map(|x| x.into_pyarray(py))
-        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> PyResult<Vec<Vec<f64>>> {
-        let eval = self.eval.as_mut().ok_or(exceptions::PyValueError::new_err(
-            "Evaluator contains complex coefficients. Use evaluate_complex instead.",
-        ))?;
-
-        Ok(inputs
-            .iter()
-            .map(|s| {
-                let mut v = vec![0.; self.eval_rat.get_output_len()];
-                eval.evaluate(s, &mut v);
-                v
-            })
-            .collect())
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
     fn evaluate_complex<'py>(
         &mut self,
-        python: Python<'py>,
-        inputs: Vec<Vec<Complex<f64>>>,
-    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
-        let mut v = vec![Complex::new_zero(); self.eval_rat.get_output_len()];
-        inputs
-            .iter()
-            .map(|s| {
-                self.eval_complex.evaluate(s, &mut v);
-                v.iter()
-                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
-                    .collect()
-            })
-            .collect()
+        py: Python<'py>,
+        inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.eval_rat.get_input_len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.eval_rat.get_input_len(),
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.eval_rat.get_output_len()][..]);
+        for (i, mut o) in arr.axis_iter(Axis(0)).zip(out.axis_iter_mut(Axis(0))) {
+            let sc = unsafe {
+                std::mem::transmute::<&[Complex64], &[Complex<f64>]>(i.as_slice().unwrap())
+            };
+            let os = unsafe {
+                std::mem::transmute::<&mut [Complex64], &mut [Complex<f64>]>(
+                    o.as_slice_mut().unwrap(),
+                )
+            };
+
+            self.eval_complex.evaluate(sc, os);
+        }
+
+        Ok(out.into_pyarray(py))
     }
 
     /// Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.

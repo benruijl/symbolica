@@ -4279,19 +4279,38 @@ class Evaluator:
             The block size to use for CUDA kernel launches.
         """
 
-    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
-        """Evaluate the expression for multiple inputs and return the result."""
+    def evaluate(self, inputs: npt.ArrayLike) -> npt.NDArray[np.float64]:
+        """Evaluate the expression for multiple inputs and return the result.
+        For best performance, use `numpy` arrays instead of lists.
 
-    def evaluate_flat(self, inputs: npt.ArrayLike) -> npt.NDArray[np.float64]:
-        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-        This method has less overhead than `evaluate`."""
+        Examples
+        --------
+        Evaluate the function for three sets of inputs:
 
-    def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
-        """Evaluate the expression for multiple inputs and return the result."""
+        >>> from symbolica import *
+        >>> import numpy as np
+        >>> ev = E('x * y + 2').evaluator({}, {}, [S('x'), S('y')])
+        >>> print(ev.evaluate(np.array([1., 2., 3., 4., 5., 6.]).reshape((3, 2))))
 
-    def evaluate_complex_flat(self, inputs: npt.ArrayLike) -> npt.NDArray[np.complex128]:
-        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-        This method has less overhead than `evaluate_complex`."""
+        Yields`[[ 4.] [ 8.] [14.]]` 
+        """
+
+    def evaluate_complex(self, inputs: npt.ArrayLike) -> npt.NDArray[np.complex128]:
+        """Evaluate the expression for multiple inputs and return the result.
+        For best performance, use `numpy` arrays and `np.complex128` instead of lists and
+        `complex`.
+
+        Examples
+        --------
+        Evaluate the function for three sets of inputs:
+
+        >>> from symbolica import *
+        >>> import numpy as np
+        >>> ev = E('x * y + 2').evaluator({}, {}, [S('x'), S('y')])
+        >>> print(ev.evaluate(np.array([1.+2j, 2., 3., 4., 5., 6.]).reshape((3, 2))))
+
+        Yields`[[ 4.+4.j] [14.+0.j] [32.+0.j]]` 
+        """
 
 
 class CompiledRealEvaluator:

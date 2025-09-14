@@ -16,7 +16,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     LicenseManager,
-    atom::{Atom, DefaultNamespace},
+    atom::{Atom, DefaultNamespace, SymbolAttribute},
     coefficient::{Coefficient, ConvertToRing},
     domains::{
         Ring,
@@ -476,7 +476,51 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol(namespace.attach_namespace(x))?);
+                if let Some((namespace, attr)) = x.split_once("::{") {
+                    if let Some((attrs, symbol)) = attr.split_once("}::") {
+                        let mut attributes = vec![];
+                        let mut tags = vec![];
+                        for x in attrs.split(',') {
+                            match x {
+                                "linear" => attributes.push(SymbolAttribute::Linear),
+                                "symmetric" => attributes.push(SymbolAttribute::Symmetric),
+                                "antisymmetric" => attributes.push(SymbolAttribute::Antisymmetric),
+                                "cyclesymmetric" => {
+                                    attributes.push(SymbolAttribute::Cyclesymmetric)
+                                }
+                                "scalar" => attributes.push(SymbolAttribute::Scalar),
+                                "real" => attributes.push(SymbolAttribute::Real),
+                                "integer" => attributes.push(SymbolAttribute::Integer),
+                                "positive" => attributes.push(SymbolAttribute::Positive),
+                                x => {
+                                    if x.contains("::") {
+                                        tags.push(x.to_string());
+                                    } else {
+                                        Err(format!(
+                                            "Unknown attribute or tag: {x}. Tags must contain a namespace"
+                                        ))?;
+                                    }
+                                }
+                            }
+                        }
+
+                        let symbol_whole = format!("{}::{}", namespace, symbol);
+
+                        let s = state.get_symbol_with_attributes(
+                            crate::atom::NamespacedSymbol::parse(&symbol_whole),
+                            &attributes,
+                            None,
+                            None,
+                            None,
+                            tags,
+                        )?;
+                        out.to_var(s);
+                    } else {
+                        Err(format!("Malformatted attribute section in {}", x))?;
+                    }
+                } else {
+                    out.to_var(state.get_symbol(namespace.attach_namespace(x))?);
+                }
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -755,6 +799,27 @@ impl Token {
                         stack.push(Token::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
                     } else if !Token::FORBIDDEN.contains(&c) {
+                        if c == '{' {
+                            while c != '}' && c != '\0' {
+                                id_buffer.push(c);
+                                c = char_iter.next().unwrap_or('\0');
+                                column_counter += 1;
+                            }
+
+                            if c == '\0' {
+                                Err(format!(
+                                    "Missing }} of bracket started at line {line_counter} and column {column_counter}"
+                                ))?;
+                            }
+
+                            if Token::OPS.contains(&c) || Token::WHITESPACE.contains(&c) {
+                                state = ParseState::Any;
+
+                                stack.push(Token::ID(id_buffer.as_str().into()));
+                                id_buffer.clear();
+                            }
+                        }
+
                         id_buffer.push(c);
                     } else {
                         // check for some symbols that could be the result of copy-paste errors
@@ -1397,8 +1462,25 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::AtomCore, domains::integer::Z, parse, parser::Token, printer::PrintOptions, symbol,
+        atom::{AtomCore, SymbolAttribute},
+        domains::integer::Z,
+        parse,
+        parser::Token,
+        printer::PrintOptions,
+        symbol,
     };
+
+    #[test]
+    fn attributes() {
+        let input = parse!("symbolica::b::{linear,symmetric,test::a}::dot_ls");
+        let s = input.get_symbol().unwrap();
+        assert_eq!(s.get_name(), "symbolica::b::dot_ls");
+        assert_eq!(
+            s.get_attributes(),
+            vec![SymbolAttribute::Symmetric, SymbolAttribute::Linear,]
+        );
+        assert_eq!(s.get_tags(), vec!["test::a"]);
+    }
 
     #[test]
     fn pow() {

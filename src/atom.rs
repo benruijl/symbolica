@@ -832,6 +832,33 @@ impl Symbol {
         }
     }
 
+    fn get_attributes_tuple_str(&self) -> [(&'static str, bool); 8] {
+        [
+            ("symmetric", self.is_symmetric),
+            ("antisymmetric", self.is_antisymmetric),
+            ("cyclesymmetric", self.is_cyclesymmetric),
+            ("linear", self.is_linear),
+            ("scalar", self.is_scalar),
+            ("real", self.is_real),
+            ("integer", self.is_integer),
+            ("positive", self.is_positive),
+        ]
+    }
+
+    /// Get the attributes of the symbol as a tuple of (attribute, bool).
+    pub fn get_attributes_tuple(&self) -> [(SymbolAttribute, bool); 8] {
+        [
+            (SymbolAttribute::Symmetric, self.is_symmetric),
+            (SymbolAttribute::Antisymmetric, self.is_antisymmetric),
+            (SymbolAttribute::Cyclesymmetric, self.is_cyclesymmetric),
+            (SymbolAttribute::Linear, self.is_linear),
+            (SymbolAttribute::Scalar, self.is_scalar),
+            (SymbolAttribute::Real, self.is_real),
+            (SymbolAttribute::Integer, self.is_integer),
+            (SymbolAttribute::Positive, self.is_positive),
+        ]
+    }
+
     pub fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
@@ -846,6 +873,11 @@ impl Symbol {
                 return Ok(());
             }
         }
+
+        let has_attrs = || {
+            let flags = self.encode_flags();
+            self.get_tags().len() > 0 || flags.0 != 0 || flags.1 != 0
+        };
 
         if opts.mode.is_latex() {
             match *self {
@@ -865,15 +897,68 @@ impl Symbol {
                 }
             }
         } else {
-            if !opts.hide_all_namespaces
+            if (!opts.hide_all_namespaces || opts.include_attributes)
                 && !State::is_builtin(*self)
-                && opts.hide_namespace != Some(namespace)
+                && (opts.hide_namespace != Some(namespace) || opts.include_attributes)
             {
                 if opts.color_namespace {
                     f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
+
+                    if opts.include_attributes && has_attrs() {
+                        f.write_fmt(format_args!("{}", "::{".dimmed()))?;
+                        let mut first = true;
+                        for (x, t) in self.get_attributes_tuple_str() {
+                            if t {
+                                if !first {
+                                    f.write_fmt(format_args!("{}", ",".dimmed()))?;
+                                }
+                                first = false;
+                                f.write_fmt(format_args!("{}", x.dimmed()))?;
+                            }
+                        }
+
+                        if self.get_tags().len() > 0 {
+                            for tag in self.get_tags() {
+                                if !first {
+                                    f.write_fmt(format_args!("{}", ",".dimmed()))?;
+                                }
+                                first = false;
+                                f.write_fmt(format_args!("{}", tag.dimmed()))?;
+                            }
+                        }
+
+                        f.write_fmt(format_args!("{}", "}".dimmed()))?;
+                    }
+
                     f.write_fmt(format_args!("{}", "::".dimmed()))?;
                 } else {
                     f.write_fmt(format_args!("{namespace}::"))?;
+
+                    if opts.include_attributes && has_attrs() {
+                        f.write_str("{")?;
+                        let mut first = true;
+                        for (x, t) in self.get_attributes_tuple_str() {
+                            if t {
+                                if !first {
+                                    f.write_char(',')?;
+                                }
+                                first = false;
+                                f.write_str(x)?;
+                            }
+                        }
+
+                        if self.get_tags().len() > 0 {
+                            for tag in self.get_tags() {
+                                if !first {
+                                    f.write_char(',')?;
+                                }
+                                first = false;
+                                f.write_str(tag)?;
+                            }
+                        }
+
+                        f.write_str("}::")?;
+                    }
                 }
             }
 

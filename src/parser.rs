@@ -482,6 +482,7 @@ impl Token {
                         let mut tags = vec![];
                         for x in attrs.split(',') {
                             match x {
+                                "" => {}
                                 "linear" => attributes.push(SymbolAttribute::Linear),
                                 "symmetric" => attributes.push(SymbolAttribute::Symmetric),
                                 "antisymmetric" => attributes.push(SymbolAttribute::Antisymmetric),

@@ -2066,6 +2066,7 @@ impl PythonTransformer {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -2085,6 +2086,7 @@ impl PythonTransformer {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<PythonTransformer> {
@@ -2106,6 +2108,7 @@ impl PythonTransformer {
             hide_all_namespaces: !show_namespaces,
             color_namespace: true,
             hide_namespace: Some("python"),
+            include_attributes,
             max_terms,
             custom_print_mode: custom_print_mode.map(|x| ("default", x)),
         }))
@@ -3418,6 +3421,7 @@ impl PythonExpression {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = Some(100),
             custom_print_mode = None)
         )]
@@ -3437,6 +3441,7 @@ impl PythonExpression {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -3462,6 +3467,7 @@ impl PythonExpression {
                     hide_all_namespaces: !show_namespaces,
                     color_namespace: true,
                     hide_namespace: Some("python"),
+                    include_attributes,
                     max_terms,
                     custom_print_mode: custom_print_mode.map(|x| ("default", x)),
                 },
@@ -6624,6 +6630,7 @@ impl PythonSeries {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -6643,6 +6650,7 @@ impl PythonSeries {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -6667,6 +6675,7 @@ impl PythonSeries {
                     hide_all_namespaces: !show_namespaces,
                     color_namespace: true,
                     hide_namespace: Some("python"),
+                    include_attributes,
                     max_terms,
                     custom_print_mode: custom_print_mode.map(|x| ("default", x)),
                 },
@@ -7188,6 +7197,7 @@ impl PythonPolynomial {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -7207,6 +7217,7 @@ impl PythonPolynomial {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -7229,6 +7240,7 @@ impl PythonPolynomial {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },
@@ -8134,6 +8146,7 @@ impl PythonFiniteFieldPolynomial {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -8153,6 +8166,7 @@ impl PythonFiniteFieldPolynomial {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -8175,6 +8189,7 @@ impl PythonFiniteFieldPolynomial {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },
@@ -8921,6 +8936,7 @@ impl PythonPrimeTwoPolynomial {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -8940,6 +8956,7 @@ impl PythonPrimeTwoPolynomial {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -8962,6 +8979,7 @@ impl PythonPrimeTwoPolynomial {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },
@@ -9576,6 +9594,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         num_exp_as_superscript = true,
         precision = None,
         show_namespaces = false,
+            include_attributes = false,
         max_terms = None,
         custom_print_mode = None)
     )]
@@ -9595,6 +9614,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -9617,6 +9637,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },
@@ -10308,6 +10329,7 @@ impl PythonGaloisFieldPolynomial {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -10327,6 +10349,7 @@ impl PythonGaloisFieldPolynomial {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -10349,6 +10372,7 @@ impl PythonGaloisFieldPolynomial {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },
@@ -10968,6 +10992,7 @@ impl PythonNumberFieldPolynomial {
         num_exp_as_superscript = true,
         precision = None,
         show_namespaces = false,
+            include_attributes = false,
         max_terms = None,
         custom_print_mode = None)
     )]
@@ -10987,6 +11012,7 @@ impl PythonNumberFieldPolynomial {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> PyResult<String> {
@@ -11009,6 +11035,7 @@ impl PythonNumberFieldPolynomial {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },
@@ -13378,6 +13405,7 @@ impl PythonMatrix {
             num_exp_as_superscript = true,
             precision = None,
             show_namespaces = false,
+            include_attributes = false,
             max_terms = None,
             custom_print_mode = None)
         )]
@@ -13392,6 +13420,7 @@ impl PythonMatrix {
         num_exp_as_superscript: bool,
         precision: Option<usize>,
         show_namespaces: bool,
+        include_attributes: bool,
         max_terms: Option<usize>,
         custom_print_mode: Option<usize>,
     ) -> String {
@@ -13414,6 +13443,7 @@ impl PythonMatrix {
                 hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
                 hide_namespace: Some("python"),
+                include_attributes,
                 max_terms,
                 custom_print_mode: custom_print_mode.map(|x| ("default", x)),
             },

@@ -67,6 +67,8 @@ pub struct PrintOptions {
     pub pretty_matrix: bool,
     pub hide_namespace: Option<&'static str>,
     pub hide_all_namespaces: bool,
+    /// Print attribute and tags
+    pub include_attributes: bool,
     pub color_namespace: bool,
     pub max_terms: Option<usize>,
     /// Provides a handle to set the behavior of the custom print function.
@@ -93,6 +95,7 @@ impl PrintOptions {
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: true,
+            include_attributes: false,
             color_namespace: true,
             max_terms: None,
             custom_print_mode: None,
@@ -118,6 +121,7 @@ impl PrintOptions {
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: true,
+            include_attributes: false,
             color_namespace: false,
             max_terms: None,
             custom_print_mode: None,
@@ -143,6 +147,7 @@ impl PrintOptions {
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: true,
+            include_attributes: false,
             color_namespace: false,
             max_terms: None,
             custom_print_mode: None,
@@ -168,6 +173,7 @@ impl PrintOptions {
             pretty_matrix: false,
             hide_namespace: None,
             hide_all_namespaces: false,
+            include_attributes: false,
             color_namespace: false,
             max_terms: None,
             custom_print_mode: None,
@@ -178,6 +184,15 @@ impl PrintOptions {
     pub const fn file_no_namespace() -> PrintOptions {
         Self {
             hide_all_namespaces: true,
+            ..Self::file()
+        }
+    }
+
+    /// Print the output suitable for a file with namespaces
+    /// and attributes and tags.
+    pub const fn full() -> PrintOptions {
+        Self {
+            include_attributes: true,
             ..Self::file()
         }
     }
@@ -535,7 +550,7 @@ impl AtomView<'_> {
 
         match self {
             AtomView::Num(_) => write!(out, "{}", self.printer(PrintOptions::file())).unwrap(),
-            AtomView::Var(v) => v.get_symbol().format(&PrintOptions::file(), out).unwrap(),
+            AtomView::Var(v) => v.get_symbol().format(&PrintOptions::full(), out).unwrap(),
             AtomView::Fun(f) => {
                 f.get_symbol().format(&PrintOptions::file(), out).unwrap();
                 out.push('(');

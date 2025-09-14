@@ -2519,19 +2519,9 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
 }
 
 #[cfg(feature = "python_stubgen")]
-struct ComplexStub;
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for ComplexStub {
-    fn type_output() -> TypeInfo {
-        TypeInfo::builtin("complex")
-    }
-}
-
-#[cfg(feature = "python_stubgen")]
 impl_stub_type!(
     ConvertibleToExpression =
-        PythonExpression | PyInt | PyBackedStr | pyo3::types::PyFloat | ComplexStub
+        PythonExpression | PyInt | PyBackedStr | pyo3::types::PyFloat | Complex64
 );
 
 impl<'a> FromPyObject<'a> for Symbol {
@@ -2708,20 +2698,12 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
 
 impl<'a> FromPyObject<'a> for Complex<f64> {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
-        if let Ok(a) = ob.downcast::<PyComplex>() {
-            Ok(Complex::new(a.real(), a.imag()))
-        } else if let Ok(a) = ob.extract::<f64>() {
-            Ok(Complex::new(a, 0.))
-        } else {
-            Err(exceptions::PyValueError::new_err(
-                "Not a valid complex number",
-            ))
-        }
+        ob.extract::<Complex64>().map(|x| Complex::new(x.re, x.im))
     }
 }
 
 #[cfg(feature = "python_stubgen")]
-impl_stub_type!(Complex<f64> = ComplexStub);
+impl_stub_type!(Complex<f64> = Complex64);
 
 impl<'a> FromPyObject<'a> for Complex<Float> {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
@@ -2742,7 +2724,7 @@ impl<'a> FromPyObject<'a> for Complex<Float> {
 }
 
 #[cfg(feature = "python_stubgen")]
-impl_stub_type!(Complex<Float> = ComplexStub);
+impl_stub_type!(Complex<Float> = Complex64);
 
 macro_rules! req_cmp {
     ($self:ident,$num:ident,$cmp_any_atom:ident,$c:ident) => {{
@@ -12436,31 +12418,33 @@ impl PythonCompiledRealExpressionEvaluator {
         })
     }
 
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate`.
-    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
-        let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![0.; self.output_len * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.output_len)
-            .zip(inputs.chunks(self.input_len))
-        {
-            self.eval.evaluate(s, r);
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate<'py>(
+        &mut self,
+        inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.input_len {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.input_len,
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.output_len][..]);
+        for (i, mut o) in arr.axis_iter(Axis(0)).zip(out.axis_iter_mut(Axis(0))) {
+            self.eval.evaluate(
+                i.as_slice().ok_or_else(|| {
+                    exceptions::PyValueError::new_err("Failed to convert input to slice")
+                })?,
+                o.as_slice_mut().unwrap(),
+            );
         }
 
-        res
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        inputs
-            .iter()
-            .map(|s| {
-                let mut v = vec![0.; self.output_len];
-                self.eval.evaluate(s, &mut v);
-                v
-            })
-            .collect()
+        Ok(out.into_pyarray(py))
     }
 }
 
@@ -12507,32 +12491,34 @@ impl PythonCompiledCudaRealExpressionEvaluator {
         })
     }
 
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate`.
-    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> PyResult<Vec<f64>> {
-        let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![0.; self.output_len * n_inputs];
-
-        self.eval
-            .evaluate(&inputs, &mut res)
-            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
-
-        Ok(res)
-    }
-
     /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> PyResult<Vec<Vec<f64>>> {
-        let flat_inputs: Vec<f64> = inputs.iter().flatten().cloned().collect();
-        let mut res = vec![0.; self.output_len * inputs.len()];
+    fn evaluate<'py>(
+        &mut self,
+        inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.input_len {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.input_len,
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.output_len][..]);
 
         self.eval
-            .evaluate(&flat_inputs, &mut res)
-            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
+            .evaluate(
+                arr.as_slice().ok_or_else(|| {
+                    exceptions::PyValueError::new_err("Failed to convert input to slice")
+                })?,
+                out.as_slice_mut().unwrap(),
+            )
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluation error: {}", e)))?;
 
-        Ok(res
-            .chunks(self.output_len)
-            .map(|chunk| chunk.to_vec())
-            .collect())
+        Ok(out.into_pyarray(py))
     }
 }
 
@@ -12579,49 +12565,40 @@ impl PythonCompiledCudaComplexExpressionEvaluator {
         })
     }
 
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate_complex`.
-    fn evaluate_flat<'py>(
-        &mut self,
-        py: Python<'py>,
-        inputs: Vec<Complex<f64>>,
-    ) -> PyResult<Vec<Bound<'py, PyComplex>>> {
-        let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![Complex::new(0., 0.); self.output_len * n_inputs];
-
-        self.eval
-            .evaluate(&inputs, &mut res)
-            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
-
-        Ok(res
-            .into_iter()
-            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
-            .collect())
-    }
-
     /// Evaluate the expression for multiple inputs and return the results.
     fn evaluate<'py>(
         &mut self,
-        python: Python<'py>,
-        inputs: Vec<Vec<Complex<f64>>>,
-    ) -> PyResult<Vec<Vec<Bound<'py, PyComplex>>>> {
-        let flat_inputs: Vec<Complex<f64>> = inputs.iter().flatten().cloned().collect();
-        let mut res = vec![Complex::new(0., 0.); self.output_len * inputs.len()];
+        inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.input_len {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.input_len,
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.output_len][..]);
+
+        let sc = unsafe {
+            std::mem::transmute::<&[Complex64], &[Complex<f64>]>(arr.as_slice().ok_or_else(
+                || exceptions::PyValueError::new_err("Failed to convert input to slice"),
+            )?)
+        };
+        let os = unsafe {
+            std::mem::transmute::<&mut [Complex64], &mut [Complex<f64>]>(
+                out.as_slice_mut().unwrap(),
+            )
+        };
 
         self.eval
-            .evaluate(&flat_inputs, &mut res)
-            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluate error: {}", e)))?;
+            .evaluate(sc, os)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Evaluation error: {}", e)))?;
 
-        // split results back into chunks for each original input
-        Ok(res
-            .chunks(self.output_len)
-            .map(|chunk| {
-                chunk
-                    .iter()
-                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
-                    .collect()
-            })
-            .collect())
+        Ok(out.into_pyarray(py))
     }
 }
 
@@ -12657,43 +12634,37 @@ impl PythonCompiledComplexExpressionEvaluator {
         })
     }
 
-    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
-    /// This method has less overhead than `evaluate_complex`.
-    fn evaluate_flat<'py>(
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate_complex<'py>(
         &mut self,
         py: Python<'py>,
-        inputs: Vec<Complex<f64>>,
-    ) -> Vec<Bound<'py, PyComplex>> {
-        let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![Complex::new(0., 0.); self.output_len * n_inputs];
-        for (r, s) in res
-            .chunks_mut(self.output_len)
-            .zip(inputs.chunks(self.input_len))
-        {
-            self.eval.evaluate(s, r);
+        inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.input_len {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.input_len,
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.output_len][..]);
+        for (i, mut o) in arr.axis_iter(Axis(0)).zip(out.axis_iter_mut(Axis(0))) {
+            let sc = unsafe {
+                std::mem::transmute::<&[Complex64], &[Complex<f64>]>(i.as_slice().unwrap())
+            };
+            let os = unsafe {
+                std::mem::transmute::<&mut [Complex64], &mut [Complex<f64>]>(
+                    o.as_slice_mut().unwrap(),
+                )
+            };
+
+            self.eval.evaluate(sc, os);
         }
 
-        res.into_iter()
-            .map(|x| PyComplex::from_doubles(py, x.re, x.im))
-            .collect()
-    }
-
-    /// Evaluate the expression for multiple inputs and return the results.
-    fn evaluate<'py>(
-        &mut self,
-        python: Python<'py>,
-        inputs: Vec<Vec<Complex<f64>>>,
-    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
-        let mut v = vec![Complex::new_zero(); self.output_len];
-        inputs
-            .iter()
-            .map(|s| {
-                self.eval.evaluate(s, &mut v);
-                v.iter()
-                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
-                    .collect()
-            })
-            .collect()
+        Ok(out.into_pyarray(py))
     }
 }
 

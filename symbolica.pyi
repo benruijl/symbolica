@@ -687,6 +687,7 @@ class Expression:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = 100,
         custom_print_mode: Optional[int] = None,
     ) -> str:
@@ -2815,6 +2816,7 @@ class Transformer:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = None,
         custom_print_mode: Optional[int] = None,
     ) -> Transformer:
@@ -2942,6 +2944,7 @@ class Series:
         num_exp_as_superscript: bool = True,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = None,
         custom_print_mode: Optional[int] = None,
     ) -> str:
@@ -3163,6 +3166,7 @@ class Polynomial:
         num_exp_as_superscript: bool = True,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = None,
         custom_print_mode: Optional[int] = None,
     ) -> str:
@@ -3454,6 +3458,7 @@ class NumberFieldPolynomial:
         num_exp_as_superscript: bool = True,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = None,
         custom_print_mode: Optional[int] = None,
     ) -> str:
@@ -3701,6 +3706,7 @@ class FiniteFieldPolynomial:
         num_exp_as_superscript: bool = True,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = None,
         custom_print_mode: Optional[int] = None,
     ) -> str:
@@ -4183,6 +4189,7 @@ class Matrix:
         num_exp_as_superscript: bool = True,
         precision: Optional[int] = None,
         show_namespaces: bool = False,
+        include_attributes: bool = False,
         max_terms: Optional[int] = None,
         custom_print_mode: Optional[int] = None,
     ) -> str:

@@ -1262,9 +1262,9 @@ mod tests {
         let a = parse!("((v1+1)^2 - (v1^2 + 2v1 + 1))/v2")
             .series(symbol!("v2"), Atom::Zero, 0.into(), true)
             .unwrap();
-        assert_eq!(a.get_trailing_exponent(), (-1).into());
+        assert_eq!(a.get_trailing_exponent(), -1);
 
         let b = a.map_coeff(|x| x.expand());
-        assert_eq!(b.get_trailing_exponent(), 1.into());
+        assert_eq!(b.get_trailing_exponent(), 1);
     }
 }

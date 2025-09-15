@@ -176,6 +176,11 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
 pub trait EuclideanDomain: Ring {
     fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element);
+
+    fn quot(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.quot_rem(a, b).0
+    }
+
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
 }
 
@@ -197,7 +202,7 @@ pub trait Field: EuclideanDomain {
     /// let (res, s) = Q.find_linear_recurrence_relation(&[0.into(), 1.into(), 1.into(), 3.into(),
     ///                                               5.into(), 11.into(), 21.into()]);
     /// assert_eq!(s, 3);
-    /// assert_eq!(res, [1.into(), 2.into()]); // s[i] = 1 * s[i-1] + 2 * s[i-2]
+    /// assert_eq!(res, [1, 2]); // s[i] = 1 * s[i-1] + 2 * s[i-2]
     /// ```
     fn find_linear_recurrence_relation(
         &self,

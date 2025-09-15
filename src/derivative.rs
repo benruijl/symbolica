@@ -495,7 +495,7 @@ impl AtomView<'_> {
                             // it could be that the base series is exactly zero,
                             // to prevent an infinite loop, we stop the loop at ep^-1000
                             let mut current_depth = info.relative_order();
-                            while base_series.is_zero() && current_depth < 1000.into() {
+                            while base_series.is_zero() && current_depth < 1000 {
                                 let info = Series::new(
                                     info.get_field(),
                                     None,
@@ -867,7 +867,7 @@ mod test {
 
         let t2 = t.rpow((1, 3).into()).unwrap();
 
-        assert_eq!(t2.absolute_order(), (22, 3).into());
+        assert_eq!(t2.absolute_order(), (22, 3));
     }
 
     #[test]
@@ -936,7 +936,7 @@ mod test {
 
         let r = (t - &parse!("1/v1+1")).unwrap();
 
-        assert_eq!(r.absolute_order(), (5, 1).into());
+        assert_eq!(r.absolute_order(), (5, 1));
         assert_eq!(r.to_atom(), parse!("-1*v1^-1+v1+v1^2+v1^3+v1^4"));
     }
 
@@ -951,7 +951,7 @@ mod test {
 
         let r = ((t / &parse!("exp(v1)-1")).unwrap() * &parse!("v1")).unwrap();
 
-        assert_eq!(r.relative_order(), (4, 1).into());
+        assert_eq!(r.relative_order(), (4, 1));
         assert_eq!(r.to_atom(), parse!("v1+-1/2*v1^2+1/12*v1^3"));
     }
 
@@ -964,7 +964,7 @@ mod test {
             .series(v1, Atom::num(0).as_view(), 4.into(), false)
             .unwrap();
 
-        assert_eq!(t.relative_order(), (4, 1).into());
+        assert_eq!(t.relative_order(), (4, 1));
         assert_eq!(t.to_atom(), parse!("v1^-1+1+1/2*v1"));
     }
 
@@ -976,12 +976,12 @@ mod test {
         let t = input
             .series(v1, Atom::num(0).as_view(), 4.into(), true)
             .unwrap();
-        assert_eq!(t.absolute_order(), (10, 1).into());
-        assert_eq!(t.relative_order(), (0, 1).into());
+        assert_eq!(t.absolute_order(), (10, 1));
+        assert_eq!(t.relative_order(), (0, 1));
         assert_eq!(t.to_atom(), parse!("0"));
 
         let r = (&t * &input).unwrap();
-        assert_eq!(r.absolute_order(), (20, 1).into());
+        assert_eq!(r.absolute_order(), (20, 1));
     }
 
     #[test]
@@ -1000,23 +1000,23 @@ mod test {
             .unwrap();
 
         let x = (&r + &parse!("v1^6")).unwrap();
-        assert_eq!(r.absolute_order(), (5, 1).into());
+        assert_eq!(r.absolute_order(), (5, 1));
 
         let c = x.cos().unwrap();
-        assert_eq!(c.absolute_order(), (10, 1).into());
-        assert_eq!(c.relative_order(), (10, 1).into());
+        assert_eq!(c.absolute_order(), (10, 1));
+        assert_eq!(c.relative_order(), (10, 1));
 
         let s = x.sin().unwrap();
-        assert_eq!(s.absolute_order(), (5, 1).into());
-        assert_eq!(s.relative_order(), (5, 1).into());
+        assert_eq!(s.absolute_order(), (5, 1));
+        assert_eq!(s.relative_order(), (5, 1));
 
         let e = x.exp().unwrap();
-        assert_eq!(e.absolute_order(), (5, 1).into());
-        assert_eq!(e.relative_order(), (5, 1).into());
+        assert_eq!(e.absolute_order(), (5, 1));
+        assert_eq!(e.relative_order(), (5, 1));
 
         let add = &r + &t2;
-        assert_eq!(add.absolute_order(), (5, 1).into());
+        assert_eq!(add.absolute_order(), (5, 1));
         let mul = &r * &t2;
-        assert_eq!(mul.absolute_order(), (11, 1).into());
+        assert_eq!(mul.absolute_order(), (11, 1));
     }
 }

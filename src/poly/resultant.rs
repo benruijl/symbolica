@@ -224,7 +224,7 @@ mod test {
             .to_polynomial::<_, u8>(&Q, None)
             .to_univariate_from_univariate(0);
         let r = a.resultant(&b);
-        assert_eq!(r, 11149673028381u64.into());
+        assert_eq!(r, 11149673028381u64);
     }
 
     #[test]

@@ -604,6 +604,45 @@ impl Default for Rational {
     }
 }
 
+impl PartialEq<Integer> for Rational {
+    fn eq(&self, other: &Integer) -> bool {
+        self.denominator.is_one() && &self.numerator == other
+    }
+}
+
+impl<T: Into<Integer> + Copy> PartialEq<T> for Rational {
+    fn eq(&self, other: &T) -> bool {
+        self.denominator.is_one() && self.numerator == (*other).into()
+    }
+}
+
+impl<T: Into<Integer> + Copy> PartialEq<(T, T)> for Rational {
+    fn eq(&self, other: &(T, T)) -> bool {
+        self == &Rational::from((other.0.into(), other.1.into()))
+    }
+}
+
+impl PartialOrd<Integer> for Rational {
+    fn partial_cmp(&self, other: &Integer) -> Option<std::cmp::Ordering> {
+        Some(self.numerator.cmp(&(other * self.denominator_ref())))
+    }
+}
+
+impl<T: Into<Integer> + Copy> PartialOrd<T> for Rational {
+    fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
+        Some(
+            self.numerator
+                .cmp(&((*other).into() * self.denominator_ref())),
+        )
+    }
+}
+
+impl<T: Into<Integer> + Copy> PartialOrd<(T, T)> for Rational {
+    fn partial_cmp(&self, other: &(T, T)) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&Rational::from((other.0.into(), other.1.into()))))
+    }
+}
+
 impl From<f64> for Rational {
     /// Convert a floating point number to its exact rational number equivalent.
     /// Use [`Rational::truncate_denominator`] to get an approximation with a smaller denominator.
@@ -1241,19 +1280,19 @@ mod test {
     fn rounding() {
         let r: Rational = (11, 10).into();
         let res = r.round_in_interval((1, 1).into(), (12, 10).into());
-        assert_eq!(res, (1, 1).into());
+        assert_eq!(res, (1, 1));
 
         let r: Rational = (11, 10).into();
         let res = r.round_in_interval((2, 1).into(), (3, 1).into());
-        assert_eq!(res, (2, 1).into());
+        assert_eq!(res, (2, 1));
 
         let r: Rational = (503, 1500).into();
         let res = r.round(&(1, 10).into());
-        assert_eq!(res, (1, 3).into());
+        assert_eq!(res, (1, 3));
 
         let r: Rational = (-503, 1500).into();
         let res = r.round(&(1, 10).into());
-        assert_eq!(res, (-1, 3).into());
+        assert_eq!(res, (-1, 3));
 
         let r = crate::domains::float::Float::from(rug::Float::with_val(
             1000,
@@ -1261,7 +1300,7 @@ mod test {
         ))
         .to_rational();
         let res = r.round(&(1, 100000000).into());
-        assert_eq!(res, (93343, 29712).into());
+        assert_eq!(res, (93343, 29712));
     }
 
     #[test]

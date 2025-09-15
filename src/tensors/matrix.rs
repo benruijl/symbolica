@@ -15,7 +15,7 @@
 //!
 //! let mat = Matrix::from_nested_vec(m, Q).unwrap();
 //! let r = mat.solve_any(&rhs).unwrap();
-//! assert_eq!(r.into_vec(), [4.into(), 0.into(), (-1).into()]);
+//! assert_eq!(r.into_vec(), [4, 0, -1]);
 //! ```
 
 use std::{
@@ -529,7 +529,7 @@ impl Vector<Z> {
         let mut k = 1;
         while k < system.len() {
             for j in (0..k).rev() {
-                if mus[k * system.len() + j].abs() < (1, 2).into() {
+                if mus[k * system.len() + j].abs() < (1, 2) {
                     continue;
                 }
 
@@ -1721,23 +1721,23 @@ mod test {
         assert_eq!(
             a.inv().unwrap().data,
             vec![
-                (-83, 60).into(),
-                (1, 10).into(),
-                (17, 60).into(),
-                (19, 15).into(),
-                (-1, 5).into(),
-                (-1, 15).into(),
-                (-1, 20).into(),
-                (1, 10).into(),
-                (-1, 20).into()
+                (-83, 60),
+                (1, 10),
+                (17, 60),
+                (19, 15),
+                (-1, 5),
+                (-1, 15),
+                (-1, 20),
+                (1, 10),
+                (-1, 20)
             ]
         );
-        assert_eq!(a.det().unwrap(), 60.into());
+        assert_eq!(a.det().unwrap(), 60);
 
         let b = Matrix::from_linear(vec![1.into(), 2.into(), 3.into()], 3, 1, Q).unwrap();
 
         let r = a.solve(&b).unwrap();
-        assert_eq!(r.data, vec![(-1, 3).into(), (2, 3).into(), 0.into()]);
+        assert_eq!(r.data, vec![(-1, 3), (2, 3), (0, 1)]);
     }
 
     #[test]
@@ -1750,7 +1750,7 @@ mod test {
 
         let mat = Matrix::from_nested_vec(m, Q).unwrap();
         let r = mat.solve_any(&rhs).unwrap();
-        assert_eq!(r.data, vec![4.into(), 0.into(), (-1).into()]);
+        assert_eq!(r.data, vec![4, 0, -1]);
     }
 
     #[test]
@@ -1775,20 +1775,7 @@ mod test {
 
         assert_eq!(a.row_reduce(a.ncols() as u32), 2);
 
-        assert_eq!(
-            a.data,
-            vec![
-                1.into(),
-                0.into(),
-                (-1).into(),
-                0.into(),
-                1.into(),
-                2.into(),
-                0.into(),
-                0.into(),
-                0.into()
-            ]
-        );
+        assert_eq!(a.data, vec![1, 0, (-1), 0, 1, 2, 0, 0, 0]);
     }
 
     #[test]
@@ -1803,7 +1790,7 @@ mod test {
         for x in &res {
             for y in &res {
                 if x != y {
-                    assert_eq!(x.dot(y), (0, 1).into());
+                    assert_eq!(x.dot(y), (0, 1));
                 }
             }
         }

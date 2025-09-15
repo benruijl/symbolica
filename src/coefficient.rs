@@ -972,7 +972,7 @@ impl CoefficientView<'_> {
                     )
                 }
             } else {
-                if exp < 0.into() {
+                if exp < 0 {
                     base = base.inv();
                     exp = -exp;
                 }

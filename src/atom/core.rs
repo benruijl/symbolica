@@ -1075,7 +1075,7 @@ pub trait AtomCore {
     /// use symbolica::{atom::AtomCore, parse};
     /// let expr = parse!("x + y");
     /// let canonical_str = expr.to_canonical_string();
-    /// assert_eq!(canonical_str, "symbolica::x+symbolica::y");
+    /// assert_eq!(canonical_str, "symbolica::{}::x+symbolica::{}::y");
     /// ```
     fn to_canonical_string(&self) -> String {
         self.as_atom_view().to_canonical_string()

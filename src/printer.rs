@@ -552,7 +552,7 @@ impl AtomView<'_> {
             AtomView::Num(_) => write!(out, "{}", self.printer(PrintOptions::file())).unwrap(),
             AtomView::Var(v) => v.get_symbol().format(&PrintOptions::full(), out).unwrap(),
             AtomView::Fun(f) => {
-                f.get_symbol().format(&PrintOptions::file(), out).unwrap();
+                f.get_symbol().format(&PrintOptions::full(), out).unwrap();
                 out.push('(');
 
                 let mut args = vec![];
@@ -1490,7 +1490,7 @@ mod test {
         );
         assert_eq!(
             a.to_canonical_string(),
-            "(symbolica::canon_x+symbolica::canon_y)*symbolica::canon_y^2+2*symbolica::canon_x*symbolica::canon_y+symbolica::canon_f(symbolica::canon_x,symbolica::canon_y)+symbolica::canon_x^2"
+            "(symbolica::{}::canon_x+symbolica::{}::canon_y)*symbolica::{}::canon_y^2+2*symbolica::{}::canon_x*symbolica::{}::canon_y+symbolica::{symmetric}::canon_f(symbolica::{}::canon_x,symbolica::{}::canon_y)+symbolica::{}::canon_x^2"
         );
     }
 
@@ -1505,13 +1505,13 @@ mod test {
         let r1 = (function!(f, y, x) + 2).to_canonical_string();
         assert_eq!(
             r1,
-            "-1*symbolica::canon_antisymmetric::f(symbolica::canon_antisymmetric::x,symbolica::canon_antisymmetric::y)+2"
+            "-1*symbolica::canon_antisymmetric::{antisymmetric}::f(symbolica::canon_antisymmetric::{}::x,symbolica::canon_antisymmetric::{}::y)+2"
         );
 
         let r2 = (function!(f_l, function!(f, y, x), x) * 3).to_canonical_string();
         assert_eq!(
             r2,
-            "-3*symbolica::canon_antisymmetric::f_l(symbolica::canon_antisymmetric::f(symbolica::canon_antisymmetric::x,symbolica::canon_antisymmetric::y),symbolica::canon_antisymmetric::x)"
+            "-3*symbolica::canon_antisymmetric::{antisymmetric,linear}::f_l(symbolica::canon_antisymmetric::{antisymmetric}::f(symbolica::canon_antisymmetric::{}::x,symbolica::canon_antisymmetric::{}::y),symbolica::canon_antisymmetric::{}::x)"
         );
     }
 

@@ -874,11 +874,6 @@ impl Symbol {
             }
         }
 
-        let has_attrs = || {
-            let flags = self.encode_flags();
-            self.get_tags().len() > 0 || flags.0 != 0 || flags.1 != 0
-        };
-
         if opts.mode.is_latex() {
             match *self {
                 Symbol::E => f.write_char('e'),
@@ -904,7 +899,7 @@ impl Symbol {
                 if opts.color_namespace {
                     f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
 
-                    if opts.include_attributes && has_attrs() {
+                    if opts.include_attributes {
                         f.write_fmt(format_args!("{}", "::{".dimmed()))?;
                         let mut first = true;
                         for (x, t) in self.get_attributes_tuple_str() {
@@ -934,7 +929,7 @@ impl Symbol {
                 } else {
                     f.write_fmt(format_args!("{namespace}::"))?;
 
-                    if opts.include_attributes && has_attrs() {
+                    if opts.include_attributes {
                         f.write_str("{")?;
                         let mut first = true;
                         for (x, t) in self.get_attributes_tuple_str() {

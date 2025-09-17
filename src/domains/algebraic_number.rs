@@ -152,15 +152,35 @@ where
                     let n = self.element_from_integer(r.re.numerator());
                     let d = self.element_from_integer(r.re.denominator());
                     Ok(self.div(&n, &d))
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().ring.is_one(&self.poly().get_constant())
+                {
+                    let ring = &self.poly().ring;
+                    let re = {
+                        let n = ring.element_from_integer(r.re.numerator());
+                        let d = ring.element_from_integer(r.re.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    let im = {
+                        let n = ring.element_from_integer(r.im.numerator());
+                        let d = ring.element_from_integer(r.im.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    Ok(self
+                        .to_element(self.poly().monomial(re, vec![1]) + self.poly().constant(im)))
                 } else {
-                    // TODO: check if i is a root of the minimal polynomial
-                    Err("Cannot convert complex coefficient to algebraic number".to_string())
+                    Err(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade.".to_string()
+                    )
                 }
             }
             crate::coefficient::Coefficient::Float(_) => {
                 Err("Cannot convert float coefficient to algebraic number".to_string())
             }
             crate::coefficient::Coefficient::FiniteField(_, _) => {
+                // TODO: check if the field is the same? how?
                 Err("Cannot convert finite field coefficient to algebraic number".to_string())
             }
             crate::coefficient::Coefficient::RationalPolynomial(_) => Err(
@@ -174,33 +194,66 @@ where
         number: crate::coefficient::CoefficientView<'_>,
     ) -> Result<Self::Element, String> {
         match number {
-            crate::coefficient::CoefficientView::Natural(n, d, ni, _di) => {
-                if ni != 0 {
-                    return Err(
-                        "Cannot convert complex coefficient to algebraic number".to_string()
-                    );
-                }
+            crate::coefficient::CoefficientView::Natural(r, d, cr, cd) => {
+                if cr == 0 {
+                    let n = self.element_from_integer(r.into());
+                    let d = self.element_from_integer(d.into());
+                    Ok(self.div(&n, &d))
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().ring.is_one(&self.poly().get_constant())
+                {
+                    let ring = &self.poly().ring;
+                    let re = {
+                        let n = ring.element_from_integer(r.into());
+                        let d = ring.element_from_integer(d.into());
+                        ring.div(&n, &d)
+                    };
 
-                let n = self.element_from_integer(n.into());
-                let d = self.element_from_integer(d.into());
-                Ok(self.div(&n, &d))
-            }
-            crate::coefficient::CoefficientView::Large(l, i) => {
-                if !i.is_zero() {
-                    return Err(
-                        "Cannot convert complex coefficient to algebraic number".to_string()
-                    );
+                    let im = {
+                        let n = ring.element_from_integer(cr.into());
+                        let d = ring.element_from_integer(cd.into());
+                        ring.div(&n, &d)
+                    };
+
+                    Ok(self
+                        .to_element(self.poly().monomial(re, vec![1]) + self.poly().constant(im)))
+                } else {
+                    Err(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade.".to_string(),
+                    )
                 }
-                let r: Rational = l.to_rat();
-                let n = self.element_from_integer(r.numerator());
-                let d = self.element_from_integer(r.denominator());
-                Ok(self.div(&n, &d))
             }
-            crate::coefficient::CoefficientView::Indeterminate => {
-                Err("Cannot convert indeterminate to rational".to_string())
-            }
-            crate::coefficient::CoefficientView::Infinity(_) => {
-                Err("Cannot convert infinity to rational".to_string())
+            crate::coefficient::CoefficientView::Large(r, i) => {
+                if i.is_zero() {
+                    let r: Rational = r.to_rat();
+                    let n = self.element_from_integer(r.numerator());
+                    let d = self.element_from_integer(r.denominator());
+                    Ok(self.div(&n, &d))
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().ring.is_one(&self.poly().get_constant())
+                {
+                    let ring = &self.poly().ring;
+                    let re = {
+                        let r = r.to_rat();
+                        let n = ring.element_from_integer(r.numerator());
+                        let d = ring.element_from_integer(r.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    let im = {
+                        let cr = i.to_rat();
+                        let n = ring.element_from_integer(cr.numerator());
+                        let d = ring.element_from_integer(cr.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    Ok(self
+                        .to_element(self.poly().monomial(re, vec![1]) + self.poly().constant(im)))
+                } else {
+                    Err(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade.".to_string(),
+                    )
+                }
             }
             crate::coefficient::CoefficientView::Float(_, _) => {
                 Err("Cannot convert float coefficient to algebraic number".to_string())
@@ -211,6 +264,12 @@ where
             crate::coefficient::CoefficientView::RationalPolynomial(_) => Err(
                 "Cannot convert rational polynomial coefficient to algebraic number".to_string(),
             ),
+            crate::coefficient::CoefficientView::Indeterminate => {
+                Err("Cannot convert indeterminate to algebraic number".to_string())
+            }
+            crate::coefficient::CoefficientView::Infinity(_) => {
+                Err("Cannot convert infinity to algebraic number".to_string())
+            }
         }
     }
 }
@@ -493,6 +552,10 @@ impl<R: Ring> AlgebraicNumber<R> {
 
     pub fn into_poly(self) -> MultivariatePolynomial<R, u16> {
         self.poly
+    }
+
+    pub fn poly(&self) -> &MultivariatePolynomial<R, u16> {
+        &self.poly
     }
 }
 

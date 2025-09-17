@@ -143,15 +143,34 @@ where
                     let n = self.element_from_integer(r.re.numerator());
                     let d = self.element_from_integer(r.re.denominator());
                     self.div(&n, &d)
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().ring.is_one(&self.poly().get_constant())
+                {
+                    let ring = &self.poly().ring;
+                    let re = {
+                        let n = ring.element_from_integer(r.re.numerator());
+                        let d = ring.element_from_integer(r.re.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    let im = {
+                        let n = ring.element_from_integer(r.im.numerator());
+                        let d = ring.element_from_integer(r.im.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    self.to_element(self.poly().monomial(re, vec![1]) + self.poly().constant(im))
                 } else {
-                    // TODO: check if i is a root of the minimal polynomial
-                    panic!("Cannot convert complex coefficient to algebraic number")
+                    panic!(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                    )
                 }
             }
             crate::coefficient::Coefficient::Float(_) => {
                 panic!("Cannot convert float coefficient to algebraic number")
             }
             crate::coefficient::Coefficient::FiniteField(_, _) => {
+                // TODO: check if the field is the same? how?
                 panic!("Cannot convert finite field coefficient to algebraic number")
             }
             crate::coefficient::Coefficient::RationalPolynomial(_) => {
@@ -165,23 +184,64 @@ where
         number: crate::coefficient::CoefficientView<'_>,
     ) -> Self::Element {
         match number {
-            crate::coefficient::CoefficientView::Natural(n, d, ni, _di) => {
-                if ni != 0 {
-                    panic!("Cannot convert complex coefficient to algebraic number")
-                }
+            crate::coefficient::CoefficientView::Natural(r, d, cr, cd) => {
+                if cr == 0 {
+                    let n = self.element_from_integer(r.into());
+                    let d = self.element_from_integer(d.into());
+                    self.div(&n, &d)
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().ring.is_one(&self.poly().get_constant())
+                {
+                    let ring = &self.poly().ring;
+                    let re = {
+                        let n = ring.element_from_integer(r.into());
+                        let d = ring.element_from_integer(d.into());
+                        ring.div(&n, &d)
+                    };
 
-                let n = self.element_from_integer(n.into());
-                let d = self.element_from_integer(d.into());
-                self.div(&n, &d)
-            }
-            crate::coefficient::CoefficientView::Large(l, i) => {
-                if !i.is_zero() {
-                    panic!("Cannot convert complex coefficient to algebraic number")
+                    let im = {
+                        let n = ring.element_from_integer(cr.into());
+                        let d = ring.element_from_integer(cd.into());
+                        ring.div(&n, &d)
+                    };
+
+                    self.to_element(self.poly().monomial(re, vec![1]) + self.poly().constant(im))
+                } else {
+                    panic!(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                    )
                 }
-                let r: Rational = l.to_rat();
-                let n = self.element_from_integer(r.numerator());
-                let d = self.element_from_integer(r.denominator());
-                self.div(&n, &d)
+            }
+            crate::coefficient::CoefficientView::Large(r, i) => {
+                if i.is_zero() {
+                    let r: Rational = r.to_rat();
+                    let n = self.element_from_integer(r.numerator());
+                    let d = self.element_from_integer(r.denominator());
+                    self.div(&n, &d)
+                } else if self.poly().exponents == [0, 2]
+                    && self.poly().ring.is_one(&self.poly().get_constant())
+                {
+                    let ring = &self.poly().ring;
+                    let re = {
+                        let r = r.to_rat();
+                        let n = ring.element_from_integer(r.numerator());
+                        let d = ring.element_from_integer(r.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    let im = {
+                        let cr = i.to_rat();
+                        let n = ring.element_from_integer(cr.numerator());
+                        let d = ring.element_from_integer(cr.denominator());
+                        ring.div(&n, &d)
+                    };
+
+                    self.to_element(self.poly().monomial(re, vec![1]) + self.poly().constant(im))
+                } else {
+                    panic!(
+                        "Cannot directly convert complex number to this extension. First create a polynomial with extension x^2+1 and then upgrade."
+                    )
+                }
             }
             crate::coefficient::CoefficientView::Float(_, _) => {
                 panic!("Cannot convert float coefficient to algebraic number")
@@ -474,6 +534,10 @@ impl<R: Ring> AlgebraicNumber<R> {
 
     pub fn into_poly(self) -> MultivariatePolynomial<R, u16> {
         self.poly
+    }
+
+    pub fn poly(&self) -> &MultivariatePolynomial<R, u16> {
+        &self.poly
     }
 }
 

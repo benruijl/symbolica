@@ -12,6 +12,7 @@ use std::{
 use ahash::HashMap;
 
 use crate::{
+    domains::algebraic_number::AlgebraicExtension,
     poly::{
         GrevLexOrder, LexOrder, PositiveExponent, Variable,
         factor::Factorize,
@@ -271,6 +272,51 @@ impl<R: Ring, E: PositiveExponent> SelfRing for RationalPolynomial<R, E> {
                 f.write_char(')')?;
             }
             Ok(false)
+        }
+    }
+}
+
+impl<F: Field, E: PositiveExponent>
+    FromNumeratorAndDenominator<AlgebraicExtension<F>, AlgebraicExtension<F>, E>
+    for RationalPolynomial<AlgebraicExtension<F>, E>
+where
+    AlgebraicExtension<F>: Field + PolynomialGCD<E>,
+{
+    fn from_num_den(
+        mut num: MultivariatePolynomial<AlgebraicExtension<F>, E>,
+        mut den: MultivariatePolynomial<AlgebraicExtension<F>, E>,
+        field: &AlgebraicExtension<F>,
+        do_gcd: bool,
+    ) -> RationalPolynomial<AlgebraicExtension<F>, E> {
+        num.unify_variables(&mut den);
+
+        if den.is_one() {
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
+        } else {
+            if do_gcd {
+                let gcd = num.gcd(&den);
+
+                if !gcd.is_one() {
+                    num = num / &gcd;
+                    den = den / &gcd;
+                }
+            }
+
+            // normalize denominator to have positive leading coefficient
+            let d = den.lcoeff();
+            if !field.is_one(&d) {
+                let c = field.inv(&d);
+                num = num.mul_coeff(c.clone());
+                den = den.mul_coeff(c);
+            }
+
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
         }
     }
 }

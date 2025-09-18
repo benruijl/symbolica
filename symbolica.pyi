@@ -336,6 +336,17 @@ class PrintMode(Enum):
     """Print using Sympy notation."""
 
 
+class LogMode(Enum):
+    """Specifies the logging mode."""
+
+    Silent = 1
+    """No logging."""
+    Print = 2
+    """Print to standard output."""
+    Log = 3
+    """Log using `logging`."""
+
+
 class Expression:
     """
     A Symbolica expression.
@@ -1913,7 +1924,7 @@ class Expression:
         params: Sequence[Expression],
         iterations: int = 100,
         n_cores: int = 4,
-        verbose: bool = False,
+        verbose: LogMode = LogMode.Silent,
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[
             Sequence[float | complex]], float | complex]]] = None,
     ) -> Evaluator:
@@ -1962,8 +1973,8 @@ class Expression:
             The number of optimization iterations to perform.
         n_cores: int, optional
             The number of cores to use for the optimization.
-        verbose: bool, optional
-            If set to `True`, print the progress of the optimization.
+        verbose: LogMode, optional
+            Print the progress of the optimization.
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[Sequence[float | complex]], float | complex]]]
             A dictionary of external functions that can be called during evaluation.
             The key is the function name and the value is a callable that takes a list of arguments and returns a float.
@@ -1979,7 +1990,7 @@ class Expression:
         params: Sequence[Expression],
         iterations: int = 100,
         n_cores: int = 4,
-        verbose: bool = False,
+        verbose: LogMode = LogMode.Silent,
     ) -> Evaluator:
         """Create an evaluator that can jointly evaluate (nested) expressions in an optimized fashion.
         See `Expression.evaluator()` for more information.

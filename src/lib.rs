@@ -80,6 +80,64 @@ static LICENSE_KEY: OnceCell<String> = OnceCell::new();
 static LICENSE_MANAGER: OnceCell<LicenseManager> = OnceCell::new();
 static LICENSED: AtomicBool = LicenseManager::init();
 
+/// Set whether a default tracing subscriber is initialized upon the first call to a logging macro.
+pub static INITIALIZE_TRACING: AtomicBool = AtomicBool::new(true);
+
+/// Write an error messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::builder()
+                            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                            .from_env_lossy(),
+                    )
+                    .try_init();
+            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        tracing::error!($($arg)*);
+   };
+}
+
+/// Write warning messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::builder()
+                            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                            .from_env_lossy(),
+                    )
+                    .try_init();
+            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        tracing::warn!($($arg)*);
+    };
+}
+
+/// Write info messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::builder()
+                            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                            .from_env_lossy(),
+                    )
+                    .try_init();
+            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        tracing::info!($($arg)*);
+    };
+}
+
 /// Manage the license of the Symbolica instance.
 #[allow(dead_code)]
 pub struct LicenseManager {

@@ -13,7 +13,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
-use tracing::info;
 
 use crate::{
     LicenseManager,
@@ -30,6 +29,7 @@ use crate::{
         rational::Rational,
     },
     id::ConditionResult,
+    info,
     numerical_integration::MonteCarloRng,
     state::State,
     utils::AbortCheck,
@@ -4343,10 +4343,6 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                     "Removed {} common pairs: {} + and {} ×",
                     r, add_count, mul_count
                 );
-                println!(
-                    "Removed {} common pairs: {} + and {} ×",
-                    r, add_count, mul_count
-                );
             }
         }
 
@@ -4927,10 +4923,6 @@ impl Expression<Complex<Rational>> {
                 "Initial ops: {} additions and {} multiplications",
                 best_ops.0, best_ops.1
             );
-            println!(
-                "Initial ops: {} additions and {} multiplications",
-                best_ops.0, best_ops.1
-            );
         }
 
         let best_mul = Arc::new(AtomicUsize::new(best_ops.1));
@@ -4980,11 +4972,6 @@ impl Expression<Complex<Rational>> {
 
                                     if settings.verbose {
                                         info!(
-                                            "Aborting Horner optimization at step {}/{}.",
-                                            j,
-                                            settings.horner_iterations / n_cores
-                                        );
-                                        println!(
                                             "Aborting Horner optimization at step {}/{}.",
                                             j,
                                             settings.horner_iterations / n_cores
@@ -5040,13 +5027,6 @@ impl Expression<Complex<Rational>> {
                                     cur_ops.0,
                                     cur_ops.1
                                 );
-                                println!(
-                                    "Accept move at step {}/{}: {} + and {} ×",
-                                    j,
-                                    settings.horner_iterations / n_cores,
-                                    cur_ops.0,
-                                    cur_ops.1
-                                );
                             }
 
                             last_add = cur_ops.0;
@@ -5095,11 +5075,6 @@ impl Expression<Complex<Rational>> {
 
         if settings.verbose {
             info!(
-                "Final scheme: {} + and {} ×",
-                best_add.load(Ordering::Relaxed),
-                best_mul.load(Ordering::Relaxed)
-            );
-            println!(
                 "Final scheme: {} + and {} ×",
                 best_add.load(Ordering::Relaxed),
                 best_mul.load(Ordering::Relaxed)

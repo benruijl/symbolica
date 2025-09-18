@@ -4,6 +4,24 @@ use std::ops::Deref;
 
 use dyn_clone::DynClone;
 
+/// The specific logging mode used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogMode {
+    None,
+    /// Print the messages to the screen.
+    Print,
+    /// Use the `log` crate to log messages.
+    Log,
+    /// Use the `tracing` crate to log messages.
+    Trace,
+}
+
+impl Default for LogMode {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 /// An enum that contains either an owned value of type `T` or a reference to a value of type `T`.
 ///
 /// Use `Into<BorrowedOrOwned<'b, T>>>` to a accept both owned and borrowed values as arguments.

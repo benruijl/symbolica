@@ -26,7 +26,6 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
 };
-use tracing::info;
 
 use crate::{
     combinatorics::{CombinationIterator, unique_permutations},
@@ -1482,12 +1481,6 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                         // at every level we stabilize the first vertex
                         if node.left_node {
                             if verbose {
-                                info!(
-                                    "Level={}, group size={}, orbit num={}",
-                                    stack.len(),
-                                    node.children_visited_equal_to_first,
-                                    orbit.iter().enumerate().filter(|(i, x)| *i == **x).count()
-                                );
                                 println!(
                                     "Level={}, group size={}, orbit num={}",
                                     stack.len(),
@@ -1495,6 +1488,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                                     orbit.iter().enumerate().filter(|(i, x)| *i == **x).count()
                                 );
                             }
+
                             automorphism_group_len *= node.children_visited_equal_to_first as u64;
                         }
 

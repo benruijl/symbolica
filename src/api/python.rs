@@ -14,8 +14,8 @@ use numpy::{
     ndarray::{ArrayD, Axis},
 };
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyObject, PyRef,
-    PyResult, PyTypeInfo, Python,
+    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyRef, PyResult,
+    PyTypeInfo, Python,
     exceptions::{self, PyIndexError},
     pybacked::PyBackedStr,
     pyclass::CompareOp,
@@ -267,6 +267,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
     m.add_function(wrap_pyfunction!(get_license_key, m)?)?;
+    m.add_function(wrap_pyfunction!(use_custom_logger, m)?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
@@ -289,7 +290,18 @@ pub fn create_symbolica_module<'a, 'b>(
 #[cfg(feature = "python_api")]
 #[pymodule]
 fn symbolica(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    pyo3_log::init();
     create_symbolica_module(m).map(|_| ())
+}
+
+/// Enable logging using Python's logging module instead of using the default logging.
+/// This is useful when using Symbolica in a Jupyter notebook or other environments
+/// where stdout is not easily accessible.
+///
+/// This function must be called before any Symbolica logging events are emitted.
+#[pyfunction()]
+fn use_custom_logger() {
+    crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Get the current Symbolica version.
@@ -364,10 +376,10 @@ fn symbol_shorthand(
     is_positive: Option<bool>,
     tags: Option<Vec<String>>,
     custom_normalization: Option<PythonTransformer>,
-    custom_print: Option<PyObject>,
-    custom_derivative: Option<PyObject>,
+    custom_print: Option<Py<PyAny>>,
+    custom_derivative: Option<Py<PyAny>>,
     py: Python<'_>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     PythonExpression::symbol(
         &PythonExpression::type_object(py),
         py,
@@ -407,7 +419,7 @@ fn symbol_shorthand(
 /// 1.2340e-1
 #[pyfunction(name = "N", signature = (num,relative_error=None))]
 fn number_shorthand(
-    num: PyObject,
+    num: Py<PyAny>,
     relative_error: Option<f64>,
     py: Python<'_>,
 ) -> PyResult<PythonExpression> {
@@ -628,7 +640,7 @@ impl ConvertibleToOpenPattern {
 #[derive(FromPyObject)]
 pub enum ConvertibleToReplaceWith {
     Pattern(ConvertibleToPattern),
-    Map(PyObject),
+    Map(Py<PyAny>),
 }
 
 #[cfg(feature = "python_stubgen")]
@@ -905,14 +917,14 @@ impl PythonHeldExpression {
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonHeldExpression> {
+    pub fn __xor__(&self, _rhs: Py<PyAny>) -> PyResult<PythonHeldExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonHeldExpression> {
+    pub fn __rxor__(&self, _rhs: Py<PyAny>) -> PyResult<PythonHeldExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
@@ -1396,7 +1408,7 @@ impl PythonTransformer {
     /// >>> f = S('f')
     /// >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
-    pub fn map(&self, f: PyObject) -> PyResult<PythonTransformer> {
+    pub fn map(&self, f: Py<PyAny>) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, _state, out| {
             let expr = PythonExpression {
                 expr: expr.to_owned(),
@@ -2276,7 +2288,7 @@ impl PythonPatternRestriction {
     #[classmethod]
     pub fn req_matches(
         _cls: &Bound<'_, PyType>,
-        match_fn: PyObject,
+        match_fn: Py<PyAny>,
     ) -> PyResult<PythonPatternRestriction> {
         Ok(PythonPatternRestriction {
             condition: PatternRestriction::MatchStack(Box::new(move |m| {
@@ -2951,9 +2963,9 @@ impl PythonExpression {
         is_positive: Option<bool>,
         tags: Option<Vec<String>>,
         custom_normalization: Option<PythonTransformer>,
-        custom_print: Option<PyObject>,
-        custom_derivative: Option<PyObject>,
-    ) -> PyResult<PyObject> {
+        custom_print: Option<Py<PyAny>>,
+        custom_derivative: Option<Py<PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
         if names.is_empty() {
             return Err(exceptions::PyValueError::new_err(
                 "At least one name must be provided",
@@ -3201,7 +3213,7 @@ impl PythonExpression {
     pub fn num(
         _cls: &Bound<'_, PyType>,
         py: Python,
-        num: PyObject,
+        num: Py<PyAny>,
         relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
@@ -3581,7 +3593,7 @@ impl PythonExpression {
     pub fn load(
         _cls: &Bound<'_, PyType>,
         filename: &str,
-        conflict_fn: Option<PyObject>,
+        conflict_fn: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let f = File::open(filename)
             .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))?;
@@ -3801,14 +3813,14 @@ impl PythonExpression {
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
+    pub fn __xor__(&self, _rhs: Py<PyAny>) -> PyResult<PythonExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
+    pub fn __rxor__(&self, _rhs: Py<PyAny>) -> PyResult<PythonExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
@@ -3839,7 +3851,7 @@ impl PythonExpression {
     /// >>> print(e)
     /// f(3,x)
     #[pyo3(signature = (*args,))]
-    pub fn __call__(&self, args: &Bound<'_, PyTuple>, py: Python) -> PyResult<PyObject> {
+    pub fn __call__(&self, args: &Bound<'_, PyTuple>, py: Python) -> PyResult<Py<PyAny>> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => v.get_symbol(),
             _ => {
@@ -4376,7 +4388,7 @@ impl PythonExpression {
     /// >>> f = S("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
-    pub fn req(&self, filter_fn: PyObject) -> PyResult<PythonPatternRestriction> {
+    pub fn req(&self, filter_fn: Py<PyAny>) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_symbol();
@@ -4518,7 +4530,7 @@ impl PythonExpression {
     pub fn req_cmp(
         &self,
         other: PythonExpression,
-        cmp_fn: PyObject,
+        cmp_fn: Py<PyAny>,
     ) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
@@ -4754,8 +4766,8 @@ impl PythonExpression {
     pub fn collect(
         &self,
         x: &Bound<'_, PyTuple>,
-        key_map: Option<PyObject>,
-        coeff_map: Option<PyObject>,
+        key_map: Option<Py<PyAny>>,
+        coeff_map: Option<Py<PyAny>>,
     ) -> PyResult<PythonExpression> {
         if x.is_empty() {
             return Err(exceptions::PyValueError::new_err(
@@ -4849,8 +4861,8 @@ impl PythonExpression {
     pub fn collect_symbol(
         &self,
         x: PythonExpression,
-        key_map: Option<PyObject>,
-        coeff_map: Option<PyObject>,
+        key_map: Option<Py<PyAny>>,
+        coeff_map: Option<Py<PyAny>>,
     ) -> PyResult<PythonExpression> {
         let Some(x) = x.expr.get_symbol() else {
             return Err(exceptions::PyValueError::new_err(
@@ -5168,7 +5180,7 @@ impl PythonExpression {
         minimal_poly: Option<PythonExpression>,
         vars: Option<Vec<PythonExpression>>,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
@@ -5718,7 +5730,7 @@ impl PythonExpression {
         prec: f64,
         max_iterations: usize,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let id = if let AtomView::Var(x) = variable.expr.as_view() {
             x.get_symbol()
         } else {
@@ -5773,7 +5785,7 @@ impl PythonExpression {
         prec: f64,
         max_iterations: usize,
         py: Python,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let system: Vec<_> = system.into_iter().map(|x| x.to_expression()).collect();
         let system_b: Vec<_> = system.iter().map(|x| x.expr.as_view()).collect();
 
@@ -5831,7 +5843,7 @@ impl PythonExpression {
     pub fn evaluate(
         &self,
         constants: HashMap<PythonExpression, f64>,
-        functions: HashMap<Variable, PyObject>,
+        functions: HashMap<Variable, Py<PyAny>>,
     ) -> PyResult<f64> {
         let constants = constants
             .iter()
@@ -5887,10 +5899,10 @@ impl PythonExpression {
     pub fn evaluate_with_prec(
         &self,
         constants: HashMap<PythonExpression, PythonMultiPrecisionFloat>,
-        functions: HashMap<Variable, PyObject>,
+        functions: HashMap<Variable, Py<PyAny>>,
         decimal_digit_precision: u32,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
 
         let constants: HashMap<AtomView, Float> = constants
@@ -5968,7 +5980,7 @@ impl PythonExpression {
         &self,
         py: Python<'py>,
         constants: HashMap<PythonExpression, Complex<f64>>,
-        functions: HashMap<Variable, PyObject>,
+        functions: HashMap<Variable, Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyComplex>> {
         let constants = constants
             .iter()
@@ -6053,7 +6065,7 @@ impl PythonExpression {
         iterations: usize,
         n_cores: usize,
         verbose: bool,
-        external_functions: Option<HashMap<(Variable, String), PyObject>>,
+        external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
         py: Python<'_>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
@@ -6109,7 +6121,7 @@ impl PythonExpression {
         let settings = OptimizationSettings {
             horner_iterations: iterations,
             n_cores,
-            verbose,
+            verbose: verbose.into(),
             abort_check: Some(abort_check),
             ..OptimizationSettings::default()
         };
@@ -6231,7 +6243,7 @@ impl PythonExpression {
         iterations: usize,
         n_cores: usize,
         verbose: bool,
-        external_functions: Option<HashMap<(Variable, String), PyObject>>,
+        external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
@@ -6280,7 +6292,7 @@ impl PythonExpression {
         let settings = OptimizationSettings {
             horner_iterations: iterations,
             n_cores,
-            verbose,
+            verbose: verbose.into(),
             ..OptimizationSettings::default()
         };
 
@@ -6877,7 +6889,7 @@ impl PythonTermStreamer {
     /// A term stream can be exported using `TermStreamer.save`.
 
     #[pyo3(signature = (filename, conflict_fn=None))]
-    pub fn load(&mut self, filename: &str, conflict_fn: Option<PyObject>) -> PyResult<u64> {
+    pub fn load(&mut self, filename: &str, conflict_fn: Option<Py<PyAny>>) -> PyResult<u64> {
         let f = File::open(filename)
             .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {e}")))?;
         let reader = brotli::Decompressor::new(BufReader::new(f), 4096);
@@ -13296,7 +13308,7 @@ impl PythonExpressionEvaluator {
         cuda_number_of_evaluations: usize,
         cuda_block_size: usize,
         py: Python<'_>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut options = match number_type {
             "real" | "complex" => CompileOptions {
                 optimization_level: optimization_level as usize,
@@ -14088,7 +14100,7 @@ impl PythonMatrix {
     }
 
     /// Apply a function `f` to every entry of the matrix.
-    pub fn map(&self, f: PyObject) -> PyResult<PythonMatrix> {
+    pub fn map(&self, f: Py<PyAny>) -> PyResult<PythonMatrix> {
         let data = self
             .matrix
             .data
@@ -14287,14 +14299,14 @@ impl PythonMatrix {
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonMatrix> {
+    pub fn __xor__(&self, _rhs: Py<PyAny>) -> PyResult<PythonMatrix> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor a matrix. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonMatrix> {
+    pub fn __rxor__(&self, _rhs: Py<PyAny>) -> PyResult<PythonMatrix> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor a matrix. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
@@ -14659,7 +14671,7 @@ impl PythonNumericalIntegrator {
     pub fn integrate(
         &mut self,
         py: Python,
-        integrand: PyObject,
+        integrand: Py<PyAny>,
         max_n_iter: usize,
         min_error: f64,
         n_samples_per_iter: usize,
@@ -14835,7 +14847,7 @@ impl PythonGraph {
         max_bridges: Option<usize>,
         allow_self_loops: Option<bool>,
         allow_zero_flow_edges: Option<bool>,
-        filter_fn: Option<PyObject>,
+        filter_fn: Option<Py<PyAny>>,
     ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
         if max_vertices.is_none() && max_loops.is_none() {
             return Err(exceptions::PyValueError::new_err(

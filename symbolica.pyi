@@ -22,6 +22,15 @@ import numpy as np
 import numpy.typing as npt
 
 
+def use_custom_logger() -> None:
+    """Enable logging using Python's logging module instead of using the default logging.
+    This is useful when using Symbolica in a Jupyter notebook or other environments
+    where stdout is not easily accessible.
+
+    This function must be called before any Symbolica logging events are emitted.
+    """
+
+
 def get_version() -> str:
     """Get the current Symbolica version."""
 
@@ -1963,7 +1972,7 @@ class Expression:
         n_cores: int, optional
             The number of cores to use for the optimization.
         verbose: bool, optional
-            If set to `True`, print the progress of the optimization.
+            Print the progress of the optimization.
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[Sequence[float | complex]], float | complex]]]
             A dictionary of external functions that can be called during evaluation.
             The key is the function name and the value is a callable that takes a list of arguments and returns a float.

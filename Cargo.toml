@@ -25,7 +25,7 @@ crate-type = ["lib"]
 name = "symbolica"
 
 [features]
-default = ["tracing_only_warnings"]
+default = ["tracing_max_level_info"]
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]
@@ -33,14 +33,20 @@ faster_alloc = ["tikv-jemallocator"]
 full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
 # create a Python module
-python_api = ["pyo3/extension-module", "numpy", "bincode"]
+python_api = [
+    "pyo3/extension-module",
+    "numpy",
+    "bincode",
+    "pyo3-log",
+    "tracing/log",
+]
 # export the Python API
 python_export = ["pyo3", "numpy", "bincode", "pyo3-stub-gen"]
 # generate stubs for Python API
 python_stubgen = ["python_export"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
-tracing_only_warnings = ["tracing/release_max_level_warn"]
+tracing_max_level_info = ["tracing/release_max_level_info"]
 # import/export objects that do not depend on the state using serde
 serde = ["dep:serde", "rug/serde"]
 # allow importing/exporting of atoms with a state map using bincode
@@ -51,9 +57,6 @@ experimental_poly_gcd = []
 features = ["abi3", "py-clone", "num-complex"]
 optional = true
 version = "0.25"
-
-[dev-dependencies]
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dependencies]
 ahash = "0.8.7"
@@ -84,3 +87,5 @@ tracing = "0.1"
 wide = "0.7"
 wolfram-library-link = { version = "0.2.9", optional = true }
 bincode-trait-derive = { version = "0.1.0", optional = true }
+pyo3-log = { version = "0.12", optional = true }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

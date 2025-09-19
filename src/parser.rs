@@ -170,6 +170,7 @@ pub struct Position {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     Number(SmartString<LazyCompact>, bool),
+    SpecialNumber(char),
     ID(SmartString<LazyCompact>),
     RationalPolynomial(SmartString<LazyCompact>),
     Op(bool, bool, Operator, Vec<Token>),
@@ -184,7 +185,7 @@ pub enum Token {
 impl Token {
     const OPS: [char; 11] = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
     const WHITESPACE: [char; 5] = [' ', '\t', '\n', '\r', '\\'];
-    const FORBIDDEN: [char; 6] = [';', '&', '!', '%', '.', '"'];
+    const FORBIDDEN: [char; 9] = [';', '&', '!', '%', '.', '"', '¿', '⧞', '∞'];
 }
 
 impl std::fmt::Display for Token {
@@ -198,6 +199,7 @@ impl std::fmt::Display for Token {
                     f.write_str(n)
                 }
             }
+            Token::SpecialNumber(c) => f.write_char(*c),
             Token::ID(v) => f.write_str(v),
             Token::RationalPolynomial(v) => {
                 f.write_char('[')?;
@@ -284,6 +286,7 @@ impl Token {
     fn is_normal(&self) -> bool {
         match self {
             Token::Number(_, _) => true,
+            Token::SpecialNumber(_) => true,
             Token::ID(_) => true,
             Token::RationalPolynomial(_) => true,
             Token::Op(more_left, more_right, _, _) => !more_left && !more_right,
@@ -297,6 +300,7 @@ impl Token {
     fn get_precedence(&self) -> u8 {
         match self {
             Token::Number(_, _) => 11,
+            Token::SpecialNumber(_) => 11,
             Token::ID(_) => 11,
             Token::RationalPolynomial(_) => 11,
             Token::Op(_, _, o, _) => o.get_precedence(),
@@ -455,6 +459,18 @@ impl Token {
         out: &mut Atom,
     ) -> Result<(), String> {
         match self {
+            Token::SpecialNumber(c) => match c {
+                '¿' => {
+                    out.to_num(Coefficient::Indeterminate);
+                }
+                '⧞' => {
+                    out.to_num(Coefficient::Infinity(None));
+                }
+                '∞' => {
+                    out.to_num(Coefficient::Infinity(Some(Rational::one().into())));
+                }
+                _ => unreachable!(),
+            },
             Token::Number(n, is_imag) => match n.parse::<Integer>() {
                 Ok(x) => {
                     if *is_imag {
@@ -1026,6 +1042,9 @@ impl Token {
                         }
                     }
                     ']' => stack.push(Token::CloseBracket),
+                    '¿' | '⧞' | '∞' => {
+                        stack.push(Token::SpecialNumber(c));
+                    }
                     _ => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal()
                             && (!c.is_ascii_digit()
@@ -1481,6 +1500,15 @@ mod test {
             vec![SymbolAttribute::Symmetric, SymbolAttribute::Linear,]
         );
         assert_eq!(s.get_tags(), vec!["test::a"]);
+    }
+
+    #[test]
+    fn infinity() {
+        let input = parse!("∞ + 5 - ¿ + 3*⧞ - ∞");
+        assert_eq!(
+            format!("{}", input.printer(PrintOptions::file_no_namespace())),
+            "¿"
+        );
     }
 
     #[test]

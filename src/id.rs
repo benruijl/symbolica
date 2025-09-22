@@ -26,7 +26,7 @@ use crate::{
         Atom, AtomCore, AtomType, AtomView, Num, SliceType, Symbol,
         representation::{InlineVar, ListSlice},
     },
-    coefficient::CoefficientView,
+    coefficient::{Coefficient, CoefficientView},
     domains::{float::Complex, rational::Rational},
     state::{RecycledAtom, Workspace},
     transformer::{Transformer, TransformerError},
@@ -96,6 +96,12 @@ impl<T: Clone + Send + Sync + Fn(&MatchStack) -> Atom> MatchMap for T {}
 pub enum ReplaceWith<'a> {
     Pattern(BorrowedOrOwned<'a, Pattern>),
     Map(Box<dyn MatchMap>),
+}
+
+impl<T: Into<Coefficient>> From<T> for ReplaceWith<'_> {
+    fn from(val: T) -> Self {
+        ReplaceWith::Pattern(BorrowedOrOwned::Owned(Atom::num(val.into()).into()))
+    }
 }
 
 impl From<Atom> for ReplaceWith<'_> {
@@ -447,6 +453,12 @@ impl From<Symbol> for BorrowedOrOwned<'_, Pattern> {
     }
 }
 
+impl<T: Into<Coefficient>> From<T> for BorrowedOrOwned<'_, Pattern> {
+    fn from(val: T) -> Self {
+        Atom::num(val.into()).to_pattern().into()
+    }
+}
+
 /// The context of an atom.
 #[derive(Clone, Copy, Debug)]
 pub struct Context {
@@ -506,6 +518,23 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(m) => m.iter().all(|child| child.is_real()),
             AtomView::Add(a) => a.iter().all(|child| child.is_real()),
         }
+    }
+
+    /// Test if the attributes and tags of `s` are shared by `self`.
+    pub fn has_attributes_of(&self, s: Symbol) -> bool {
+        if let Some(ss) = self.get_symbol() {
+            return ss.has_attributes_of(s);
+        }
+
+        !s.is_antisymmetric()
+            && !s.is_symmetric()
+            && !s.is_cyclesymmetric()
+            && !s.is_linear()
+            && s.get_tags().is_empty()
+            && (!s.is_positive() || self.is_positive())
+            && (!s.is_integer() || self.is_integer())
+            && (!s.is_real() || self.is_real())
+            && (!s.is_scalar() || self.is_scalar())
     }
 
     /// Returns true iff an expression only consists of real numbers and symbols with the `Real` attribute.
@@ -1664,11 +1693,12 @@ impl Pattern {
     fn could_match(&self, target: AtomView) -> bool {
         match (self, target) {
             (Pattern::Fn(f1, _), AtomView::Fun(f2)) => {
-                f1.get_wildcard_level() > 0 || *f1 == f2.get_symbol()
+                f1.get_wildcard_level() > 0 && target.has_attributes_of(*f1)
+                    || *f1 == f2.get_symbol()
             }
             (Pattern::Mul(_), AtomView::Mul(_)) => true,
             (Pattern::Add(_), AtomView::Add(_)) => true,
-            (Pattern::Wildcard(_), _) => true,
+            (Pattern::Wildcard(w), x) => x.has_attributes_of(*w),
             (Pattern::Pow(_), AtomView::Pow(_)) => true,
             (Pattern::Literal(p), _) => p.as_view() == target,
             (Pattern::Transformer(_), _) => panic!("Pattern is a transformer"),
@@ -3200,6 +3230,27 @@ impl<'a, 'b> WrappedMatchStack<'a, 'b> {
             }
         }
 
+        // check if all attributes of the wildcard are shared by the matched value
+        match &value {
+            Match::Single(s) => {
+                if !s.has_attributes_of(key) {
+                    return None;
+                }
+            }
+            Match::Multiple(_, list) => {
+                for s in list {
+                    if !s.has_attributes_of(key) {
+                        return None;
+                    }
+                }
+            }
+            Match::FunctionName(n) => {
+                if !n.has_attributes_of(key) {
+                    return None;
+                }
+            }
+        }
+
         // test whether the current value passes all conditions
         // or returns an inconclusive result
         self.stack.stack.push((key, value));
@@ -4646,30 +4697,30 @@ mod test {
         let expr = parse!("fc1(1,2,3)");
         let p = parse!("fc1(v1__,v1_,1)");
         let expr = expr.replace(p).with(&rhs);
-        assert_eq!(expr, Atom::num(1));
+        assert_eq!(expr, 1);
 
         // multiple wildcard wrap
         let expr = parse!("fc1(1,2,3)");
         let p = parse!("fc1(v1__,2)");
         let expr = expr.replace(p).with(&rhs);
-        assert_eq!(expr, Atom::num(1));
+        assert_eq!(expr, 1);
 
         // wildcard wrap
         let expr = parse!("fc1(1,2,3)");
         let p = parse!("fc1(v1__,v1_,2)");
         let expr = expr.replace(p).with(&rhs);
-        assert_eq!(expr, Atom::num(1));
+        assert_eq!(expr, 1);
 
         let expr = parse!("fc1(v1,4,3,5,4)");
         let p = parse!("fc1(v1__,v1_,v2_,v1_)");
         let expr = expr.replace(p).with(&rhs);
-        assert_eq!(expr, Atom::num(1));
+        assert_eq!(expr, 1);
 
         // function shift
         let expr = parse!("fc1(f1(1),f1(2),f1(3))");
         let p = parse!("fc1(f1(v1_),f1(2),f1(3))");
         let expr = expr.replace(p).with(&rhs);
-        assert_eq!(expr, Atom::num(1));
+        assert_eq!(expr, 1);
     }
 
     #[test]
@@ -4681,5 +4732,28 @@ mod test {
         let e = parse!("(1+v5)^(3/2) / v6 + (1+v3)*(1+v4)^v7 + (v1+v2)^3");
         let vars = e.as_view().is_polynomial(false, false).unwrap();
         assert_eq!(vars.len(), 5);
+    }
+
+    #[test]
+    fn symbol_attribute_filter() {
+        let _ = symbol!("symbolica::symbol_attribute_filter::fsym"; Symmetric);
+        let _ = symbol!("symbolica::symbol_attribute_filter::fsym_"; Symmetric);
+        let _ = symbol!("symbolica::symbol_attribute_filter::xscal"; Scalar);
+        let _ = symbol!("symbolica::symbol_attribute_filter::xscal__"; Scalar);
+
+        let r = parse!("f(1)")
+            .replace(parse!("symbolica::symbol_attribute_filter::fsym_(x_)"))
+            .with(1);
+        assert_ne!(r, 1);
+
+        let r = parse!("symbolica::symbol_attribute_filter::fsym(1,symbolica::symbol_attribute_filter::xscal^2 + 2,3)")
+            .replace(parse!("symbolica::symbol_attribute_filter::fsym_(symbolica::symbol_attribute_filter::xscal__)"))
+            .with(1);
+        assert_eq!(r, 1);
+
+        let r = parse!("f(1,x,2)")
+            .replace(parse!("f(symbolica::symbol_attribute_filter::xscal__)"))
+            .with(1);
+        assert_eq!(r, parse!("f(1,x,2)"));
     }
 }

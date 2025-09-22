@@ -785,6 +785,32 @@ impl Symbol {
         attrs
     }
 
+    /// Test `self` has all the attributes and tags of `s`.
+    ///
+    /// # Example
+    /// ```rust
+    /// use symbolica::{atom::AtomCore, symbol, tag};
+    /// let a = symbol!("symbolica::attr::x"; Linear, Antisymmetric; tags = [tag!("mytag"), "python::test2".to_string()]);
+    /// let b = symbol!("symbolica::attr::y"; Linear; tags = [tag!("mytag")]);
+    /// assert!(a.has_attributes_of(b));
+    /// ```
+    pub fn has_attributes_of(&self, s: Symbol) -> bool {
+        for t in s.get_tags() {
+            if !self.has_tag(t) {
+                return false;
+            }
+        }
+
+        (!s.is_antisymmetric() || self.is_antisymmetric())
+            && (!s.is_symmetric() || self.is_symmetric())
+            && (!s.is_cyclesymmetric() || self.is_cyclesymmetric())
+            && (!s.is_linear() || self.is_linear())
+            && (!s.is_positive() || self.is_positive())
+            && (!s.is_integer() || self.is_integer())
+            && (!s.is_real() || self.is_real())
+            && (!s.is_scalar() || self.is_scalar())
+    }
+
     /// Expert use: create a new variable symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
     pub const fn raw_var(id: u32, wildcard_level: u8) -> Self {

@@ -285,7 +285,7 @@ impl SelfRing for Complex<Float> {
             state.in_sum = false;
         }
 
-        if !re_zero {
+        if !re_zero || im_zero {
             self.re.format(opts, state, f)?;
         }
 

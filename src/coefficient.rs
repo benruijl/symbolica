@@ -566,7 +566,7 @@ impl SerializedFloat<'_> {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.0.is_empty()
+        self.to_float().is_zero()
     }
 }
 
@@ -898,6 +898,32 @@ impl CoefficientView<'_> {
             CoefficientView::FiniteField(num, field) => Coefficient::FiniteField(*num, *field),
             CoefficientView::RationalPolynomial(p) => {
                 Coefficient::RationalPolynomial(p.deserialize())
+            }
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            CoefficientView::Natural(n, _, ni, _) => *n == 0 && *ni == 0,
+            CoefficientView::Large(r, i) => r.is_zero() && i.is_zero(),
+            CoefficientView::Float(r, i) => r.is_zero() && i.is_zero(),
+            CoefficientView::FiniteField(num, _) => num.0 == 0,
+            CoefficientView::RationalPolynomial(p) => p.deserialize().is_zero(),
+        }
+    }
+
+    pub fn is_one(&self) -> bool {
+        match self {
+            CoefficientView::Natural(n, d, ni, di) => *n == *d && *ni == 0 && *di == 1,
+            CoefficientView::Large(r, i) => i.is_zero() && r.to_rat().is_one(),
+            CoefficientView::Float(r, i) => i.is_zero() && r.to_float().is_one(),
+            CoefficientView::FiniteField(num, field) => {
+                let f = State::get_finite_field(*field);
+                f.is_one(num)
+            }
+            CoefficientView::RationalPolynomial(p) => {
+                let r = p.deserialize();
+                r.numerator.is_one() && r.denominator.is_one()
             }
         }
     }

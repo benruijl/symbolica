@@ -324,6 +324,7 @@ pub trait PackedRationalNumberReader {
     fn get_frac_u64(&self) -> (u64, u64, &[u8]);
     fn get_frac_i64(&self) -> (i64, i64, &[u8]);
     fn skip_rational(&self) -> &[u8];
+    fn is_small_int(&self) -> bool;
     fn is_zero_rat(&self) -> bool;
     fn is_one_rat(&self) -> bool;
 }
@@ -663,14 +664,19 @@ impl PackedRationalNumberReader for [u8] {
     }
 
     #[inline(always)]
+    fn is_small_int(&self) -> bool {
+        (self[1] | SIGN) == (U8_NUM | SIGN)
+    }
+
+    #[inline(always)]
     fn is_zero_rat(&self) -> bool {
         // TODO: make a zero have no number at all (i.e., self[1] = 0)
-        self[1] == 1 && self[2] == 0
+        self[1] == U8_NUM && self[2] == 0
     }
 
     #[inline(always)]
     fn is_one_rat(&self) -> bool {
-        self[1] == 1 && self[2] == 1
+        self[1] == U8_NUM && self[2] == 1
     }
 }
 

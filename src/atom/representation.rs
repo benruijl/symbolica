@@ -1327,12 +1327,20 @@ impl<'a> NumView<'a> {
 
     #[inline]
     pub fn is_zero(&self) -> bool {
-        self.data.is_zero_rat()
+        if self.data.is_small_int() {
+            self.data.is_zero_rat()
+        } else {
+            self.get_coeff_view().is_zero()
+        }
     }
 
     #[inline]
     pub fn is_one(&self) -> bool {
-        self.data.is_one_rat()
+        if self.data.is_small_int() {
+            self.data.is_one_rat()
+        } else {
+            self.get_coeff_view().is_one()
+        }
     }
 
     #[inline]

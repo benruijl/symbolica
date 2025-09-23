@@ -1042,9 +1042,6 @@ impl Token {
                         }
                     }
                     ']' => stack.push(Token::CloseBracket),
-                    '¿' | '⧞' | '∞' => {
-                        stack.push(Token::SpecialNumber(c));
-                    }
                     _ => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal()
                             && (!c.is_ascii_digit()
@@ -1061,6 +1058,8 @@ impl Token {
                         } else if c.is_ascii_digit() {
                             state = ParseState::Number;
                             id_buffer.push(c);
+                        } else if c == '¿' || c == '⧞' || c == '∞' {
+                            stack.push(Token::SpecialNumber(c));
                         } else if !Token::FORBIDDEN.contains(&c) {
                             state = ParseState::Identifier;
                             id_buffer.push(c);

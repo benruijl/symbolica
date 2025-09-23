@@ -357,6 +357,15 @@ class Expression:
     I: Expression
     """The mathematical constant `i`, where `i^2 = -1`."""
 
+    INFINITY: Expression
+    """The number that represents infinity: `∞`."""
+
+    COMPLEX_INFINITY: Expression
+    """The number that represents infinity with an unknown complex phase: `∞`."""
+
+    INDETERMINATE: Expression
+    """The number that represents indeterminacy: `¿`."""
+
     COEFF: Expression
     """The built-in function that convert a rational polynomials to a coefficient."""
 
@@ -818,6 +827,17 @@ class Expression:
         >>> e = (x + 1)**2 + 5
         >>> print(e.is_positive())
         True
+        """
+
+    def is_finite(self) -> bool:
+        """
+        Check if the expression has no infinities and is not indeterminate.
+
+        Examples
+        --------
+        >>> e = E('1/x + x^2 + log(0)')
+        >>> print(e.is_finite())
+        False
         """
 
     def __add__(self, other: Expression | int | float | complex | Decimal) -> Expression:

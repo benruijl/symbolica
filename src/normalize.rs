@@ -377,7 +377,7 @@ impl Atom {
                         let new_exp = helper.to_num(n.get_coeff_view() + n2.get_coeff_view());
 
                         if new_exp.to_num_view().is_zero() {
-                            self.to_num(1.into()); // FIXME: not true!
+                            self.to_num(1.into());
                         } else if new_exp.to_num_view().is_one() {
                             self.set_from_view(&base2);
                         } else {
@@ -397,7 +397,7 @@ impl Atom {
 
                 if let AtomView::Num(n) = helper2.as_view() {
                     if n.is_zero() {
-                        self.to_num(1.into()); // FIXME: not true!
+                        self.to_num(1.into());
                         return true;
                     } else if n.is_one() {
                         self.set_from_view(&base2);
@@ -419,7 +419,7 @@ impl Atom {
                     let new_exp = n.get_coeff_view() + 1;
 
                     if new_exp.is_zero() {
-                        self.to_num(1.into()); // FIXME: not true!
+                        self.to_num(1.into());
                     } else if new_exp == 1.into() {
                         self.set_from_view(&other.as_view());
                     } else {
@@ -455,7 +455,7 @@ impl Atom {
                     let new_exp = n.get_coeff_view() + 1;
 
                     if new_exp.is_zero() {
-                        self.to_num(1.into()); // FIXME: not true!
+                        self.to_num(1.into());
                     } else if new_exp == 1.into() {
                         self.set_from_view(&base);
                     } else {
@@ -695,7 +695,6 @@ impl AtomView<'_> {
             AtomView::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[_; 20]> = SmallVec::new();
 
-                let mut is_zero = false;
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
 
@@ -715,12 +714,6 @@ impl AtomView<'_> {
                                 if n.is_one() {
                                     continue;
                                 }
-
-                                if n.is_zero() {
-                                    out.to_num(Coefficient::zero());
-                                    is_zero = true;
-                                    //continue; // do not return as we may encounter 0/0
-                                }
                             }
 
                             atom_test_buf.push(handle);
@@ -730,20 +723,10 @@ impl AtomView<'_> {
                             if n.is_one() {
                                 continue;
                             }
-
-                            if n.is_zero() {
-                                out.to_num(Coefficient::zero());
-                                is_zero = true;
-                                //continue;
-                            }
                         }
 
                         atom_test_buf.push(handle);
                     }
-                }
-
-                if is_zero {
-                    //return;
                 }
 
                 atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
@@ -770,6 +753,11 @@ impl AtomView<'_> {
                                             | CoefficientView::Infinity(None)
                                     ) {
                                         out.set_from_view(&v);
+                                        return;
+                                    }
+
+                                    if n.is_zero() {
+                                        out.to_num(Coefficient::zero());
                                         return;
                                     }
 
@@ -808,6 +796,11 @@ impl AtomView<'_> {
                                 CoefficientView::Indeterminate | CoefficientView::Infinity(None)
                             ) {
                                 out.set_from_view(&v);
+                                return;
+                            }
+
+                            if n.is_zero() {
+                                out.to_num(Coefficient::zero());
                                 return;
                             }
 
@@ -1231,18 +1224,8 @@ impl AtomView<'_> {
                 };
 
                 'pow_simplify: {
-                    // if base_handle.is_one() {
-                    //     out.to_num(1.into()); // FIXME: not true! exp could be Infinity
-                    //     break 'pow_simplify;
-                    // }
-
                     if let AtomView::Num(e) = exp_handle.as_view() {
                         let exp_num = e.get_coeff_view();
-                        // if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
-                        //     // x^0 = 1
-                        //     out.to_num(1.into()); // FIXME: not true if base is 0 or infinite
-                        //     break 'pow_simplify;
-                        // } else
                         if exp_num == CoefficientView::Natural(1, 1, 0, 1) {
                             // remove power of 1
                             out.set_from_view(&base_handle.as_view());
@@ -1302,6 +1285,10 @@ impl AtomView<'_> {
                                 mul_h.as_view().normalize(workspace, out);
                                 break 'pow_simplify;
                             }
+                        } else if exp_num == CoefficientView::Natural(0, 1, 0, 1) {
+                            // x^0 = 1
+                            out.to_num(1.into());
+                            break 'pow_simplify;
                         }
                     } else if let AtomView::Pow(p_base) = base_handle.as_view() {
                         if exp_handle.is_integer() {
@@ -1528,6 +1515,14 @@ impl AtomView<'_> {
             if rhs.is_zero() {
                 self.clone_into(out);
                 return;
+            }
+
+            if let AtomView::Num(n) = rhs {
+                let r = n.get_coeff_view();
+                if r == CoefficientView::Indeterminate || r == CoefficientView::Infinity(None) {
+                    rhs.clone_into(out);
+                    return;
+                }
             }
 
             if a1.get_nargs() < 50 {

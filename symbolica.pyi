@@ -22,6 +22,13 @@ import numpy as np
 import numpy.typing as npt
 
 
+def use_logger(enable: bool = True) -> None:
+    """Enable logging using Python's logging module instead of printing to stdout.
+    This is useful when using Symbolica in a Jupyter notebook or other environments
+    where stdout is not easily accessible.
+    """
+
+
 def get_version() -> str:
     """Get the current Symbolica version."""
 
@@ -334,17 +341,6 @@ class PrintMode(Enum):
     """Print using Mathematica notation."""
     Sympy = 4
     """Print using Sympy notation."""
-
-
-class LogMode(Enum):
-    """Specifies the logging mode."""
-
-    Silent = 1
-    """No logging."""
-    Print = 2
-    """Print to standard output."""
-    Log = 3
-    """Log using `logging`."""
 
 
 class Expression:
@@ -1924,7 +1920,7 @@ class Expression:
         params: Sequence[Expression],
         iterations: int = 100,
         n_cores: int = 4,
-        verbose: LogMode = LogMode.Silent,
+        verbose: bool = False,
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[
             Sequence[float | complex]], float | complex]]] = None,
     ) -> Evaluator:
@@ -1973,7 +1969,7 @@ class Expression:
             The number of optimization iterations to perform.
         n_cores: int, optional
             The number of cores to use for the optimization.
-        verbose: LogMode, optional
+        verbose: bool, optional
             Print the progress of the optimization.
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[Sequence[float | complex]], float | complex]]]
             A dictionary of external functions that can be called during evaluation.
@@ -1990,7 +1986,7 @@ class Expression:
         params: Sequence[Expression],
         iterations: int = 100,
         n_cores: int = 4,
-        verbose: LogMode = LogMode.Silent,
+        verbose: bool = False,
     ) -> Evaluator:
         """Create an evaluator that can jointly evaluate (nested) expressions in an optimized fashion.
         See `Expression.evaluator()` for more information.

@@ -26,12 +26,11 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
 };
-use tracing::info;
 
 use crate::{
     combinatorics::{CombinationIterator, unique_permutations},
     domains::integer::Integer,
-    utils::{AbortCheck, LogMode},
+    utils::AbortCheck,
 };
 
 /// A node in a graph, with arbitrary data.
@@ -1226,15 +1225,15 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
         }
 
         if self.nodes.len() <= u16::MAX as usize {
-            self.canonize_impl::<u16>(LogMode::None)
+            self.canonize_impl::<u16>(false)
         } else if self.nodes.len() <= u32::MAX as usize {
-            self.canonize_impl::<u32>(LogMode::None)
+            self.canonize_impl::<u32>(false)
         } else {
-            self.canonize_impl::<usize>(LogMode::None)
+            self.canonize_impl::<usize>(false)
         }
     }
 
-    fn canonize_impl<I: NodeIndex>(&self, verbose: LogMode) -> CanonicalForm<N, E> {
+    fn canonize_impl<I: NodeIndex>(&self, verbose: bool) -> CanonicalForm<N, E> {
         let mut stack = vec![SearchTreeNode::<I>::new(self)];
         let mut automorphisms = vec![];
         let mut minimal_representatives_per_generator = vec![];
@@ -1481,20 +1480,13 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                         // multiplying this number at every level gives the automorphism group size, since
                         // at every level we stabilize the first vertex
                         if node.left_node {
-                            match verbose {
-                                LogMode::Print => println!(
+                            if verbose {
+                                println!(
                                     "Level={}, group size={}, orbit num={}",
                                     stack.len(),
                                     node.children_visited_equal_to_first,
                                     orbit.iter().enumerate().filter(|(i, x)| *i == **x).count()
-                                ),
-                                LogMode::Log | LogMode::Trace => info!(
-                                    "Level={}, group size={}, orbit num={}",
-                                    stack.len(),
-                                    node.children_visited_equal_to_first,
-                                    orbit.iter().enumerate().filter(|(i, x)| *i == **x).count()
-                                ),
-                                LogMode::None => {}
+                                );
                             }
 
                             automorphism_group_len *= node.children_visited_equal_to_first as u64;

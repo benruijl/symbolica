@@ -13,7 +13,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
-use tracing::info;
 
 use crate::{
     LicenseManager,
@@ -30,9 +29,10 @@ use crate::{
         rational::Rational,
     },
     id::ConditionResult,
+    info,
     numerical_integration::MonteCarloRng,
     state::State,
-    utils::{AbortCheck, LogMode},
+    utils::AbortCheck,
 };
 
 type EvalFnType<A, T> = Box<
@@ -266,7 +266,7 @@ pub struct OptimizationSettings {
     pub cpe_iterations: Option<usize>,
     pub hot_start: Option<Vec<Expression<Complex<Rational>>>>,
     pub abort_check: Option<Box<dyn AbortCheck>>,
-    pub verbose: LogMode,
+    pub verbose: bool,
 }
 
 impl std::fmt::Debug for OptimizationSettings {
@@ -290,7 +290,7 @@ impl Default for OptimizationSettings {
             cpe_iterations: None,
             hot_start: None,
             abort_check: None,
-            verbose: LogMode::None,
+            verbose: false,
         }
     }
 }
@@ -4299,11 +4299,7 @@ impl<T: Clone + PartialEq> EvalTree<T> {
 
 impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(
-        mut self,
-        cpe_rounds: Option<usize>,
-        verbose: LogMode,
-    ) -> ExpressionEvaluator<T> {
+    pub fn linearize(mut self, cpe_rounds: Option<usize>, verbose: bool) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
@@ -4341,19 +4337,12 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             if r == 0 {
                 break;
             }
-            if verbose != LogMode::None {
+            if verbose {
                 let (add_count, mul_count) = e.count_operations();
-                match verbose {
-                    LogMode::Print => println!(
-                        "Removed {} common pairs: {} + and {} ×",
-                        r, add_count, mul_count
-                    ),
-                    LogMode::Log | LogMode::Trace => info!(
-                        "Removed {} common pairs: {} + and {} ×",
-                        r, add_count, mul_count
-                    ),
-                    LogMode::None => {}
-                }
+                info!(
+                    "Removed {} common pairs: {} + and {} ×",
+                    r, add_count, mul_count
+                );
             }
         }
 
@@ -4929,16 +4918,11 @@ impl Expression<Complex<Rational>> {
             best_ops = (best_ops.0 + ops.0, best_ops.1 + ops.1);
         }
 
-        match settings.verbose {
-            LogMode::Print => println!(
+        if settings.verbose {
+            info!(
                 "Initial ops: {} additions and {} multiplications",
                 best_ops.0, best_ops.1
-            ),
-            LogMode::Log | LogMode::Trace => info!(
-                "Initial ops: {} additions and {} multiplications",
-                best_ops.0, best_ops.1
-            ),
-            LogMode::None => {}
+            );
         }
 
         let best_mul = Arc::new(AtomicUsize::new(best_ops.1));
@@ -4986,18 +4970,12 @@ impl Expression<Complex<Rational>> {
                                 if a() {
                                     abort.store(true, Ordering::Relaxed);
 
-                                    match settings.verbose {
-                                        LogMode::Print => println!(
+                                    if settings.verbose {
+                                        info!(
                                             "Aborting Horner optimization at step {}/{}.",
                                             j,
                                             settings.horner_iterations / n_cores
-                                        ),
-                                        LogMode::Log | LogMode::Trace => info!(
-                                            "Aborting Horner optimization at step {}/{}.",
-                                            j,
-                                            settings.horner_iterations / n_cores
-                                        ),
-                                        LogMode::None => {}
+                                        );
                                     }
 
                                     return;
@@ -5041,22 +5019,14 @@ impl Expression<Complex<Rational>> {
 
                         // prefer fewer multiplications
                         if cur_ops.1 <= last_mul || cur_ops.1 == last_mul && cur_ops.0 <= last_add {
-                            match settings.verbose {
-                                LogMode::Print => println!(
+                            if settings.verbose {
+                                info!(
                                     "Accept move at step {}/{}: {} + and {} ×",
                                     j,
                                     settings.horner_iterations / n_cores,
                                     cur_ops.0,
                                     cur_ops.1
-                                ),
-                                LogMode::Log | LogMode::Trace => info!(
-                                    "Accept move at step {}/{}: {} + and {} ×",
-                                    j,
-                                    settings.horner_iterations / n_cores,
-                                    cur_ops.0,
-                                    cur_ops.1
-                                ),
-                                LogMode::None => {}
+                                );
                             }
 
                             last_add = cur_ops.0;
@@ -5103,18 +5073,12 @@ impl Expression<Complex<Rational>> {
             }
         });
 
-        match settings.verbose {
-            LogMode::Print => println!(
+        if settings.verbose {
+            info!(
                 "Final scheme: {} + and {} ×",
                 best_add.load(Ordering::Relaxed),
                 best_mul.load(Ordering::Relaxed)
-            ),
-            LogMode::Log | LogMode::Trace => info!(
-                "Final scheme: {} + and {} ×",
-                best_add.load(Ordering::Relaxed),
-                best_mul.load(Ordering::Relaxed)
-            ),
-            LogMode::None => {}
+            );
         }
 
         Arc::try_unwrap(best_scheme).unwrap().into_inner().unwrap()

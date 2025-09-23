@@ -80,6 +80,45 @@ static LICENSE_KEY: OnceCell<String> = OnceCell::new();
 static LICENSE_MANAGER: OnceCell<LicenseManager> = OnceCell::new();
 static LICENSED: AtomicBool = LicenseManager::init();
 
+/// If set to true, use `tracing` for all log information instead of printing to screen.
+pub static USE_LOGGER: AtomicBool = AtomicBool::new(false);
+
+/// Write error messages to either a `tracing` logger or stderr, depending on the value of [USE_LOGGER].
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::error!($($arg)*);
+        } else {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
+/// Write warning messages to either the logger or stderr, depending on the value of [USE_LOGGER].
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::warn!($($arg)*);
+        } else {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
+/// Write info messages to either the logger or stdout, depending on the value of [USE_LOGGER].
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::info!($($arg)*);
+        } else {
+            println!($($arg)*);
+        }
+    };
+}
+
 /// Manage the license of the Symbolica instance.
 #[allow(dead_code)]
 pub struct LicenseManager {

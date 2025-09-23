@@ -12,7 +12,6 @@ use crate::{
     evaluate::{FunctionMap, OptimizationSettings},
     poly::{PositiveExponent, Variable},
     tensors::matrix::Matrix,
-    utils::LogMode,
 };
 
 impl AtomView<'_> {
@@ -38,7 +37,7 @@ impl AtomView<'_> {
                 cpe_iterations: None,
                 hot_start: None,
                 abort_check: None,
-                verbose: LogMode::None,
+                verbose: false,
             });
         let df = self
             .derivative(x)
@@ -50,7 +49,7 @@ impl AtomView<'_> {
                 cpe_iterations: None,
                 hot_start: None,
                 abort_check: None,
-                verbose: LogMode::None,
+                verbose: false,
             });
 
         let mut f_e = f.map_coeff(&|x| init.from_rational(x.to_real().unwrap()));
@@ -137,7 +136,7 @@ impl AtomView<'_> {
                         cpe_iterations: None,
                         hot_start: None,
                         abort_check: None,
-                        verbose: LogMode::None,
+                        verbose: false,
                     })
                     .map_coeff(&|x| init[0].from_rational(x.to_real().unwrap()))
             })
@@ -158,7 +157,7 @@ impl AtomView<'_> {
                         cpe_iterations: None,
                         hot_start: None,
                         abort_check: None,
-                        verbose: LogMode::None,
+                        verbose: false,
                     })
                     .map_coeff(&|x| init[0].from_rational(x.to_real().unwrap()));
 

@@ -87,7 +87,6 @@ use crate::{
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError, TransformerState},
     try_parse,
-    utils::LogMode,
 };
 
 const DEFAULT_PRINT_OPTIONS: PrintOptions = PrintOptions {
@@ -183,32 +182,6 @@ impl From<PythonPrintMode> for PrintMode {
     }
 }
 
-/// Specifies the print mode.
-#[cfg_attr(
-    feature = "python_stubgen",
-    gen_stub_pyclass_enum(module = "symbolica.core")
-)]
-#[pyclass(name = "LogMode", eq, eq_int)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PythonLogMode {
-    /// Do not log anything.
-    Silent,
-    /// Print to the screen.
-    Print,
-    /// Log using `logging`.
-    Log,
-}
-
-impl From<PythonLogMode> for LogMode {
-    fn from(mode: PythonLogMode) -> Self {
-        match mode {
-            PythonLogMode::Silent => LogMode::None,
-            PythonLogMode::Print => LogMode::Print,
-            PythonLogMode::Log => LogMode::Log,
-        }
-    }
-}
-
 impl<'py> IntoPyDict<'py> for PrintOptions {
     fn into_py_dict(self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
@@ -269,7 +242,6 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonSymbolAttribute>()?;
     m.add_class::<PythonPrintMode>()?;
-    m.add_class::<PythonLogMode>()?;
     m.add_class::<PythonReplacement>()?;
     m.add_class::<PythonExpressionEvaluator>()?;
     m.add_class::<PythonCompiledRealExpressionEvaluator>()?;
@@ -295,6 +267,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
     m.add_function(wrap_pyfunction!(get_license_key, m)?)?;
+    m.add_function(wrap_pyfunction!(use_logger, m)?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
@@ -319,6 +292,12 @@ pub fn create_symbolica_module<'a, 'b>(
 fn symbolica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
     create_symbolica_module(m).map(|_| ())
+}
+
+/// Enable logging using Python's logging module instead of printing to stdout.
+#[pyfunction(signature = (enable=true))]
+fn use_logger(enable: bool) {
+    crate::USE_LOGGER.store(enable, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Get the current Symbolica version.
@@ -6064,7 +6043,7 @@ impl PythonExpression {
         params,
         iterations = 100,
         n_cores = 4,
-        verbose = PythonLogMode::Silent,
+        verbose = false,
         external_functions = None),
         )]
     pub fn evaluator(
@@ -6074,7 +6053,7 @@ impl PythonExpression {
         params: Vec<PythonExpression>,
         iterations: usize,
         n_cores: usize,
-        verbose: PythonLogMode,
+        verbose: bool,
         external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
         py: Python<'_>,
     ) -> PyResult<PythonExpressionEvaluator> {
@@ -6241,7 +6220,7 @@ impl PythonExpression {
         params,
         iterations = 100,
         n_cores = 4,
-        verbose = PythonLogMode::Silent,
+        verbose = false,
         external_functions = None),
         )]
     pub fn evaluator_multiple(
@@ -6252,7 +6231,7 @@ impl PythonExpression {
         params: Vec<PythonExpression>,
         iterations: usize,
         n_cores: usize,
-        verbose: PythonLogMode,
+        verbose: bool,
         external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();

@@ -1288,6 +1288,18 @@ pub trait AtomCore {
         self.as_atom_view().is_positive()
     }
 
+    /// Returns true iff an expression has no explicit infinities and is not indeterminate.
+    ///
+    /// # Example
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("3x + x^2 + log(0)");
+    /// assert!(!expr.is_finite());
+    /// ```
+    fn is_finite(&self) -> bool {
+        self.as_atom_view().is_finite()
+    }
+
     /// Check if the expression can be considered a polynomial in some variables, including
     /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
     /// `f(x)+x` is not a polynomial.

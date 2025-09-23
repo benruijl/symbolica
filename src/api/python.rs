@@ -12576,7 +12576,7 @@ impl PythonExpressionEvaluator {
         cuda_number_of_evaluations: usize,
         cuda_block_size: usize,
         py: Python<'_>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mut options = match number_type {
             "real" | "complex" => CompileOptions {
                 optimization_level: optimization_level as usize,

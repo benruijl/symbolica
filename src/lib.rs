@@ -90,6 +90,7 @@ macro_rules! error {
         if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
             tracing::error!($($arg)*);
         } else {
+            eprint!("ERROR: ");
             eprintln!($($arg)*);
         }
     };
@@ -102,6 +103,7 @@ macro_rules! warn {
         if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
             tracing::warn!($($arg)*);
         } else {
+            eprint!("WARNING: ");
             eprintln!($($arg)*);
         }
     };
@@ -114,6 +116,7 @@ macro_rules! info {
         if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
             tracing::info!($($arg)*);
         } else {
+            eprint!("INFO: ");
             println!($($arg)*);
         }
     };

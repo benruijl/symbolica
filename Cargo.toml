@@ -25,7 +25,7 @@ crate-type = ["lib"]
 name = "symbolica"
 
 [features]
-default = ["tracing_only_warnings", "python_api"]
+default = ["tracing_only_warnings"]
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]
@@ -79,7 +79,7 @@ pyo3-stub-gen = { version = "0.13", default-features = false, features = [
 ], optional = true }
 rayon = "1.8"
 rug = "1.27.0"
-numpy = { version = "0.25", optional = true }
+numpy = { version = "0.26", optional = true }
 self_cell = "1.2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 smallvec = "1.13"

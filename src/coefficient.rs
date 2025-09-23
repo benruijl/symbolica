@@ -20,7 +20,6 @@ use ahash::HashMap;
 use bytes::Buf;
 use rug::{integer::Order, ops::NegAssign};
 use smallvec::{SmallVec, smallvec};
-use tracing::error;
 
 use crate::{
     atom::{Atom, AtomView, Symbol},
@@ -37,8 +36,10 @@ use crate::{
         rational::{Fraction, Q, Rational},
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
+    error,
     poly::{INLINED_EXPONENTS, Variable, polynomial::MultivariatePolynomial},
     state::{FiniteFieldIndex, State, Workspace},
+    warn,
 };
 
 pub trait ConvertToRing: Ring {
@@ -125,6 +126,23 @@ impl Coefficient {
             )))
         } else {
             Coefficient::Infinity(Some(&dir / &dir.re.abs()))
+        }
+    }
+}
+
+impl std::fmt::Display for Coefficient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Coefficient::Indeterminate => write!(f, "¿"),
+            Coefficient::Infinity(Some(phase)) => write!(f, "({})*∞", phase),
+            Coefficient::Infinity(None) => write!(f, "⧞"),
+            Coefficient::Complex(r) => write!(f, "{}", r),
+            Coefficient::Float(fl) => write!(f, "{}", fl),
+            Coefficient::FiniteField(n, i) => {
+                let field = State::get_finite_field(*i);
+                write!(f, "{} (mod {})", n.0, field.get_prime())
+            }
+            Coefficient::RationalPolynomial(rp) => write!(f, "{}", rp),
         }
     }
 }
@@ -512,7 +530,14 @@ impl Add for Coefficient {
             (Coefficient::Infinity(phase1), Coefficient::Infinity(phase2)) => {
                 match (phase1, phase2) {
                     (Some(p1), Some(p2)) if p1 == p2 => Coefficient::Infinity(Some(p1)),
-                    _ => Coefficient::Indeterminate,
+                    (phase1, phase2) => {
+                        warn!(
+                            "Created indeterminate by adding {} to {}",
+                            Coefficient::Infinity(phase1),
+                            Coefficient::Infinity(phase2)
+                        );
+                        Coefficient::Indeterminate
+                    }
                 }
             }
             (Coefficient::Infinity(a), _) | (_, Coefficient::Infinity(a)) => {
@@ -601,6 +626,11 @@ impl Mul for Coefficient {
             (Coefficient::Infinity(a), Coefficient::Complex(r))
             | (Coefficient::Complex(r), Coefficient::Infinity(a)) => {
                 if r.is_zero() {
+                    warn!(
+                        "Created indeterminate by multiplying {} with {}",
+                        Coefficient::Infinity(a),
+                        Coefficient::Complex(r)
+                    );
                     return Coefficient::Indeterminate;
                 }
                 match a {
@@ -1097,7 +1127,13 @@ impl CoefficientView<'_> {
         if let CoefficientView::Natural(0, _, 0, _) = self {
             let r = match other {
                 CoefficientView::Indeterminate => Coefficient::Indeterminate,
-                CoefficientView::Infinity(None) => Coefficient::Indeterminate,
+                CoefficientView::Infinity(None) => {
+                    warn!(
+                        "Created indeterminate by raising 0 to the power of {}",
+                        Coefficient::Infinity(None)
+                    );
+                    Coefficient::Indeterminate
+                }
                 CoefficientView::Infinity(Some((r, i))) => {
                     if i.is_zero() {
                         if !r.is_negative() {
@@ -1106,6 +1142,10 @@ impl CoefficientView<'_> {
                             Coefficient::Infinity(None)
                         }
                     } else {
+                        warn!(
+                            "Created indeterminate by raising 0 to the power of {}",
+                            other.to_owned()
+                        );
                         Coefficient::Indeterminate
                     }
                 }
@@ -1113,6 +1153,7 @@ impl CoefficientView<'_> {
                     if *r < 0 {
                         Coefficient::Infinity(None)
                     } else if *r == 0 {
+                        warn!("Created indeterminate by raising 0 to the power of 0");
                         Coefficient::Indeterminate
                     } else {
                         Coefficient::zero()
@@ -1126,6 +1167,7 @@ impl CoefficientView<'_> {
                     if r.is_negative() {
                         Coefficient::Infinity(None)
                     } else if r.is_zero() {
+                        warn!("Created indeterminate by raising 0 to the power of 0");
                         Coefficient::Indeterminate
                     } else {
                         Coefficient::zero()
@@ -1393,6 +1435,11 @@ impl CoefficientView<'_> {
                 if *r < 0 {
                     (Coefficient::one(), Coefficient::zero(), Coefficient::one())
                 } else if *r == 0 {
+                    warn!(
+                        "Created indeterminate by raising {} to the power of {}",
+                        self.to_owned(),
+                        other.to_owned()
+                    );
                     (
                         Coefficient::one(),
                         Coefficient::Indeterminate,
@@ -1431,6 +1478,11 @@ impl CoefficientView<'_> {
                 if r.is_negative() {
                     (Coefficient::one(), Coefficient::zero(), Coefficient::one())
                 } else if r.is_zero() {
+                    warn!(
+                        "Created indeterminate by raising {} to the power of {}",
+                        self.to_owned(),
+                        other.to_owned()
+                    );
                     (
                         Coefficient::one(),
                         Coefficient::Indeterminate,
@@ -1472,6 +1524,11 @@ impl CoefficientView<'_> {
                 if r.is_negative() {
                     (Coefficient::one(), Coefficient::zero(), Coefficient::one())
                 } else if r.is_zero() {
+                    warn!(
+                        "Created indeterminate by raising {} to the power of {}",
+                        self.to_owned(),
+                        other.to_owned()
+                    );
                     (
                         Coefficient::one(),
                         Coefficient::Indeterminate,
@@ -1498,6 +1555,11 @@ impl CoefficientView<'_> {
                 Coefficient::one(),
             ),
             (_, CoefficientView::Infinity(None)) => {
+                warn!(
+                    "Created indeterminate by raising {} to the power of {}",
+                    self.to_owned(),
+                    other.to_owned()
+                );
                 return (
                     Coefficient::one(),
                     Coefficient::Indeterminate,
@@ -1541,6 +1603,12 @@ impl CoefficientView<'_> {
                     let norm = c.norm_squared();
 
                     if norm == Rational::one() {
+                        warn!(
+                            "Created indeterminate by raising {} to the power of {}",
+                            self.to_owned(),
+                            other.to_owned()
+                        );
+
                         return (
                             Coefficient::one(),
                             Coefficient::Indeterminate,
@@ -1567,6 +1635,12 @@ impl CoefficientView<'_> {
                                 if *rn > 0 && *ir == 0 {
                                     Coefficient::Infinity(None)
                                 } else {
+                                    warn!(
+                                        "Created indeterminate by raising {} to the power of {}",
+                                        self.to_owned(),
+                                        other.to_owned()
+                                    );
+
                                     Coefficient::Indeterminate
                                 },
                                 Coefficient::one(),
@@ -1578,6 +1652,12 @@ impl CoefficientView<'_> {
                                 if !rn.is_negative() && !rn.is_zero() && ir.is_zero() {
                                     Coefficient::Infinity(None)
                                 } else {
+                                    warn!(
+                                        "Created indeterminate by raising {} to the power of {}",
+                                        self.to_owned(),
+                                        other.to_owned()
+                                    );
+
                                     Coefficient::Indeterminate
                                 },
                                 Coefficient::one(),
@@ -1652,11 +1732,18 @@ impl CoefficientView<'_> {
                     Coefficient::one(),
                 )
             }
-            (&CoefficientView::Infinity(_), CoefficientView::RationalPolynomial(_)) => (
-                Coefficient::one(),
-                Coefficient::Indeterminate,
-                Coefficient::one(),
-            ),
+            (&CoefficientView::Infinity(_), CoefficientView::RationalPolynomial(_)) => {
+                warn!(
+                    "Created indeterminate by raising {} to the power of {}",
+                    self.to_owned(),
+                    other.to_owned()
+                );
+                (
+                    Coefficient::one(),
+                    Coefficient::Indeterminate,
+                    Coefficient::one(),
+                )
+            }
             (_, CoefficientView::RationalPolynomial(_)) => {
                 error!("Cannot exponentiate with rational polynomial exponent");
                 (
@@ -1882,7 +1969,14 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                     (Some(p1), Some(p2)) if p1 == p2 => {
                         Coefficient::Infinity(Some(Complex::new(p1.0.to_rat(), p1.1.to_rat())))
                     }
-                    _ => Coefficient::Indeterminate,
+                    _ => {
+                        warn!(
+                            "Created indeterminate by adding {} to {}",
+                            self.to_owned(),
+                            other.to_owned()
+                        );
+                        Coefficient::Indeterminate
+                    }
                 }
             }
             (CoefficientView::Infinity(a), _) | (_, CoefficientView::Infinity(a)) => {
@@ -2047,6 +2141,11 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Infinity(a), CoefficientView::Natural(n1, d1, ni1, di1))
             | (CoefficientView::Natural(n1, d1, ni1, di1), CoefficientView::Infinity(a)) => {
                 if n1 == 0 && ni1 == 0 {
+                    warn!(
+                        "Created indeterminate by raising {} to the power of {}",
+                        self.to_owned(),
+                        other.to_owned()
+                    );
                     return Coefficient::Indeterminate;
                 }
                 match a {
@@ -2061,6 +2160,11 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Infinity(a), CoefficientView::Large(r, i))
             | (CoefficientView::Large(r, i), CoefficientView::Infinity(a)) => {
                 if r.is_zero() && i.is_zero() {
+                    warn!(
+                        "Created indeterminate by raising {} to the power of {}",
+                        self.to_owned(),
+                        other.to_owned()
+                    );
                     return Coefficient::Indeterminate;
                 }
                 match a {

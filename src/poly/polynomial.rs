@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
-use crate::domains::rational::{Q, RationalField};
+use crate::domains::rational::{FractionField, FractionNormalization, Q, RationalField};
 use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
 use crate::printer::{PrintOptions, PrintState};
 
@@ -4356,6 +4356,26 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
             poly: self,
             index: 0,
         }
+    }
+}
+
+// General implementation for F::Element blocked on https://github.com/rust-lang/rust/issues/20400
+impl<E: Exponent, O: MonomialOrder> PartialEq<<IntegerRing as Ring>::Element>
+    for MultivariatePolynomial<IntegerRing, E, O>
+{
+    #[inline]
+    fn eq(&self, other: &Integer) -> bool {
+        self.is_constant() && self.get_constant() == *other
+    }
+}
+
+impl<R: Ring + FractionNormalization + EuclideanDomain, E: Exponent, O: MonomialOrder>
+    PartialEq<<FractionField<R> as Ring>::Element>
+    for MultivariatePolynomial<FractionField<R>, E, O>
+{
+    #[inline]
+    fn eq(&self, other: &<FractionField<R> as Ring>::Element) -> bool {
+        self.is_constant() && self.get_constant() == *other
     }
 }
 

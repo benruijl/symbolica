@@ -1363,7 +1363,7 @@ impl Token {
                                 .map(|&x| HEX_TO_DIGIT[(x - b'0') as usize]),
                         );
                     } else {
-                        digit_buffer.extend(digits.iter().map(|&x| (x - b'0')));
+                        digit_buffer.extend(digits.iter().map(|&x| x - b'0'));
                     }
 
                     let mut p = MultiPrecisionInteger::new();

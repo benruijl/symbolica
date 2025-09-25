@@ -3209,14 +3209,44 @@ class Polynomial:
     def get_variables(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
 
-    def __add__(self, rhs: Polynomial) -> Polynomial:
+    def __eq__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are equal."""
+
+    def __ne__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are not equal."""
+
+    def __lt__(self, rhs: int) -> bool:
+        """Check if the polynomial is less than an integer."""
+
+    def __le__(self, rhs: int) -> bool:
+        """Check if the polynomial is less than or equal to an integer."""
+
+    def __gt__(self, rhs: int) -> bool:
+        """Check if the polynomial is greater than an integer."""
+
+    def __ge__(self, rhs: int) -> bool:
+        """Check if the polynomial is greater than or equal to an integer."""
+
+    def __add__(self, rhs: Polynomial | int) -> Polynomial:
         """Add two polynomials `self` and `rhs`, returning the result."""
 
-    def __sub__(self, rhs: Polynomial) -> Polynomial:
+    def __sub__(self, rhs: Polynomial | int) -> Polynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
-    def __mul__(self, rhs: Polynomial) -> Polynomial:
+    def __mul__(self, rhs: Polynomial | int) -> Polynomial:
         """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __radd__(self, rhs: Polynomial | int) -> Polynomial:
+        """Add two polynomials `self` and `rhs`, returning the result."""
+
+    def __rsub__(self, rhs: Polynomial | int) -> Polynomial:
+        """Subtract polynomials `self` from `rhs`, returning the result."""
+
+    def __rmul__(self, rhs: Polynomial | int) -> Polynomial:
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __floordiv__(self, rhs: Polynomial) -> Polynomial:
+        """Divide the polynomial `self` by `rhs`, rounding down, returning the result."""
 
     def __truediv__(self, rhs: Polynomial) -> Polynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
@@ -3501,14 +3531,44 @@ class NumberFieldPolynomial:
     def get_variables(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
 
-    def __add__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+    def __eq__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are equal."""
+
+    def __ne__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are not equal."""
+
+    def __lt__(self, rhs: int) -> bool:
+        """Check if the polynomial is less than an integer."""
+
+    def __le__(self, rhs: int) -> bool:
+        """Check if the polynomial is less than or equal to an integer."""
+
+    def __gt__(self, rhs: int) -> bool:
+        """Check if the polynomial is greater than an integer."""
+
+    def __ge__(self, rhs: int) -> bool:
+        """Check if the polynomial is greater than or equal to an integer."""
+
+    def __add__(self, rhs: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
         """Add two polynomials `self` and `rhs`, returning the result."""
 
-    def __sub__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+    def __sub__(self, rhs: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
-    def __mul__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+    def __mul__(self, rhs: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
         """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __radd__(self, rhs: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
+        """Add two polynomials `self` and `rhs`, returning the result."""
+
+    def __rsub__(self, rhs: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
+        """Subtract polynomials `self` from `rhs`, returning the result."""
+
+    def __rmul__(self, rhs: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __floordiv__(self, rhs: Polynomial) -> Polynomial:
+        """Divide the polynomial `self` by `rhs`, rounding down, returning the result."""
 
     def __truediv__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
@@ -3749,14 +3809,32 @@ class FiniteFieldPolynomial:
     def get_variables(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
 
-    def __add__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+    def __eq__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are equal."""
+
+    def __ne__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are not equal."""
+
+    def __add__(self, rhs: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
         """Add two polynomials `self` and `rhs`, returning the result."""
 
-    def __sub__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+    def __sub__(self, rhs: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
-    def __mul__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+    def __mul__(self, rhs: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
         """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __radd__(self, rhs: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
+        """Add two polynomials `self` and `rhs`, returning the result."""
+
+    def __rsub__(self, rhs: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
+        """Subtract polynomials `self` from `rhs`, returning the result."""
+
+    def __rmul__(self, rhs: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __floordiv__(self, rhs: Polynomial) -> Polynomial:
+        """Divide the polynomial `self` by `rhs`, rounding down, returning the result."""
 
     def __truediv__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
@@ -3979,6 +4057,24 @@ class RationalPolynomial:
     def denominator(self) -> Polynomial:
         """Get the denominator."""
 
+    def __eq__(self, rhs: Polynomial | int) -> bool:
+        """Check if two rational polynomials are equal."""
+
+    def __ne__(self, rhs: Polynomial | int) -> bool:
+        """Check if two rational polynomials are not equal."""
+
+    def __lt__(self, rhs: int) -> bool:
+        """Check if the rational polynomial is less than an integer."""
+
+    def __le__(self, rhs: int) -> bool:
+        """Check if the rational polynomial is less than or equal to an integer."""
+
+    def __gt__(self, rhs: int) -> bool:
+        """Check if the rational polynomial is greater than an integer."""
+
+    def __ge__(self, rhs: int) -> bool:
+        """Check if the polynomial is greater than or equal to an integer."""
+
     def __add__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Add two rational polynomials `self` and `rhs`, returning the result."""
 
@@ -3987,6 +4083,9 @@ class RationalPolynomial:
 
     def __mul__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Multiply two rational polynomials `self` and `rhs`, returning the result."""
+
+    def __floordiv__(self, rhs: Polynomial) -> Polynomial:
+        """Divide the polynomial `self` by `rhs`, rounding down, returning the result."""
 
     def __truediv__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
@@ -4064,6 +4163,12 @@ class FiniteFieldRationalPolynomial:
         ValueError
             If the input is not a valid Symbolica rational polynomial.
         """
+
+    def __eq__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are equal."""
+
+    def __ne__(self, rhs: Polynomial | int) -> bool:
+        """Check if two polynomials are not equal."""
 
     def __copy__(self) -> FiniteFieldRationalPolynomial:
         """Copy the rational polynomial."""

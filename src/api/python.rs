@@ -49,7 +49,7 @@ use crate::{
     atom::{
         Atom, AtomCore, AtomType, AtomView, DefaultNamespace, ListIterator, Symbol, SymbolAttribute,
     },
-    coefficient::{Coefficient, CoefficientView},
+    coefficient::{Coefficient, CoefficientView, ConvertToRing},
     domains::{
         Ring, SelfRing,
         algebraic_number::AlgebraicExtension,
@@ -4244,7 +4244,14 @@ impl PythonExpression {
 
     /// Compare two expressions. If one of the expressions is not a number, an
     /// internal ordering will be used.
-    fn __richcmp__(&self, other: ConvertibleToPattern, op: CompareOp) -> PyResult<PythonCondition> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<PythonCondition> {
+        let Ok(other) = o.extract::<ConvertibleToPattern>(py) else {
+            return Err(exceptions::PyTypeError::new_err(format!(
+                "Cannot compare {} with {} due to incompatible types.",
+                self.expr, o
+            )));
+        };
+
         Ok(match op {
             CompareOp::Eq => PythonCondition {
                 condition: Relation::Eq(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
@@ -7135,6 +7142,22 @@ impl PythonReplaceIterator {
     }
 }
 
+#[derive(FromPyObject)]
+pub enum PolynomialOrInteger<T> {
+    Polynomial(T),
+    Integer(Integer),
+}
+
+#[cfg(feature = "python_stubgen")]
+impl<T: PyStubType> PyStubType for PolynomialOrInteger<T> {
+    fn type_output() -> TypeInfo {
+        T::type_output() | Integer::type_output()
+    }
+    fn type_input() -> TypeInfo {
+        T::type_input() | Integer::type_input()
+    }
+}
+
 #[cfg_attr(
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
@@ -7154,35 +7177,70 @@ impl_stub_type!(OneOrMultiple<PythonExpression> = PythonExpression | Vec<PythonE
 #[pymethods]
 impl PythonPolynomial {
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
-        match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
-            _ => {
-                if self.poly.is_constant() && other.poly.is_constant() {
-                    return Ok(match op {
-                        CompareOp::Eq => self.poly == other.poly,
-                        CompareOp::Ge => self.poly.lcoeff() >= other.poly.lcoeff(),
-                        CompareOp::Gt => self.poly.lcoeff() > other.poly.lcoeff(),
-                        CompareOp::Le => self.poly.lcoeff() <= other.poly.lcoeff(),
-                        CompareOp::Lt => self.poly.lcoeff() < other.poly.lcoeff(),
-                        CompareOp::Ne => self.poly != other.poly,
-                    });
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonPolynomial>>(py) else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
+
+        match other {
+            PolynomialOrInteger::Polynomial(other) => match op {
+                CompareOp::Eq => Ok(self.poly == other.poly),
+                CompareOp::Ne => Ok(self.poly != other.poly),
+                _ => {
+                    if self.poly.is_constant() && other.poly.is_constant() {
+                        return Ok(match op {
+                            CompareOp::Ge => self.poly.lcoeff() >= other.poly.lcoeff(),
+                            CompareOp::Gt => self.poly.lcoeff() > other.poly.lcoeff(),
+                            CompareOp::Le => self.poly.lcoeff() <= other.poly.lcoeff(),
+                            CompareOp::Lt => self.poly.lcoeff() < other.poly.lcoeff(),
+                            CompareOp::Eq => self.poly == other.poly,
+                            CompareOp::Ne => self.poly != other.poly,
+                        });
+                    }
+
+                    Err(exceptions::PyTypeError::new_err(format!(
+                        "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                        self.__str__()?,
+                        match op {
+                            CompareOp::Eq => "==",
+                            CompareOp::Ge => ">=",
+                            CompareOp::Gt => ">",
+                            CompareOp::Le => "<=",
+                            CompareOp::Lt => "<",
+                            CompareOp::Ne => "!=",
+                        },
+                        other.__str__()?,
+                    )))
+                }
+            },
+            PolynomialOrInteger::Integer(i) => {
+                if !self.poly.is_constant() && !matches!(op, CompareOp::Eq | CompareOp::Ne) {
+                    return Err(exceptions::PyTypeError::new_err(format!(
+                        "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                        self.__str__()?,
+                        match op {
+                            CompareOp::Eq => "==",
+                            CompareOp::Ge => ">=",
+                            CompareOp::Gt => ">",
+                            CompareOp::Le => "<=",
+                            CompareOp::Lt => "<",
+                            CompareOp::Ne => "!=",
+                        },
+                        i,
+                    )));
                 }
 
-                Err(exceptions::PyTypeError::new_err(format!(
-                    "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
-                    self.__str__()?,
-                    match op {
-                        CompareOp::Eq => "==",
-                        CompareOp::Ge => ">=",
-                        CompareOp::Gt => ">",
-                        CompareOp::Le => "<=",
-                        CompareOp::Lt => "<",
-                        CompareOp::Ne => "!=",
-                    },
-                    other.__str__()?,
-                )))
+                let r: Rational = i.into();
+                return Ok(match op {
+                    CompareOp::Eq => self.poly == r,
+                    CompareOp::Ne => self.poly != r,
+                    CompareOp::Ge => self.poly.lcoeff() >= r,
+                    CompareOp::Gt => self.poly.lcoeff() > r,
+                    CompareOp::Le => self.poly.lcoeff() <= r,
+                    CompareOp::Lt => self.poly.lcoeff() < r,
+                });
             }
         }
     }
@@ -7330,38 +7388,114 @@ impl PythonPolynomial {
     }
 
     /// Add two polynomials `self and `rhs`, returning the result.
-    pub fn __add__(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
-        } else {
-            Ok(Self {
-                poly: &self.poly + &rhs.poly,
-            })
+    pub fn __add__(&self, rhs: PolynomialOrInteger<PythonPolynomial>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly + &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self.poly.clone().add_constant(Rational::from(i)),
+            }),
         }
     }
 
     /// Subtract polynomials `rhs` from `self`, returning the result.
-    pub fn __sub__(&self, rhs: Self) -> PyResult<Self> {
-        self.__add__(rhs.__neg__())
+    pub fn __sub__(&self, rhs: PolynomialOrInteger<PythonPolynomial>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly - &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self.poly.clone().add_constant(-Rational::from(i)),
+            }),
+        }
     }
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
-    pub fn __mul__(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
-        } else {
-            Ok(Self {
-                poly: &self.poly * &rhs.poly,
-            })
+    pub fn __mul__(&self, rhs: PolynomialOrInteger<PythonPolynomial>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly * &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self.poly.clone().mul_coeff(Rational::from(i)),
+            }),
         }
+    }
+
+    pub fn __radd__(&self, rhs: PolynomialOrInteger<PythonPolynomial>) -> PyResult<Self> {
+        self.__add__(rhs)
+    }
+
+    pub fn __rsub__(&self, rhs: PolynomialOrInteger<PythonPolynomial>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &p.poly - &self.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self.poly.clone().neg().add_constant(Rational::from(i)),
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: PolynomialOrInteger<PythonPolynomial>) -> PyResult<Self> {
+        self.__mul__(rhs)
+    }
+
+    pub fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
+        if self.poly.ring != rhs.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different rings".to_string(),
+            ));
+        };
+
+        let (q, _r) = self.poly.quot_rem(&rhs.poly, false);
+
+        Ok(Self { poly: q })
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -8116,10 +8250,23 @@ impl_stub_type!(&mut PythonFiniteFieldPolynomial = PythonFiniteFieldPolynomial);
 #[pymethods]
 impl PythonFiniteFieldPolynomial {
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonFiniteFieldPolynomial>>(py) else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.is_constant()
+                    && self.poly.get_constant() == self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.is_constant()
+                    || self.poly.get_constant() != self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
                 "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
@@ -8131,7 +8278,10 @@ impl PythonFiniteFieldPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }
@@ -8283,38 +8433,126 @@ impl PythonFiniteFieldPolynomial {
     }
 
     /// Add two polynomials `self and `rhs`, returning the result.
-    pub fn __add__(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
-        } else {
-            Ok(Self {
-                poly: &self.poly + &rhs.poly,
-            })
+    pub fn __add__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly + &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
         }
     }
 
     /// Subtract polynomials `rhs` from `self`, returning the result.
-    pub fn __sub__(&self, rhs: Self) -> PyResult<Self> {
-        self.__add__(rhs.__neg__())
+    pub fn __sub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly - &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.neg(&self.poly.ring.element_from_integer(i))),
+            }),
+        }
     }
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
-    pub fn __mul__(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
-        } else {
-            Ok(Self {
-                poly: &self.poly * &rhs.poly,
-            })
+    pub fn __mul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly * &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .mul_coeff(self.poly.ring.element_from_integer(i)),
+            }),
         }
+    }
+
+    pub fn __radd__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__add__(rhs)
+    }
+
+    pub fn __rsub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &p.poly - &self.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .neg()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__mul__(rhs)
+    }
+
+    pub fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
+        if self.poly.ring != rhs.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different rings".to_string(),
+            ));
+        };
+
+        let (q, _r) = self.poly.quot_rem(&rhs.poly, false);
+
+        Ok(Self { poly: q })
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -8906,10 +9144,23 @@ impl_stub_type!(&mut PythonPrimeTwoPolynomial = PythonPrimeTwoPolynomial);
 #[pymethods]
 impl PythonPrimeTwoPolynomial {
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonPrimeTwoPolynomial>>(py) else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.is_constant()
+                    && self.poly.get_constant() == self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.is_constant()
+                    || self.poly.get_constant() != self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
                 "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
@@ -8921,7 +9172,10 @@ impl PythonPrimeTwoPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }
@@ -9073,26 +9327,126 @@ impl PythonPrimeTwoPolynomial {
     }
 
     /// Add two polynomials `self and `rhs`, returning the result.
-    pub fn __add__(&self, rhs: Self) -> Self {
-        Self {
-            poly: self.poly.clone() + rhs.poly.clone(),
+    pub fn __add__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly + &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
         }
     }
 
     /// Subtract polynomials `rhs` from `self`, returning the result.
-    pub fn __sub__(&self, rhs: Self) -> Self {
-        self.__add__(rhs.__neg__())
+    pub fn __sub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly - &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.neg(&self.poly.ring.element_from_integer(i))),
+            }),
+        }
     }
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
-    pub fn __mul__(&self, rhs: Self) -> Self {
-        Self {
-            poly: &self.poly * &rhs.poly,
+    pub fn __mul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly * &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .mul_coeff(self.poly.ring.element_from_integer(i)),
+            }),
         }
+    }
+
+    pub fn __radd__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__add__(rhs)
+    }
+
+    pub fn __rsub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &p.poly - &self.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .neg()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__mul__(rhs)
+    }
+
+    pub fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
+        if self.poly.ring != rhs.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different rings".to_string(),
+            ));
+        };
+
+        let (q, _r) = self.poly.quot_rem(&rhs.poly, false);
+
+        Ok(Self { poly: q })
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
         let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
@@ -9564,10 +9918,24 @@ impl_stub_type!(&mut PythonGaloisFieldPrimeTwoPolynomial = PythonGaloisFieldPrim
 #[pymethods]
 impl PythonGaloisFieldPrimeTwoPolynomial {
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonGaloisFieldPrimeTwoPolynomial>>(py)
+        else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.is_constant()
+                    && self.poly.get_constant() == self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.is_constant()
+                    || self.poly.get_constant() != self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
                 "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
@@ -9579,7 +9947,10 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }
@@ -9731,38 +10102,126 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     }
 
     /// Add two polynomials `self and `rhs`, returning the result.
-    pub fn __add__(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
-        } else {
-            Ok(Self {
-                poly: &self.poly + &rhs.poly,
-            })
+    pub fn __add__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly + &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
         }
     }
 
     /// Subtract polynomials `rhs` from `self`, returning the result.
-    pub fn __sub__(&self, rhs: Self) -> PyResult<Self> {
-        self.__add__(rhs.__neg__())
+    pub fn __sub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly - &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.neg(&self.poly.ring.element_from_integer(i))),
+            }),
+        }
     }
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
-    pub fn __mul__(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
-        } else {
-            Ok(Self {
-                poly: &self.poly * &rhs.poly,
-            })
+    pub fn __mul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly * &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .mul_coeff(self.poly.ring.element_from_integer(i)),
+            }),
         }
+    }
+
+    pub fn __radd__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__add__(rhs)
+    }
+
+    pub fn __rsub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &p.poly - &self.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .neg()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__mul__(rhs)
+    }
+
+    pub fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
+        if self.poly.ring != rhs.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different rings".to_string(),
+            ));
+        };
+
+        let (q, _r) = self.poly.quot_rem(&rhs.poly, false);
+
+        Ok(Self { poly: q })
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
         if self.poly.ring != rhs.poly.ring {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials have different rings".to_string(),
@@ -10299,10 +10758,23 @@ impl_stub_type!(&mut PythonGaloisFieldPolynomial = PythonGaloisFieldPolynomial);
 #[pymethods]
 impl PythonGaloisFieldPolynomial {
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonGaloisFieldPolynomial>>(py) else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.is_constant()
+                    && self.poly.get_constant() == self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.is_constant()
+                    || self.poly.get_constant() != self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
                 "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
@@ -10314,7 +10786,10 @@ impl PythonGaloisFieldPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }
@@ -10466,26 +10941,126 @@ impl PythonGaloisFieldPolynomial {
     }
 
     /// Add two polynomials `self and `rhs`, returning the result.
-    pub fn __add__(&self, rhs: Self) -> Self {
-        Self {
-            poly: self.poly.clone() + rhs.poly.clone(),
+    pub fn __add__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly + &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
         }
     }
 
     /// Subtract polynomials `rhs` from `self`, returning the result.
-    pub fn __sub__(&self, rhs: Self) -> Self {
-        self.__add__(rhs.__neg__())
+    pub fn __sub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly - &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.neg(&self.poly.ring.element_from_integer(i))),
+            }),
+        }
     }
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
-    pub fn __mul__(&self, rhs: Self) -> Self {
-        Self {
-            poly: &self.poly * &rhs.poly,
+    pub fn __mul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly * &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .mul_coeff(self.poly.ring.element_from_integer(i)),
+            }),
         }
+    }
+
+    pub fn __radd__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__add__(rhs)
+    }
+
+    pub fn __rsub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &p.poly - &self.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .neg()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__mul__(rhs)
+    }
+
+    pub fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
+        if self.poly.ring != rhs.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different rings".to_string(),
+            ));
+        };
+
+        let (q, _r) = self.poly.quot_rem(&rhs.poly, false);
+
+        Ok(Self { poly: q })
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
         let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
@@ -10962,10 +11537,23 @@ impl_stub_type!(&mut PythonNumberFieldPolynomial = PythonNumberFieldPolynomial);
 #[pymethods]
 impl PythonNumberFieldPolynomial {
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonNumberFieldPolynomial>>(py) else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.is_constant()
+                    && self.poly.get_constant() == self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.is_constant()
+                    || self.poly.get_constant() != self.poly.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
                 "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
@@ -10977,7 +11565,10 @@ impl PythonNumberFieldPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }
@@ -11129,26 +11720,126 @@ impl PythonNumberFieldPolynomial {
     }
 
     /// Add two polynomials `self and `rhs`, returning the result.
-    pub fn __add__(&self, rhs: Self) -> Self {
-        Self {
-            poly: self.poly.clone() + rhs.poly.clone(),
+    pub fn __add__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly + &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
         }
     }
 
     /// Subtract polynomials `rhs` from `self`, returning the result.
-    pub fn __sub__(&self, rhs: Self) -> Self {
-        self.__add__(rhs.__neg__())
+    pub fn __sub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly - &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .add_constant(self.poly.ring.neg(&self.poly.ring.element_from_integer(i))),
+            }),
+        }
     }
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
-    pub fn __mul__(&self, rhs: Self) -> Self {
-        Self {
-            poly: &self.poly * &rhs.poly,
+    pub fn __mul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &self.poly * &p.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .mul_coeff(self.poly.ring.element_from_integer(i)),
+            }),
         }
+    }
+
+    pub fn __radd__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__add__(rhs)
+    }
+
+    pub fn __rsub__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        match rhs {
+            PolynomialOrInteger::Polynomial(p) => {
+                if self.poly.ring != p.poly.ring {
+                    Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ))
+                } else {
+                    Ok(Self {
+                        poly: &p.poly - &self.poly,
+                    })
+                }
+            }
+            PolynomialOrInteger::Integer(i) => Ok(Self {
+                poly: self
+                    .poly
+                    .clone()
+                    .neg()
+                    .add_constant(self.poly.ring.element_from_integer(i)),
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: PolynomialOrInteger<Self>) -> PyResult<Self> {
+        self.__mul__(rhs)
+    }
+
+    pub fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
+
+        if self.poly.ring != rhs.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different rings".to_string(),
+            ));
+        };
+
+        let (q, _r) = self.poly.quot_rem(&rhs.poly, false);
+
+        Ok(Self { poly: q })
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            return Err(exceptions::PyValueError::new_err("Division by zero"));
+        }
         let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
@@ -11668,12 +12359,27 @@ impl PythonRationalPolynomial {
     }
 
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonRationalPolynomial>>(py) else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.denominator.is_one()
+                    && self.poly.numerator.get_constant()
+                        == self.poly.numerator.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.denominator.is_one()
+                    || self.poly.numerator.get_constant()
+                        != self.poly.numerator.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
-                "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
                 match op {
                     CompareOp::Eq => "==",
@@ -11683,7 +12389,10 @@ impl PythonRationalPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }
@@ -12013,12 +12722,28 @@ impl PythonFiniteFieldRationalPolynomial {
     }
 
     /// Compare two polynomials.
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+    fn __richcmp__(&self, o: Py<PyAny>, op: CompareOp, py: Python) -> PyResult<bool> {
+        let Ok(other) = o.extract::<PolynomialOrInteger<PythonFiniteFieldRationalPolynomial>>(py)
+        else {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare Polynomial with Polynomial or integer.",
+            ));
+        };
         match op {
-            CompareOp::Eq => Ok(self.poly == other.poly),
-            CompareOp::Ne => Ok(self.poly != other.poly),
+            CompareOp::Eq => match other {
+                PolynomialOrInteger::Integer(i) => Ok(self.poly.denominator.is_one()
+                    && self.poly.numerator.get_constant()
+                        == self.poly.numerator.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly == p.poly),
+            },
+            CompareOp::Ne => match other {
+                PolynomialOrInteger::Integer(i) => Ok(!self.poly.denominator.is_one()
+                    || self.poly.numerator.get_constant()
+                        != self.poly.numerator.ring.element_from_integer(i)),
+                PolynomialOrInteger::Polynomial(p) => Ok(self.poly != p.poly),
+            },
             _ => Err(exceptions::PyTypeError::new_err(format!(
-                "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                "Inequalities between polynomials are not allowed in {} {} {}",
                 self.__str__()?,
                 match op {
                     CompareOp::Eq => "==",
@@ -12028,7 +12753,10 @@ impl PythonFiniteFieldRationalPolynomial {
                     CompareOp::Lt => "<",
                     CompareOp::Ne => "!=",
                 },
-                other.__str__()?,
+                match other {
+                    PolynomialOrInteger::Integer(i) => i.to_string(),
+                    PolynomialOrInteger::Polynomial(p) => p.__str__()?,
+                }
             ))),
         }
     }

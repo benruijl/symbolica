@@ -2252,7 +2252,48 @@ impl Add<i64> for CoefficientView<'_> {
     }
 }
 
-impl TryFrom<Atom> for i64 {
+macro_rules! try_from_atom_int {
+    ($t:ty) => {
+        impl TryFrom<Atom> for $t {
+            type Error = &'static str;
+
+            fn try_from(value: Atom) -> Result<Self, Self::Error> {
+                value.as_view().try_into()
+            }
+        }
+
+        impl TryFrom<&Atom> for $t {
+            type Error = &'static str;
+
+            fn try_from(value: &Atom) -> Result<Self, Self::Error> {
+                value.as_view().try_into()
+            }
+        }
+
+        impl<'a> TryFrom<AtomView<'a>> for $t {
+            type Error = &'static str;
+
+            fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
+                <$t>::try_from(Integer::try_from(value)?)
+            }
+        }
+    };
+}
+
+try_from_atom_int!(i8);
+try_from_atom_int!(i16);
+try_from_atom_int!(i32);
+try_from_atom_int!(i64);
+try_from_atom_int!(i128);
+try_from_atom_int!(isize);
+try_from_atom_int!(u8);
+try_from_atom_int!(u16);
+try_from_atom_int!(u32);
+try_from_atom_int!(u64);
+try_from_atom_int!(u128);
+try_from_atom_int!(usize);
+
+impl TryFrom<Atom> for Integer {
     type Error = &'static str;
 
     fn try_from(value: Atom) -> Result<Self, Self::Error> {
@@ -2260,7 +2301,7 @@ impl TryFrom<Atom> for i64 {
     }
 }
 
-impl TryFrom<&Atom> for i64 {
+impl TryFrom<&Atom> for Integer {
     type Error = &'static str;
 
     fn try_from(value: &Atom) -> Result<Self, Self::Error> {
@@ -2268,18 +2309,15 @@ impl TryFrom<&Atom> for i64 {
     }
 }
 
-impl<'a> TryFrom<AtomView<'a>> for i64 {
+impl<'a> TryFrom<AtomView<'a>> for Integer {
     type Error = &'static str;
 
     fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
-        if let AtomView::Num(n) = value {
-            if let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view() {
-                Ok(n)
-            } else {
-                Err("Not an i64")
-            }
+        let r = Rational::try_from(value)?;
+        if r.is_integer() {
+            Ok(r.numerator())
         } else {
-            Err("Not a number")
+            Err("Cannot convert rational number to integer")
         }
     }
 }
@@ -2425,6 +2463,34 @@ impl<'a> TryFrom<AtomView<'a>> for Complex<Rational> {
                 CoefficientView::Large(r, i) => Ok(Complex::new(r.to_rat(), i.to_rat())),
                 _ => Err("Not a rational"),
             }
+        } else {
+            Err("Not a number")
+        }
+    }
+}
+
+impl TryFrom<Atom> for Coefficient {
+    type Error = &'static str;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl TryFrom<&Atom> for Coefficient {
+    type Error = &'static str;
+
+    fn try_from(value: &Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl<'a> TryFrom<AtomView<'a>> for Coefficient {
+    type Error = &'static str;
+
+    fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
+        if let AtomView::Num(n) = value {
+            Ok(n.get_coeff_view().to_owned())
         } else {
             Err("Not a number")
         }

@@ -12,6 +12,7 @@ use crate::{
     },
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
+    warn,
 };
 
 impl AtomView<'_> {
@@ -906,6 +907,7 @@ impl AtomView<'_> {
                         }
 
                         if n.is_zero() && id == Symbol::LOG {
+                            warn!("Created infinity by log(0)");
                             out.to_num(Coefficient::Infinity(Some(Rational::new(-1, 1).into())));
                             return;
                         }

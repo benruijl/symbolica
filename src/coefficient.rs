@@ -1179,6 +1179,7 @@ impl CoefficientView<'_> {
                 }
                 CoefficientView::Natural(r, _, _, _) => {
                     if *r < 0 {
+                        warn!("Created infinity by raising 0 to the power of {}", r);
                         Coefficient::Infinity(None)
                     } else if *r == 0 {
                         warn!("Created indeterminate by raising 0 to the power of 0");
@@ -1193,6 +1194,10 @@ impl CoefficientView<'_> {
                 }
                 CoefficientView::Large(r, _) => {
                     if r.is_negative() {
+                        warn!(
+                            "Created infinity by raising 0 to the power of {}",
+                            r.to_rat()
+                        );
                         Coefficient::Infinity(None)
                     } else if r.is_zero() {
                         warn!("Created indeterminate by raising 0 to the power of 0");

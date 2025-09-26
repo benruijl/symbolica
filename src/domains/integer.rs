@@ -227,6 +227,158 @@ macro_rules! cmp_with_conv {
     };
 }
 
+impl TryFrom<Integer> for i64 {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        match value {
+            Integer::Natural(n) => Ok(n),
+            _ => Err("Could not convert to i64 as it is too large"),
+        }
+    }
+}
+
+impl TryFrom<Integer> for i128 {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        match value {
+            Integer::Natural(n) => Ok(n as i128),
+            Integer::Double(n) => Ok(n),
+            _ => Err("Could not convert to i64 as it is too large"),
+        }
+    }
+}
+
+macro_rules! try_from_int_smaller_i64 {
+    ($base: ty) => {
+        impl TryFrom<Integer> for $base {
+            type Error = &'static str;
+
+            #[inline]
+            fn try_from(value: Integer) -> Result<Self, Self::Error> {
+                match value {
+                    Integer::Natural(n) => {
+                        if n >= <$base>::MIN as i64 && n <= <$base>::MAX as i64 {
+                            Ok(n as $base)
+                        } else {
+                            Err(concat!(
+                                "Could not convert to ",
+                                stringify!($base),
+                                " as the integer is out of range"
+                            ))
+                        }
+                    }
+                    _ => Err(concat!(
+                        "Could not convert to ",
+                        stringify!($base),
+                        " as the integer is too large"
+                    )),
+                }
+            }
+        }
+    };
+}
+
+try_from_int_smaller_i64!(i8);
+try_from_int_smaller_i64!(i16);
+try_from_int_smaller_i64!(i32);
+try_from_int_smaller_i64!(u8);
+try_from_int_smaller_i64!(u16);
+try_from_int_smaller_i64!(u32);
+
+impl TryFrom<Integer> for isize {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        if isize::BITS == 32 {
+            i32::try_from(value).map(|x| x as isize)
+        } else if usize::BITS == 64 {
+            i64::try_from(value).map(|x| x as isize)
+        } else if usize::BITS == 128 {
+            i128::try_from(value).map(|x| x as isize)
+        } else {
+            Err("Could not convert to isize on this platform")
+        }
+    }
+}
+
+impl TryFrom<Integer> for usize {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        if isize::BITS == 32 {
+            u32::try_from(value).map(|x| x as usize)
+        } else if usize::BITS == 64 {
+            u64::try_from(value).map(|x| x as usize)
+        } else if usize::BITS == 128 {
+            u128::try_from(value).map(|x| x as usize)
+        } else {
+            Err("Could not convert to isize on this platform")
+        }
+    }
+}
+
+impl TryFrom<Integer> for u64 {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        match value {
+            Integer::Natural(n) => {
+                if n >= 0 {
+                    Ok(n as u64)
+                } else {
+                    Err("Could not convert to u64 as it is negative")
+                }
+            }
+            Integer::Double(n) => {
+                if n >= 0 {
+                    if n <= u64::MAX as i128 {
+                        Ok(n as u64)
+                    } else {
+                        Err("Could not convert to u64 as it is too large")
+                    }
+                } else {
+                    Err("Could not convert to u64 as it is negative")
+                }
+            }
+            Integer::Large(_) => Err("Could not convert to u64 as it is too large"),
+        }
+    }
+}
+
+impl TryFrom<Integer> for u128 {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        match value {
+            Integer::Natural(n) => {
+                if n >= 0 {
+                    Ok(n as u128)
+                } else {
+                    Err("Could not convert to u128 as it is negative")
+                }
+            }
+            Integer::Double(n) => {
+                if n >= 0 {
+                    Ok(n as u128)
+                } else {
+                    Err("Could not convert to u128 as it is negative")
+                }
+            }
+            Integer::Large(l) => l
+                .to_u128()
+                .ok_or("Could not convert to u128 as it is too large"),
+        }
+    }
+}
+
 impl From<i128> for Integer {
     #[inline]
     fn from(value: i128) -> Self {

@@ -80,45 +80,61 @@ static LICENSE_KEY: OnceCell<String> = OnceCell::new();
 static LICENSE_MANAGER: OnceCell<LicenseManager> = OnceCell::new();
 static LICENSED: AtomicBool = LicenseManager::init();
 
-/// If set to true, use `tracing` for all log information instead of printing to screen.
-pub static USE_LOGGER: AtomicBool = AtomicBool::new(false);
+/// Set whether a default tracing subscriber is initialized upon the first call to a logging macro.
+pub static INITIALIZE_TRACING: AtomicBool = AtomicBool::new(true);
 
-/// Write error messages to either a `tracing` logger or stderr, depending on the value of [USE_LOGGER].
+/// Write error messages to either a `tracing` logger or stderr, depending on the value of [INITIALIZE_TRACING].
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
-            tracing::error!($($arg)*);
-        } else {
-            eprint!("ERROR: ");
-            eprintln!($($arg)*);
+        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::builder()
+                            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                            .from_env_lossy(),
+                    )
+                    .try_init();
+            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
         }
-    };
+
+        tracing::error!($($arg)*);
+   };
 }
 
-/// Write warning messages to either the logger or stderr, depending on the value of [USE_LOGGER].
+/// Write warning messages to either the logger or stderr, depending on the value of [INITIALIZE_TRACING].
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
-            tracing::warn!($($arg)*);
-        } else {
-            eprint!("WARNING: ");
-            eprintln!($($arg)*);
+        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::builder()
+                            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                            .from_env_lossy(),
+                    )
+                    .try_init();
+            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
         }
+        tracing::warn!($($arg)*);
     };
 }
 
-/// Write info messages to either the logger or stdout, depending on the value of [USE_LOGGER].
+/// Write info messages to either the logger or stdout, depending on the value of [INITIALIZE_TRACING].
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        if crate::USE_LOGGER.load(std::sync::atomic::Ordering::Relaxed) {
-            tracing::info!($($arg)*);
-        } else {
-            eprint!("INFO: ");
-            println!($($arg)*);
+        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = tracing_subscriber::fmt()
+                    .with_env_filter(
+                        tracing_subscriber::EnvFilter::builder()
+                            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                            .from_env_lossy(),
+                    )
+                    .try_init();
+            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
         }
+        tracing::info!($($arg)*);
     };
 }
 

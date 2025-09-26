@@ -22,10 +22,12 @@ import numpy as np
 import numpy.typing as npt
 
 
-def use_logger(enable: bool = True) -> None:
-    """Enable logging using Python's logging module instead of printing to stdout.
+def use_custom_logger() -> None:
+    """Enable logging using Python's logging module instead of using the default logging.
     This is useful when using Symbolica in a Jupyter notebook or other environments
     where stdout is not easily accessible.
+
+    This function must be called before any Symbolica logging events are emitted.
     """
 
 

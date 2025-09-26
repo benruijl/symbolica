@@ -267,7 +267,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
     m.add_function(wrap_pyfunction!(get_license_key, m)?)?;
-    m.add_function(wrap_pyfunction!(use_logger, m)?)?;
+    m.add_function(wrap_pyfunction!(use_custom_logger, m)?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
@@ -294,10 +294,14 @@ fn symbolica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     create_symbolica_module(m).map(|_| ())
 }
 
-/// Enable logging using Python's logging module instead of printing to stdout.
-#[pyfunction(signature = (enable=true))]
-fn use_logger(enable: bool) {
-    crate::USE_LOGGER.store(enable, std::sync::atomic::Ordering::Relaxed);
+/// Enable logging using Python's logging module instead of using the default logging.
+/// This is useful when using Symbolica in a Jupyter notebook or other environments
+/// where stdout is not easily accessible.
+///
+/// This function must be called before any Symbolica logging events are emitted.
+#[pyfunction()]
+fn use_custom_logger() {
+    crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Get the current Symbolica version.

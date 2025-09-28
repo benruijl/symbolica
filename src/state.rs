@@ -1146,13 +1146,10 @@ mod tests {
                         if let AtomView::Fun(f2) = arg {
                             if f2.get_symbol() == Symbol::EXP && f2.get_nargs() == 1 {
                                 out.set_from_view(&f2.iter().next().unwrap());
-                                return true;
                             }
                         }
                     }
                 }
-
-                false
             }
         );
 

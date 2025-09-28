@@ -1140,7 +1140,9 @@ impl AtomView<'_> {
 
                             if let Some(f) = State::get_normalization_function(id) {
                                 let mut fs = workspace.new_atom();
-                                if f(handle.as_view(), &mut fs) {
+                                let mut setter = fs.deref_mut().into();
+                                f(handle.as_view(), &mut setter);
+                                if setter.is_set() {
                                     std::mem::swap(&mut handle, &mut fs);
                                 }
                                 debug_assert!(!handle.as_view().needs_normalization());
@@ -1199,7 +1201,9 @@ impl AtomView<'_> {
 
                 if let Some(f) = State::get_normalization_function(id) {
                     let mut fs = workspace.new_atom();
-                    if f(out.as_view(), &mut fs) {
+                    let mut setter = fs.deref_mut().into();
+                    f(out.as_view(), &mut setter);
+                    if setter.is_set() {
                         std::mem::swap(out, fs.deref_mut());
                     }
                     debug_assert!(!out.as_view().needs_normalization());

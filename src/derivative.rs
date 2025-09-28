@@ -142,7 +142,9 @@ impl AtomView<'_> {
                 let mut mul = workspace.new_atom();
                 for (index, arg_der) in args_der {
                     if let Some(custom_der) = &f.get_symbol().get_data().custom_derivative {
-                        if custom_der(*self, index, &mut fn_der) {
+                        let mut setter = fn_der.deref_mut().into();
+                        custom_der(*self, index, &mut setter);
+                        if setter.is_set() {
                             let m = mul.to_mul();
                             m.extend(fn_der.as_view());
                             m.extend(arg_der.as_view());

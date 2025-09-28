@@ -87,6 +87,7 @@ use crate::{
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError, TransformerState},
     try_parse,
+    utils::Settable,
 };
 
 const DEFAULT_PRINT_OPTIONS: PrintOptions = PrintOptions {
@@ -3068,7 +3069,7 @@ impl PythonExpression {
 
             if let Some(f) = custom_normalization {
                 symbol = symbol.with_normalization_function(Box::new(
-                    move |input: AtomView<'_>, out: &mut Atom| {
+                    move |input: AtomView<'_>, out: &mut Settable<Atom>| {
                         let _ = Workspace::get_local()
                             .with(|ws| {
                                 Transformer::execute_chain(
@@ -3076,11 +3077,10 @@ impl PythonExpression {
                                     &f.chain,
                                     ws,
                                     &TransformerState::default(),
-                                    out,
+                                    &mut *out,
                                 )
                             })
                             .unwrap();
-                        true
                     },
                 ))
             }
@@ -3105,15 +3105,14 @@ impl PythonExpression {
 
             if let Some(f) = custom_derivative {
                 symbol = symbol.with_derivative_function(Box::new(
-                    move |input: AtomView<'_>, arg: usize, out: &mut Atom| {
-                        *out = Python::with_gil(|py| {
+                    move |input: AtomView<'_>, arg: usize, out: &mut Settable<Atom>| {
+                        **out = Python::with_gil(|py| {
                             f.call1(py, (PythonExpression::from(input.to_owned()), arg))
                                 .unwrap()
                                 .extract::<PythonExpression>(py)
                                 .unwrap()
                         })
                         .expr;
-                        true
                     },
                 ))
             }
@@ -3148,7 +3147,7 @@ impl PythonExpression {
                 if let Some(f) = &custom_normalization {
                     let t = f.chain.clone();
                     symbol = symbol.with_normalization_function(Box::new(
-                        move |input: AtomView<'_>, out: &mut Atom| {
+                        move |input: AtomView<'_>, out: &mut Settable<Atom>| {
                             let _ = Workspace::get_local()
                                 .with(|ws| {
                                     Transformer::execute_chain(
@@ -3156,11 +3155,10 @@ impl PythonExpression {
                                         &t,
                                         ws,
                                         &TransformerState::default(),
-                                        out,
+                                        &mut *out,
                                     )
                                 })
                                 .unwrap();
-                            true
                         },
                     ))
                 }

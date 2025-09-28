@@ -659,7 +659,7 @@ mod test {
     #[test]
     fn canonize_constant() {
         let a1 = parse!("x+5");
-        let r1 = a1.canonize_tensors::<Atom, usize>(&[]).unwrap();
+        let r1 = a1.canonize_tensors::<_, Atom, usize>(&[]).unwrap();
         assert_eq!(a1, r1);
     }
 }

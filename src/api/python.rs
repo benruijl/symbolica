@@ -63,11 +63,12 @@ use crate::{
         },
     },
     evaluate::{
-        CompileOptions, CompiledComplexEvaluator, CompiledCudaComplexEvaluator,
-        CompiledCudaRealEvaluator, CompiledNumber, CompiledRealEvaluator, CudaComplexf64,
-        CudaLoadSettings, CudaRealf64, EvaluationFn, EvaluatorLoader, ExportSettings,
-        ExpressionEvaluator, ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM,
-        Instruction, OptimizationSettings, Slot,
+        BatchEvaluator, CompileOptions, CompiledComplexEvaluator, CompiledCudaComplexEvaluator,
+        CompiledCudaRealEvaluator, CompiledNumber, CompiledRealEvaluator,
+        CompiledSimdComplexEvaluator, CompiledSimdRealEvaluator, CudaComplexf64, CudaLoadSettings,
+        CudaRealf64, EvaluationFn, EvaluatorLoader, ExportSettings, ExpressionEvaluator,
+        ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM, Instruction,
+        OptimizationSettings, Slot,
     },
     graph::{GenerationSettings, Graph},
     id::{
@@ -13404,6 +13405,58 @@ impl PythonExpressionEvaluator {
                 output_len: self.eval_rat.get_output_len(),
             }
             .into_py_any(py),
+            "real_4x" => PythonCompiledSimdRealExpressionEvaluator {
+                eval: self
+                    .eval_complex
+                    .export_cpp::<wide::f64x4>(
+                        filename,
+                        function_name,
+                        ExportSettings {
+                            include_header: true,
+                            inline_asm,
+                            custom_header,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                    .compile(library_name, options)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                    })?
+                    .load()
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                    })?,
+                input_len: self.eval_rat.get_input_len(),
+                output_len: self.eval_rat.get_output_len(),
+            }
+            .into_py_any(py),
+            "complex_4x" => PythonCompiledSimdComplexExpressionEvaluator {
+                eval: self
+                    .eval_complex
+                    .export_cpp::<Complex<wide::f64x4>>(
+                        filename,
+                        function_name,
+                        ExportSettings {
+                            include_header: true,
+                            inline_asm,
+                            custom_header,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                    .compile(library_name, options)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                    })?
+                    .load()
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                    })?,
+                input_len: self.eval_rat.get_input_len(),
+                output_len: self.eval_rat.get_output_len(),
+            }
+            .into_py_any(py),
             "cuda_real" => PythonCompiledCudaRealExpressionEvaluator {
                 eval: self
                     .eval_complex
@@ -13527,6 +13580,70 @@ impl PythonCompiledRealExpressionEvaluator {
                 o.as_slice_mut().unwrap(),
             );
         }
+
+        Ok(out.into_pyarray(py))
+    }
+}
+
+/// A compiled and optimized evaluator for expressions.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "CompiledRealEvaluator")]
+#[derive(Clone)]
+pub struct PythonCompiledSimdRealExpressionEvaluator {
+    pub eval: CompiledSimdRealEvaluator,
+    pub input_len: usize,
+    pub output_len: usize,
+}
+
+#[pymethods]
+impl PythonCompiledSimdRealExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[classmethod]
+    fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        function_name: &str,
+        input_len: usize,
+        output_len: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledSimdRealEvaluator::load(filename, function_name)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
+            output_len,
+        })
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate<'py>(
+        &mut self,
+        inputs: PyArrayLike2<'py, f64, TypeMustMatch>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.input_len {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.input_len,
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.output_len][..]);
+
+        self.eval
+            .evaluate_batch(
+                n_inputs,
+                arr.as_slice().ok_or_else(|| {
+                    exceptions::PyValueError::new_err("Failed to convert input to slice")
+                })?,
+                out.as_slice_mut().unwrap(),
+            )
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Batch error: {}", e)))?;
 
         Ok(out.into_pyarray(py))
     }
@@ -13747,6 +13864,75 @@ impl PythonCompiledComplexExpressionEvaluator {
 
             self.eval.evaluate(sc, os);
         }
+
+        Ok(out.into_pyarray(py))
+    }
+}
+
+/// A compiled and optimized evaluator for expressions.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "CompiledSimdComplexEvaluator")]
+#[derive(Clone)]
+pub struct PythonCompiledSimdComplexExpressionEvaluator {
+    pub eval: CompiledSimdComplexEvaluator,
+    pub input_len: usize,
+    pub output_len: usize,
+}
+
+#[pymethods]
+impl PythonCompiledSimdComplexExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[classmethod]
+    fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        function_name: &str,
+        input_len: usize,
+        output_len: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledSimdComplexEvaluator::load(filename, function_name)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
+            output_len,
+        })
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate_complex<'py>(
+        &mut self,
+        py: Python<'py>,
+        inputs: PyArrayLike2<'py, Complex64, TypeMustMatch>,
+    ) -> PyResult<Bound<'py, PyArrayDyn<Complex64>>> {
+        let arr = inputs.as_array();
+
+        if inputs.shape()[1] != self.input_len {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Input length mismatch: expected {}, got {}",
+                self.input_len,
+                inputs.shape()[1]
+            )));
+        }
+        let n_inputs = inputs.shape()[0];
+        let mut out = ArrayD::zeros(&[n_inputs, self.output_len][..]);
+
+        let sc = unsafe {
+            std::mem::transmute::<&[Complex64], &[Complex<f64>]>(arr.as_slice().ok_or_else(
+                || exceptions::PyValueError::new_err("Failed to convert input to slice"),
+            )?)
+        };
+        let os = unsafe {
+            std::mem::transmute::<&mut [Complex64], &mut [Complex<f64>]>(
+                out.as_slice_mut().unwrap(),
+            )
+        };
+
+        self.eval
+            .evaluate_batch(n_inputs, sc, os)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Batch error: {}", e)))?;
 
         Ok(out.into_pyarray(py))
     }

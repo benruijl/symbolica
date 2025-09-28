@@ -4443,11 +4443,12 @@ class Evaluator:
             The name of the file to generate.
         library_name : str
             The name of the shared library to generate.
-        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
+        number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
             The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
             For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
         inline_asm : str
-            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+            The inline ASM option can be set to 'default', 'x64', 'avx2', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
         native: bool
@@ -4484,11 +4485,96 @@ class Evaluator:
             The name of the file to generate.
         library_name : str
             The name of the shared library to generate.
-        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
+        number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
             The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
             For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
         inline_asm : str
-            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+            The inline ASM option can be set to 'default', 'x64', 'avx2', 'aarch64' or 'none'.
+        optimization_level : int
+            The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        native: bool
+            If `True`, compile for the native architecture. This may produce faster code, but is less portable.
+        compiler_path : Optional[str]
+            The custom path to the compiler executable.
+        compiler_flags : Optional[Sequence[str]]
+            The custom flags to pass to the compiler.
+        custom_header : Optional[str]
+            The custom header to include in the generated code.
+        """
+
+    @overload
+    def compile(
+        self,
+        function_name: str,
+        filename: str,
+        library_name: str,
+        number_type: Literal['real_4x'],
+        inline_asm: str = 'default',
+        optimization_level: int = 3,
+        native: bool = True,
+        compiler_path: Optional[str] = None,
+        compiler_flags: Optional[Sequence[str]] = None,
+        custom_header: Optional[str] = None,
+    ) -> CompiledSimdRealEvaluator:
+        """Compile the evaluator to a shared library with 4x SIMD using C++ and optionally inline assembly and load it.
+
+        Parameters
+        ----------
+        function_name : str
+            The name of the function to generate and compile.
+        filename : str
+            The name of the file to generate.
+        library_name : str
+            The name of the shared library to generate.
+        number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+            The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+            For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+        inline_asm : str
+            The inline ASM option can be set to 'default', 'x64', 'avx2', 'aarch64' or 'none'.
+        optimization_level : int
+            The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
+        native: bool
+            If `True`, compile for the native architecture. This may produce faster code, but is less portable.
+        compiler_path : Optional[str]
+            The custom path to the compiler executable.
+        compiler_flags : Optional[Sequence[str]]
+            The custom flags to pass to the compiler.
+        custom_header : Optional[str]
+            The custom header to include in the generated code.
+        """
+
+    @overload
+    def compile(
+        self,
+        function_name: str,
+        filename: str,
+        library_name: str,
+        number_type: Literal['complex_4x'],
+        inline_asm: str = 'default',
+        optimization_level: int = 3,
+        native: bool = True,
+        compiler_path: Optional[str] = None,
+        compiler_flags: Optional[Sequence[str]] = None,
+        custom_header: Optional[str] = None,
+    ) -> CompiledSimdComplexEvaluator:
+        """Compile the evaluator to a shared library with 4x SIMD using C++ and optionally inline assembly and load it.
+
+        Parameters
+        ----------
+        function_name : str
+            The name of the function to generate and compile.
+        filename : str
+            The name of the file to generate.
+        library_name : str
+            The name of the shared library to generate.
+        number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
+            The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
+            For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
+        inline_asm : str
+            The inline ASM option can be set to 'default', 'x64', 'avx2', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
         native: bool
@@ -4530,11 +4616,12 @@ class Evaluator:
             The name of the file to generate.
         library_name : str
             The name of the shared library to generate.
-        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
+        number_type : Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
             The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
             For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
         inline_asm : str
-            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+            The inline ASM option can be set to 'default', 'x64', 'avx2', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
         native: bool
@@ -4581,11 +4668,12 @@ class Evaluator:
             The name of the file to generate.
         library_name : str
             The name of the shared library to generate.
-        number_type : Literal['real'] | Literal['complex'] | Literal['cuda_real'] | Literal['cuda_complex']
+        number_type :  Literal['real'] | Literal['complex'] | Literal['real_4x'] | Literal['complex_4x'] | Literal['cuda_real'] | Literal['cuda_complex']
             The type of numbers to use. Can be 'real' for double or 'complex' for complex double.
+            For 4x SIMD runs, use 'real_4x' or 'complex_4x'.
             For GPU runs with CUDA, use 'cuda_real' or 'cuda_complex'.
         inline_asm : str
-            The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+            The inline ASM option can be set to 'default', 'x64', 'avx2', 'aarch64' or 'none'.
         optimization_level : int
             The optimization level to use for the compiler. This can be set to 0, 1, 2 or 3.
         native: bool
@@ -4638,8 +4726,7 @@ class Evaluator:
 
 
 class CompiledRealEvaluator:
-    """An compiled evaluator of an expression. This will give the highest performance of
-    all evaluators."""
+    """A compiled evaluator of an expression."""
 
     @classmethod
     def load(
@@ -4656,8 +4743,7 @@ class CompiledRealEvaluator:
 
 
 class CompiledComplexEvaluator:
-    """An compiled evaluator of an expression. This will give the highest performance of
-    all evaluators."""
+    """A compiled evaluator of an expression."""
 
     @classmethod
     def load(
@@ -4673,9 +4759,42 @@ class CompiledComplexEvaluator:
         """Evaluate the expression for multiple inputs and return the result."""
 
 
+class CompiledSimdRealEvaluator:
+    """A compiled evaluator of an expression that packs 4 double using SIMD."""
+
+    @classmethod
+    def load(
+        _cls,
+        filename: str,
+        function_name: str,
+        input_len: int,
+        output_len: int,
+    ) -> CompiledSimdRealEvaluator:
+        """Load a compiled library, previously generated with `Evaluator.compile()`."""
+
+    def evaluate(self, inputs: npt.ArrayLike) -> npt.NDArray[np.float64]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+
+class CompiledSimdComplexEvaluator:
+    """A compiled evaluator of an expression that packs 4 double using SIMD."""
+
+    @classmethod
+    def load(
+        _cls,
+        filename: str,
+        function_name: str,
+        input_len: int,
+        output_len: int,
+    ) -> CompiledSimdComplexEvaluator:
+        """Load a compiled library, previously generated with `Evaluator.compile()`."""
+
+    def evaluate(self, inputs: npt.ArrayLike) -> npt.NDArray[np.complex128]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+
 class CompiledCudaRealEvaluator:
-    """An compiled evaluator of an expression. This will give the highest performance of
-    all evaluators."""
+    """A compiled evaluator of an expression that uses CUDA for GPU acceleration."""
 
     @classmethod
     def load(
@@ -4694,8 +4813,7 @@ class CompiledCudaRealEvaluator:
 
 
 class CompiledCudaComplexEvaluator:
-    """An compiled evaluator of an expression. This will give the highest performance of
-    all evaluators."""
+    """A compiled evaluator of an expression that uses CUDA for GPU acceleration."""
 
     @classmethod
     def load(

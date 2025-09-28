@@ -1157,14 +1157,19 @@ pub trait AtomCore {
     /// # }
     /// ```
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
-    fn canonize_tensors<T: AtomCore, G: Ord + std::hash::Hash>(
+    fn canonize_tensors<I, T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        indices: &[(T, G)],
-    ) -> Result<Atom, String> {
-        let indices = indices
-            .iter()
+        indices: &I,
+    ) -> Result<Atom, String>
+    where
+        for<'a> &'a I: IntoIterator<Item = &'a (T, G)>,
+    {
+        let mut indices = indices
+            .into_iter()
             .map(|(i, g)| (i.as_atom_view(), g))
             .collect::<Vec<_>>();
+        indices.sort();
+        indices.dedup();
         self.as_atom_view().canonize_tensors(&indices)
     }
 

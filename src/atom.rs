@@ -53,6 +53,7 @@ use crate::{
     printer::{AtomPrinter, PrintFunction, PrintOptions},
     state::{RecycledAtom, State, SymbolData, Workspace},
     transformer::StatsOptions,
+    utils::Settable,
 };
 
 use std::{borrow::Cow, cmp::Ordering, hash::Hash, ops::DerefMut};
@@ -249,30 +250,28 @@ macro_rules! hide_namespace {
 }
 
 /// A function that is called after normalization of the arguments.
-/// If the input, the first argument, is normalized, the function should return `false`.
-/// Otherwise, the function must return `true` and set the second argument to the normalized value.
+/// Additional modifications on `view` can be made and the result
+/// can be written into `out`.
+/// If no further normalization is needed, `out` must be left untouched.
 ///
 /// # Examples
 ///
 /// ```
 /// use symbolica::atom::{Atom, AtomView, NormalizationFunction};
 ///
-/// let normalize_fn: NormalizationFunction = Box::new(|view, atom| {
+/// let normalize_fn: NormalizationFunction = Box::new(|view, out| {
 ///     // Example normalization logic
 ///     if view.is_zero() {
-///         *atom = Atom::num(0);
-///         true
-///     } else {
-///         false
+///         out.to_num(0.into());
 ///     }
 /// });
 /// ```
-pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send + Sync>;
+pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Settable<Atom>) + Send + Sync>;
 
 /// A function that is called when a derivative of its arguments gets taken.
 /// The argument index to derive is specified in `arg`.
-/// If the default derivative should be taken, the function should return `false`.
-/// Otherwise, the function must return `true` and set the `out` argument to the normalized value.
+/// If the default derivative should be taken, do not modify `out`.
+/// Otherwise, set the `out` argument to the normalized value.
 ///
 /// # Examples
 ///
@@ -281,11 +280,10 @@ pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send 
 ///
 /// let derivative_fn: DerivativeFunction = Box::new(|view, arg, out| {
 ///     // Example derivative logic for a transparent function
-///     *out = Atom::num(1);
-///     true
+///     out.to_num(1.into());
 /// });
 /// ```
-pub type DerivativeFunction = Box<dyn Fn(AtomView, usize, &mut Atom) -> bool + Send + Sync>;
+pub type DerivativeFunction = Box<dyn Fn(AtomView, usize, &mut Settable<Atom>) + Send + Sync>;
 
 /// Attributes that can be assigned to symbols.
 #[derive(Debug, Clone, PartialEq)]
@@ -412,9 +410,6 @@ impl SymbolBuilder {
     ///     if let AtomView::Fun(f) = view {
     ///         if f.get_nargs() % 2 == 1 {
     ///             out.to_num(0.into());
-    ///             true // changed
-    ///         } else {
-    ///             false
     ///         }
     ///     } else {
     ///         unreachable!()
@@ -423,7 +418,7 @@ impl SymbolBuilder {
     /// ```
     pub fn with_normalization_function(
         mut self,
-        normalization_function: impl Fn(AtomView, &mut Atom) -> bool + Send + Sync + 'static,
+        normalization_function: impl Fn(AtomView, &mut Settable<Atom>) + Send + Sync + 'static,
     ) -> Self {
         self.normalization_function = Some(Box::new(normalization_function));
         self
@@ -457,16 +452,15 @@ impl SymbolBuilder {
     ///
     /// let f = Symbol::new(wrap_symbol!("tag")).with_derivative_function(|view, arg, out| {
     ///       if arg == 1 {
-    ///          *out = Atom::num(1);
+    ///          out.to_num(1.into());
     ///       } else {
-    ///         *out = Atom::num(0);
+    ///          out.to_num(0.into());
     ///       }
-    ///       true
     /// }).build().unwrap();
     /// ```
     pub fn with_derivative_function(
         mut self,
-        derivative_function: impl Fn(AtomView, usize, &mut Atom) -> bool + Send + Sync + 'static,
+        derivative_function: impl Fn(AtomView, usize, &mut Settable<Atom>) + Send + Sync + 'static,
     ) -> Self {
         self.derivative_function = Some(Box::new(derivative_function));
         self
@@ -2032,12 +2026,11 @@ macro_rules! tag {
 ///     if let AtomView::Fun(ff) = f {
 ///         if ff.get_nargs() % 2 == 1 {
 ///            out.to_num(0.into());
-///            return true;
 ///         }
 ///     }
-///     false
 /// });
 /// ```
+/// See [NormalizationFunction] for more details.
 ///
 /// ### Printing
 /// You can define a custom printing function using the `print` flag:
@@ -2067,6 +2060,7 @@ macro_rules! tag {
 /// });
 /// ```
 /// which renders the symbol/function as `\mu_{...}` in LaTeX.
+/// See [PrintFunction] for more details.
 ///
 /// ### Derivatives
 /// You can define a custom derivative function using the `der` flag:
@@ -2074,9 +2068,9 @@ macro_rules! tag {
 /// use symbolica::{atom::Atom, symbol};
 /// let _ = symbol!("tag", der = |a, arg, out| {
 ///     out.set_from_view(&a); // function behaves as a tag
-///     true
 /// });
 /// ```
+/// See [DerivativeFunction] for more details.
 ///
 /// To set special settings together with attributes, separate the attributes with another
 /// `;`:

@@ -56,6 +56,52 @@ pub struct Edge<EdgeData = Empty> {
     pub data: EdgeData,
 }
 
+/// Represents a part of an edge that connects to one vertex. It can be directed or undirected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HalfEdge<E> {
+    /// The direction of the half-edge with respect to a vertex it would connect to. `None` if there is no direction, `Some(true)` for outgoing, `Some(false)` for incoming.
+    pub direction: Option<bool>,
+    /// The data associated with the half-edge.
+    pub data: E,
+}
+
+impl<E> HalfEdge<E> {
+    /// Create an undirected half-edge.
+    pub fn undirected(data: E) -> Self {
+        Self {
+            direction: None,
+            data,
+        }
+    }
+
+    /// Create an incoming half-edge.
+    pub fn incoming(data: E) -> Self {
+        Self {
+            direction: Some(false),
+            data,
+        }
+    }
+
+    /// Create an outgoing half-edge.
+    pub fn outgoing(data: E) -> Self {
+        Self {
+            direction: Some(true),
+            data,
+        }
+    }
+
+    /// Create a copy of this half-edge with the direction flipped (if not undirected).
+    pub fn flip(&self) -> Self
+    where
+        E: Clone,
+    {
+        Self {
+            direction: self.direction.map(|d| !d),
+            data: self.data.clone(),
+        }
+    }
+}
+
 impl<EdgeData> Edge<EdgeData> {
     #[inline]
     pub fn is_self_loop(&self) -> bool {
@@ -594,8 +640,8 @@ impl<N, E: Eq + Ord + Hash> Graph<N, E> {
 }
 
 struct GenerationSettingsAndInput<'a, N, E> {
-    vertex_signatures: &'a [Vec<(Option<bool>, E)>],
-    allowed_structures: &'a HashSet<Vec<(Option<bool>, E)>>,
+    vertex_signatures: &'a [Vec<HalfEdge<E>>],
+    allowed_structures: &'a HashSet<Vec<HalfEdge<E>>>,
     min_degree: usize,
     max_degree: usize,
     settings: &'a mut GenerationSettings<N, E>,
@@ -731,11 +777,47 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     /// Generate all connected graphs with `external_edges` half-edges and the given allowed list
     /// of vertex connections.
     ///
+    /// The external edges are specified as a list of pairs `(node_data, half_edge)`, where `node_data`
+    /// is the data associated to the external node to which the half-edge is connected and `half_edge`
+    /// is a [HalfEdge] specifying the edge data and direction.
+    ///
+    /// The vertex signatures specify all allowed connections of directed half-edges. For example:
+    /// ```
+    /// # use symbolica::graph::{HalfEdge, GenerationSettings, Graph};
+    /// let g = HalfEdge::undirected("g");
+    /// let q = HalfEdge::incoming("q");
+    /// let vertex_signatures = [vec![g, g, g], vec![q.flip(), q, g]];
+    /// ```
+    /// allows a vertex with three undirected edges with data `g` and a vertex that joins one undirected edge with data `g`,
+    /// one incoming edge with data `q` and one outgoing edge with data `q`.
+    ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
     /// If the graph generation was aborted, all currently generated graphs are returned in the `Err` argument.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::graph::{HalfEdge, GenerationSettings, Graph};
+    /// let g = HalfEdge::undirected("g");
+    /// let q = HalfEdge::incoming("q");
+    ///
+    /// let mut graphs = Graph::generate(
+    ///     &[(1, g), (2, g)],
+    ///     &[
+    ///         vec![g, g, g],
+    ///         vec![q.flip(), q, g],
+    ///         vec![g, g, g, g],
+    ///     ],
+    ///     GenerationSettings::new()
+    ///         .max_loops(2)
+    ///         .max_bridges(0)
+    ///         .allow_self_loops(true)
+    /// ).unwrap();
+    /// assert_eq!(graphs.len(), 19);
+    /// ```
     pub fn generate(
-        external_edges: &[(N, (Option<bool>, E))],
-        vertex_signatures: &[Vec<(Option<bool>, E)>],
+        external_edges: &[(N, HalfEdge<E>)],
+        vertex_signatures: &[Vec<HalfEdge<E>>],
         mut settings: GenerationSettings<N, E>,
     ) -> Result<HashMap<Graph<N, E>, Integer>, HashMap<Graph<N, E>, Integer>> {
         if settings.max_vertices.is_none() && settings.max_loops.is_none() {
@@ -769,11 +851,8 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                 let mut it = CombinationIterator::new(e.len(), k);
                 while let Some(c) = it.next() {
                     for p in unique_permutations(c).1 {
-                        allowed_structures.insert(
-                            p.iter()
-                                .map(|&x| (e[x].0, e[x].1.clone()))
-                                .collect::<Vec<_>>(),
-                        );
+                        allowed_structures
+                            .insert(p.iter().map(|&x| e[x].clone()).collect::<Vec<_>>());
                     }
                 }
             }
@@ -802,10 +881,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
 
     fn generate_impl(
         &mut self,
-        external_edges: &[(N, (Option<bool>, E))],
+        external_edges: &[(N, HalfEdge<E>)],
         cur_vertex: usize,
         settings: &mut GenerationSettingsAndInput<N, E>,
-        edge_signatures: &mut Vec<Vec<(Option<bool>, E)>>,
+        edge_signatures: &mut Vec<Vec<HalfEdge<E>>>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if let Some(max_vertices) = settings.settings.max_vertices {
@@ -928,20 +1007,18 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             .node(cur_vertex)
             .edges
             .iter()
-            .map(|e| {
-                (
-                    if self.edges[*e].directed {
-                        Some(self.edges[*e].vertices.0 == cur_vertex)
-                    } else {
-                        None
-                    },
-                    self.edges[*e].data.clone(),
-                )
+            .map(|e| HalfEdge {
+                direction: if self.edges[*e].directed {
+                    Some(self.edges[*e].vertices.0 == cur_vertex)
+                } else {
+                    None
+                },
+                data: self.edge(*e).data.clone(),
             })
             .collect();
         cur_edges.sort();
 
-        let mut edges_left: Vec<((Option<bool>, E), usize)> = vec![];
+        let mut edges_left: Vec<(HalfEdge<E>, usize)> = vec![];
         'next_signature: for d in settings.vertex_signatures {
             // check if the current state is compatible
             if d.len() < cur_edges.len() {
@@ -1006,9 +1083,9 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         &mut self,
         source: usize,
         cur_target: usize,
-        edge_signatures: &mut Vec<Vec<(Option<bool>, E)>>,
-        external_edges: &[(N, (Option<bool>, E))],
-        edge_count: &mut [((Option<bool>, E), usize)],
+        edge_signatures: &mut Vec<Vec<HalfEdge<E>>>,
+        external_edges: &[(N, HalfEdge<E>)],
+        edge_count: &mut [(HalfEdge<E>, usize)],
         cur_edge_count_group_index: usize,
         settings: &mut GenerationSettingsAndInput<N, E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
@@ -1078,15 +1155,15 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
 
             for p1 in cur_edge_count_group_index..edge_count.len() {
-                if let Some(dir) = edge_count[p1].0.0 {
+                if let Some(dir) = edge_count[p1].0.direction {
                     if edge_count[p1].1 == 0 {
                         continue;
                     }
 
                     // find the edge signature going in the other direction
                     for p2 in cur_edge_count_group_index + 1..edge_count.len() {
-                        if edge_count[p2].0.0 == Some(!dir)
-                            && edge_count[p1].0.1 == edge_count[p2].0.1
+                        if edge_count[p2].0.direction == Some(!dir)
+                            && edge_count[p1].0.data == edge_count[p2].0.data
                         {
                             if edge_count[p2].1 == 0 {
                                 break;
@@ -1095,7 +1172,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                             edge_count[p1].1 -= 1;
                             edge_count[p2].1 -= 1;
 
-                            self.add_edge(source, source, true, edge_count[p1].0.1.clone())
+                            self.add_edge(source, source, true, edge_count[p1].0.data.clone())
                                 .unwrap();
 
                             self.distribute_edges(
@@ -1123,7 +1200,8 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                     }
 
                     *count -= 2;
-                    self.add_edge(source, source, false, e.1.clone()).unwrap();
+                    self.add_edge(source, source, false, e.data.clone())
+                        .unwrap();
 
                     self.distribute_edges(
                         source,
@@ -1193,11 +1271,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
 
             // check if the target edge signature is allowed
-            if let Some(dir) = e.0 {
-                edge_signatures[cur_target].push((Some(!dir), e.1.clone()));
-            } else {
-                edge_signatures[cur_target].push((None, e.1.clone()));
-            }
+            edge_signatures[cur_target].push(e.flip());
 
             if !settings
                 .allowed_structures
@@ -1209,16 +1283,16 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
 
             *count -= 1;
 
-            if let Some(dir) = e.0 {
+            if let Some(dir) = e.direction {
                 if dir {
-                    self.add_edge(source, cur_target, true, e.1.clone())
+                    self.add_edge(source, cur_target, true, e.data.clone())
                         .unwrap();
                 } else {
-                    self.add_edge(cur_target, source, true, e.1.clone())
+                    self.add_edge(cur_target, source, true, e.data.clone())
                         .unwrap();
                 }
             } else {
-                self.add_edge(source, cur_target, false, e.1.clone())
+                self.add_edge(source, cur_target, false, e.data.clone())
                     .unwrap();
             }
 
@@ -1891,7 +1965,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 mod test {
     use crate::{
         combinatorics::unique_permutations,
-        graph::{GenerationSettings, Graph, SearchTreeNode},
+        graph::{GenerationSettings, Graph, HalfEdge, SearchTreeNode},
     };
 
     #[test]
@@ -2034,13 +2108,11 @@ mod test {
 
     #[test]
     fn generate() {
+        let g = HalfEdge::undirected("g");
+        let q = HalfEdge::incoming("q");
         let gs = Graph::<_, &str>::generate(
-            &[(1, (None, "g")), (2, (None, "g"))],
-            &[
-                vec![(None, "g"), (None, "g"), (None, "g")],
-                vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
-                vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
-            ],
+            &[(1, g), (2, g)],
+            &[vec![g, g, g], vec![q.flip(), q, g], vec![g, g, g, g]],
             GenerationSettings::new()
                 .max_loops(3)
                 .max_bridges(0)
@@ -2053,20 +2125,11 @@ mod test {
 
     #[test]
     fn generate_tree() {
-        let external_edges = vec![
-            (1, (None, "g")),
-            (2, (None, "g")),
-            (3, (None, "g")),
-            (4, (None, "g")),
-        ];
-        let vertex_signatures = vec![
-            vec![(None, "g"), (None, "g"), (None, "g")],
-            vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
-        ];
+        let g = HalfEdge::undirected("g");
 
         let graphs = Graph::generate(
-            &external_edges,
-            &vertex_signatures,
+            &[(1, g), (2, g), (3, g), (4, g)],
+            &[vec![g, g, g], vec![g, g, g, g]],
             GenerationSettings::new()
                 .max_loops(2)
                 .max_bridges(0)
@@ -2079,13 +2142,12 @@ mod test {
 
     #[test]
     fn generate_with_filter() {
+        let g = HalfEdge::undirected("g");
+        let q = HalfEdge::incoming("q");
+
         let graphs = Graph::<_, &str>::generate(
-            &[(1, (None, "g")), (2, (None, "g"))],
-            &[
-                vec![(None, "g"), (None, "g"), (None, "g")],
-                vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
-                vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
-            ],
+            &[(1, g), (2, g)],
+            &[vec![g, g, g], vec![q.flip(), q, g], vec![g, g, g, g]],
             GenerationSettings::new()
                 .max_loops(4)
                 .max_bridges(0)

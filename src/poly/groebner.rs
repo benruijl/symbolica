@@ -423,10 +423,10 @@ impl<R: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
         gs: &[MultivariatePolynomial<R, E, O>],
     ) -> MultivariatePolynomial<R, E, O> {
         if gs.iter().any(|x| self.variables != x.variables) {
-            let mut sys: Vec<_> = vec![self.clone()];
-            sys.extend_from_slice(gs);
+            let mut sys: Vec<_> = gs.to_vec();
+            sys.push(self.clone());
             Self::unify_variables_list(&mut sys);
-            return sys[0].reduce(&sys[1..]);
+            return sys.last().unwrap().reduce(&sys[..gs.len()]);
         }
 
         let mut q = self.zero_with_capacity(self.nterms());

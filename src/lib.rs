@@ -1,8 +1,12 @@
 //! Symbolica is a blazing fast computer algebra system.
 //!
-//! It can be used to perform mathematical operations,
-//! such as symbolic differentiation, integration, simplification,
-//! pattern matching and solving equations.
+//! Its main features are:
+//! - Easily create and manipulate expressions in Rust and Python
+//! - Fast code generation (C++/ASM/SIMD/CUDA) for expression evaluation
+//! - Fast multivariate polynomial arithmetic
+//! - Pattern matching and expression transformation
+//! - Mixed exact and numerical computations with error propagation
+//! - Handling and compression of very large expressions
 //!
 //! For example:
 //!
@@ -18,7 +22,7 @@
 //!
 //! The main object to represent a general expressions is [Atom](atom::Atom). Most operations on [Atom](atom::Atom) are
 //! implemented as methods on the [AtomCore](atom::AtomCore) trait. The [Symbol](atom::Symbol) struct is used to represent
-//! variables or named functions, potentially with additional properties, such as symmetries.
+//! variables or named functions, potentially with additional properties, such as symmetries (see [atom::SymbolAttribute]).
 //!
 //! Instead of using general expressions, you can use more restricted formats such as [MultivariatePolynomial](poly::polynomial::MultivariatePolynomial), [UnivariatePolynomial](poly::univariate::UnivariatePolynomial) and [RationalPolynomial](domains::rational_polynomial::RationalPolynomial)
 //! which have optimized methods.

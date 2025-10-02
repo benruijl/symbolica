@@ -3401,7 +3401,7 @@ class Polynomial:
         >>> print(p.content())
         """
 
-    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], Polynomial]]:
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]] = None) -> list[Tuple[list[int], Polynomial]]:
         """Get the coefficient list, optionally in the variables `xs`.
 
         Examples
@@ -3678,7 +3678,7 @@ class NumberFieldPolynomial:
         >>> print(p.content())
         """
 
-    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], NumberFieldPolynomial]]:
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]] = None) -> list[Tuple[list[int], NumberFieldPolynomial]]:
         """Get the coefficient list, optionally in the variables `xs`.
 
         Examples
@@ -3957,7 +3957,7 @@ class FiniteFieldPolynomial:
         >>> print(p.content())
         """
 
-    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], FiniteFieldPolynomial]]:
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]] = None) -> list[Tuple[list[int], FiniteFieldPolynomial]]:
         """Get the coefficient list, optionally in the variables `xs`.
 
         Examples
@@ -5031,7 +5031,8 @@ class Graph:
                  max_bridges: Optional[int] = None,
                  allow_self_loops: bool = False,
                  allow_zero_flow_edges: bool = False,
-                 filter_fn: Optional[Callable[[Graph, int], bool]] = None) -> dict[Graph, Expression]:
+                 filter_fn: Optional[Callable[[Graph, int], bool]] = None,
+                 progress_fn: Optional[Callable[[Graph], bool]] = None) -> dict[Graph, Expression]:
         """Generate all connected graphs with `external_edges` half-edges and the given allowed list
         of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
         there is no direction) and edge data.
@@ -5077,6 +5078,11 @@ class Graph:
             that specifies that the first `n` vertices are completed (no new edges will) be
             assigned to them. The filter function should return `true` if the current
             incomplete graph is allowed, else it should return `false` and the graph is discarded.
+        progress_fn: Optional[Callable[[Graph], bool]], optional
+            Set a progress function that is called every time a new unique graph is created.
+            The argument is the currently generated graph.
+            If the function returns `false`, the generation is aborted and the currently
+            generated graphs are returned.
         """
 
     def to_dot(self) -> str:

@@ -1026,7 +1026,7 @@ pub trait AtomCore {
             .to_factorized_rational_polynomial(field, out_field, var_map.into())
     }
 
-    /// Format the atom.
+    /// Format the atom. See [AtomCore::printer] for more convenient printing.
     ///
     /// # Example
     ///

@@ -598,17 +598,22 @@ struct GenerationSettingsAndInput<'a, N, E> {
     allowed_structures: &'a HashSet<Vec<(Option<bool>, E)>>,
     min_degree: usize,
     max_degree: usize,
-    settings: &'a GenerationSettings<N, E>,
+    settings: &'a mut GenerationSettings<N, E>,
 }
 
 pub trait FilterFn<N, E>: Fn(&Graph<N, E>, usize) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(<N, E> FilterFn<N,E>);
 impl<N, E, T: Clone + Send + Sync + Fn(&Graph<N, E>, usize) -> bool> FilterFn<N, E> for T {}
 
+pub trait ProgressFn<N, E>: FnMut(&Graph<N, E>) -> bool + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(<N, E> ProgressFn<N,E>);
+impl<N, E, T: Clone + Send + Sync + FnMut(&Graph<N, E>) -> bool> ProgressFn<N, E> for T {}
+
 #[derive(Clone)]
 pub struct GenerationSettings<N, E> {
     filter_fn: Option<Box<dyn FilterFn<N, E>>>,
     abort_check: Option<Box<dyn AbortCheck>>,
+    progress_fn: Option<Box<dyn ProgressFn<N, E>>>,
     max_vertices: Option<usize>,
     max_loops: Option<usize>,
     max_bridges: Option<usize>,
@@ -619,6 +624,21 @@ pub struct GenerationSettings<N, E> {
 impl<N, E> Default for GenerationSettings<N, E> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<N, E> std::fmt::Debug for GenerationSettings<N, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("GenerationSettings")
+            .field("filter_fn", &self.filter_fn.is_some())
+            .field("abort_check", &self.abort_check.is_some())
+            .field("progress_fn", &self.progress_fn.is_some())
+            .field("max_vertices", &self.max_vertices)
+            .field("max_loops", &self.max_loops)
+            .field("max_bridges", &self.max_bridges)
+            .field("allow_self_loops", &self.allow_self_loops)
+            .field("allow_zero_flow_edges", &self.allow_zero_flow_edges)
+            .finish()
     }
 }
 
@@ -638,6 +658,7 @@ impl<N, E> GenerationSettings<N, E> {
         Self {
             filter_fn: None,
             abort_check: None,
+            progress_fn: None,
             max_vertices: None,
             max_loops: None,
             max_bridges: None,
@@ -693,6 +714,17 @@ impl<N, E> GenerationSettings<N, E> {
         self.abort_check = Some(abort_check);
         self
     }
+
+    /// A function that is called after a new unique graph is generated.
+    /// The map of all generated graphs is passed as an argument. If the function
+    /// returns `false`, the graph generation is aborted and the currently
+    /// generated graphs are returned.
+    ///
+    /// This function can be used to report progress or to abort the generation.
+    pub fn progress_fn(mut self, progress_fn: Box<dyn ProgressFn<N, E>>) -> Self {
+        self.progress_fn = Some(progress_fn);
+        self
+    }
 }
 
 impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, E> {
@@ -704,7 +736,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     pub fn generate(
         external_edges: &[(N, (Option<bool>, E))],
         vertex_signatures: &[Vec<(Option<bool>, E)>],
-        settings: &GenerationSettings<N, E>,
+        mut settings: GenerationSettings<N, E>,
     ) -> Result<HashMap<Graph<N, E>, Integer>, HashMap<Graph<N, E>, Integer>> {
         if settings.max_vertices.is_none() && settings.max_loops.is_none() {
             panic!("At least one of max_vertices or max_loops must be set");
@@ -747,16 +779,22 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
         }
 
-        let settings = GenerationSettingsAndInput {
+        let mut settings = GenerationSettingsAndInput {
             vertex_signatures: &vertex_sorted,
             allowed_structures: &allowed_structures,
             min_degree: vertex_sorted.iter().map(|x| x.len()).min().unwrap_or(0),
             max_degree: vertex_sorted.iter().map(|x| x.len()).max().unwrap_or(0),
-            settings,
+            settings: &mut settings,
         };
 
         let mut out = HashMap::default();
-        match g.generate_impl(external_edges, 0, &settings, &mut edge_signatures, &mut out) {
+        match g.generate_impl(
+            external_edges,
+            0,
+            &mut settings,
+            &mut edge_signatures,
+            &mut out,
+        ) {
             Ok(()) => Ok(out),
             Err(()) => Err(out),
         }
@@ -766,7 +804,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         &mut self,
         external_edges: &[(N, (Option<bool>, E))],
         cur_vertex: usize,
-        settings: &GenerationSettingsAndInput<N, E>,
+        settings: &mut GenerationSettingsAndInput<N, E>,
         edge_signatures: &mut Vec<Vec<(Option<bool>, E)>>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
@@ -837,7 +875,21 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
 
             let c = self.canonize();
-            out.insert(c.graph, c.automorphism_group_size);
+
+            let mut cancel = false;
+            out.entry(c.graph).or_insert_with_key(|g| {
+                if let Some(p) = &mut settings.settings.progress_fn {
+                    if !p(g) {
+                        cancel = true;
+                    }
+                }
+                c.automorphism_group_size
+            });
+
+            if cancel {
+                return Err(());
+            }
+
             return Ok(());
         }
 
@@ -958,7 +1010,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         external_edges: &[(N, (Option<bool>, E))],
         edge_count: &mut [((Option<bool>, E), usize)],
         cur_edge_count_group_index: usize,
-        settings: &GenerationSettingsAndInput<N, E>,
+        settings: &mut GenerationSettingsAndInput<N, E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if edge_count.iter().all(|x| x.1 == 0) {
@@ -1989,7 +2041,7 @@ mod test {
                 vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
                 vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
             ],
-            &GenerationSettings::new()
+            GenerationSettings::new()
                 .max_loops(3)
                 .max_bridges(0)
                 .allow_self_loops(true),
@@ -2015,7 +2067,7 @@ mod test {
         let graphs = Graph::generate(
             &external_edges,
             &vertex_signatures,
-            &GenerationSettings::new()
+            GenerationSettings::new()
                 .max_loops(2)
                 .max_bridges(0)
                 .allow_self_loops(true),
@@ -2034,7 +2086,7 @@ mod test {
                 vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
                 vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
             ],
-            &GenerationSettings::new()
+            GenerationSettings::new()
                 .max_loops(4)
                 .max_bridges(0)
                 .allow_self_loops(true)

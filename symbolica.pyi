@@ -4992,6 +4992,24 @@ class RandomNumberGenerator:
         each thread or instance generating samples should use the same `seed` but a different `stream_id`."""
 
 
+class HalfEdge:
+    """A half-edge in a graph that connects to one vertex, consisting of a direction (or `None` if undirected) and edge data."""
+
+    def __new__(_cls, data: Expression | int, direction: Optional[bool] = None):
+        """Create a new half-edge. The `data` can be any expression, and the `direction` can be `True` (outgoing),
+        `False` (incoming) or `None` (undirected).
+        """
+
+    def flip(self) -> HalfEdge:
+        """Return a new half-edge with the direction flipped (if it has a direction)."""
+
+    def direction(self) -> Optional[bool]:
+        """Get the direction of the half-edge. `True` means outgoing, `False` means incoming, and `None` means undirected."""
+
+    def data(self) -> Expression:
+        """Get the data of the half-edge."""
+
+
 class Graph:
     """A graph that supported directional edges, parallel edges, self-edges and expression data on the nodes and edges.
 
@@ -5024,8 +5042,8 @@ class Graph:
 
     @classmethod
     def generate(_cls,
-                 external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]],
-                 vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]],
+                 external_nodes: Sequence[tuple[Expression | int, HalfEdge]],
+                 vertex_signatures: Sequence[Sequence[HalfEdge]],
                  max_vertices: Optional[int] = None,
                  max_loops: Optional[int] = None,
                  max_bridges: Optional[int] = None,
@@ -5044,11 +5062,12 @@ class Graph:
         Examples
         --------
         >>> from symbolica import *
-        >>> g, q, gh = S('g', 'q', 'gh')
-        >>> gp, qp, qbp, ghp, ghbp = (None, g), (True, q), (False, q), (True, gh), (False, gh)
-        >>> graphs = Graph.generate([(1, gp), (2, gp)],
-        >>>                         [[gp, gp, gp], [gp, gp, gp, gp],
-        >>>                         [qp, qbp, gp], [ghp, ghbp, gp]], max_loops=2)
+        >>> g, q = HalfEdge(S("g")), HalfEdge(S("q"), True)
+        >>> graphs = Graph.generate(
+        >>>     [(1, g), (2, g)],
+        >>>     [[g, g, g], [g, g, g, g], [q.flip(), q, g]],
+        >>>     max_loops=2,
+        >>> )
         >>> for (g, sym) in graphs.items():
         >>>     print(f'Symmetry factor = 1/{sym}:')
         >>>     print(g.to_dot())

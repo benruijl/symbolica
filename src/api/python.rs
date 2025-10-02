@@ -71,7 +71,7 @@ use crate::{
         ExpressionEvaluatorWithExternalFunctions, FunctionMap, InlineASM, Instruction,
         OptimizationSettings, Slot,
     },
-    graph::{GenerationSettings, Graph},
+    graph::{GenerationSettings, Graph, HalfEdge},
     id::{
         Condition, ConditionResult, Evaluate, Match, MatchSettings, MatchStack, Pattern,
         PatternAtomTreeIterator, PatternRestriction, Relation, ReplaceIterator, ReplaceWith,
@@ -255,6 +255,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
     m.add_class::<PythonSeries>()?;
+    m.add_class::<PythonHalfEdge>()?;
     m.add_class::<PythonGraph>()?;
     m.add_class::<PythonInteger>()?;
 
@@ -14909,6 +14910,51 @@ impl PythonNumericalIntegrator {
     }
 }
 
+/// Represents a part of an edge that connects to one vertex. It can be directed or undirected.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass(module = "symbolica.core")
+)]
+#[pyclass(name = "HalfEdge")]
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct PythonHalfEdge {
+    half_edge: HalfEdge<Atom>,
+}
+
+#[pymethods]
+impl PythonHalfEdge {
+    /// Create a new half-edge. The `data` can be any expression, and the `direction` can be `True` (outgoing),
+    /// `False` (incoming) or `None` (undirected).
+    #[new]
+    #[pyo3(signature = (data, direction = None))]
+    fn new(data: ConvertibleToExpression, direction: Option<bool>) -> Self {
+        Self {
+            half_edge: match direction {
+                None => HalfEdge::undirected(data.to_expression().expr),
+                Some(false) => HalfEdge::incoming(data.to_expression().expr),
+                Some(true) => HalfEdge::outgoing(data.to_expression().expr),
+            },
+        }
+    }
+
+    /// Return a new half-edge with the direction flipped. Undirected edges remain undirected.
+    fn flip(&self) -> Self {
+        Self {
+            half_edge: self.half_edge.flip(),
+        }
+    }
+
+    /// Get the direction of the half-edge. `True` means outgoing, `False` means incoming, and `None` means undirected.
+    fn direction(&self) -> Option<bool> {
+        self.half_edge.direction
+    }
+
+    /// Get the data associated with the half-edge.
+    fn data(&self) -> PythonExpression {
+        self.half_edge.data.clone().into()
+    }
+}
+
 /// A graph that supported directional edges, parallel edges, self-edges and custom data on the nodes and edges.
 ///
 /// Warning: modifying the graph if it is contained in a `dict` or `set` will invalidate the hash.
@@ -14983,11 +15029,13 @@ impl PythonGraph {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> g, q, gh = S('g', 'q', 'gh')
-    /// >>> gp, qp, qbp, ghp, ghbp = (None, g), (True, q), (False, q), (True, gh), (False, gh)
-    /// >>> graphs = Graph.generate([(1, gp), (2, gp)],
-    /// >>>                         [[gp, gp, gp], [gp, gp, gp, gp],
-    /// >>>                         [qp, qbp, gp], [ghp, ghbp, gp]], max_loops=2)
+    /// >>> g, q, gh = HalfEdge(S("g")), HalfEdge(S("q"), True), HalfEdge(S("gh"), True)
+    /// >>> graphs = Graph.generate(
+    /// >>>     external_nodes=[(1, g), (2, g)],
+    /// >>>     vertex_signatures=[[g, g, g], [g, g, g, g],
+    /// >>>                        [q.flip(), q, g], [gh.flip(), gh, g]],
+    /// >>>     max_loops=2,
+    /// >>> )
     /// >>> for (g, sym) in graphs.items():
     /// >>>     print(f'Symmetry factor = 1/{sym}:')
     /// >>>     print(g.to_dot())
@@ -14996,10 +15044,10 @@ impl PythonGraph {
     ///
     /// Parameters
     /// ----------
-    /// external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]]
+    /// external_nodes: Sequence[tuple[Expression | int, HalfEdge]]
     ///     The external edges, consisting of a tuple of the node data and a tuple of the edge direction and edge data.
     ///     If the node data is the same, flip symmetries will be recognized.
-    /// vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]]
+    /// vertex_signatures: Sequence[Sequence[HalfEdge]]
     ///     The allowed connections for each vertex.
     /// max_vertices: int, optional
     ///     The maximum number of vertices in the graph.
@@ -15027,11 +15075,8 @@ impl PythonGraph {
     #[classmethod]
     fn generate(
         _cls: &Bound<'_, PyType>,
-        external_edges: Vec<(
-            ConvertibleToExpression,
-            (Option<bool>, ConvertibleToExpression),
-        )>,
-        vertex_signatures: Vec<Vec<(Option<bool>, ConvertibleToExpression)>>,
+        external_edges: Vec<(ConvertibleToExpression, PythonHalfEdge)>,
+        vertex_signatures: Vec<Vec<PythonHalfEdge>>,
         max_vertices: Option<usize>,
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
@@ -15048,15 +15093,11 @@ impl PythonGraph {
 
         let external_edges: Vec<_> = external_edges
             .into_iter()
-            .map(|(a, b)| (a.to_expression().expr, (b.0, b.1.to_expression().expr)))
+            .map(|(a, b)| (a.to_expression().expr, b.half_edge))
             .collect();
         let vertex_signatures: Vec<_> = vertex_signatures
             .into_iter()
-            .map(|v| {
-                v.into_iter()
-                    .map(|x| (x.0, x.1.to_expression().expr))
-                    .collect()
-            })
+            .map(|v| v.into_iter().map(|x| x.half_edge).collect())
             .collect();
 
         let mut settings = GenerationSettings::new();

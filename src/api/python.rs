@@ -62,6 +62,7 @@ use crate::{
             FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
         },
     },
+    error,
     evaluate::{
         BatchEvaluator, CompileOptions, CompiledComplexEvaluator, CompiledCudaComplexEvaluator,
         CompiledCudaRealEvaluator, CompiledNumber, CompiledRealEvaluator,
@@ -15016,8 +15017,13 @@ impl PythonGraph {
     ///     that specifies that the first `n` vertices are completed (no new edges will) be
     ///     assigned to them. The filter function should return `true` if the current
     ///     incomplete graph is allowed, else it should return `false` and the graph is discarded.
+    /// progress_fn: Optional[Callable[[Graph, bool]], optional
+    ///     Set a progress function that is called every time a new unique graph is created.
+    ///     The argument is the newly created graph.
+    ///     If the function returns `false`, the generation is aborted and the currently
+    ///     generated graphs are returned.
     #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None,
-        max_bridges = None, allow_self_loops = None, allow_zero_flow_edges = None, filter_fn = None))]
+        max_bridges = None, allow_self_loops = None, allow_zero_flow_edges = None, filter_fn = None, progress_fn = None))]
     #[classmethod]
     fn generate(
         _cls: &Bound<'_, PyType>,
@@ -15032,6 +15038,7 @@ impl PythonGraph {
         allow_self_loops: Option<bool>,
         allow_zero_flow_edges: Option<bool>,
         filter_fn: Option<Py<PyAny>>,
+        progress_fn: Option<Py<PyAny>>,
     ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
         if max_vertices.is_none() && max_loops.is_none() {
             return Err(exceptions::PyValueError::new_err(
@@ -15096,6 +15103,20 @@ impl PythonGraph {
             }));
         }
 
+        if let Some(progress_fn) = progress_fn {
+            settings = settings.progress_fn(Box::new(move |g| {
+                Python::with_gil(|py| {
+                    match progress_fn.call(py, (Self { graph: g.clone() },), None) {
+                        Ok(r) => r.is_truthy(py).unwrap_or(true),
+                        Err(e) => {
+                            error!("Bad callback function: {}", e);
+                            false
+                        }
+                    }
+                })
+            }));
+        }
+
         settings = settings.abort_check(Box::new(move || {
             if abort.load(std::sync::atomic::Ordering::Relaxed) {
                 true
@@ -15107,7 +15128,7 @@ impl PythonGraph {
         }));
 
         Ok(
-            Graph::generate(&external_edges, &vertex_signatures, &settings)
+            Graph::generate(&external_edges, &vertex_signatures, settings)
                 .unwrap_or_else(|e| e)
                 .into_iter()
                 .map(|(k, v)| (Self { graph: k }, Atom::num(v).into()))

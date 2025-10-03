@@ -23,30 +23,30 @@ jobs:
         with:
           target: ${{ matrix.runner[1] }}
           args: --release --out dist
-          sccache: 'true'
+          sccache: "true"
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.runner[1] }}
-          path: dist  
+          path: dist
   macos:
     runs-on: ${{ matrix.runner[0] }}
     strategy:
       fail-fast: false
       matrix:
-        runner: [[macos-13, x86_64], [macos-14, aarch64]]
+        runner: [[macos-15-intel, x86_64], [macos-14, aarch64]]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.9"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.runner[1] }}
           args: --release --out dist
-          sccache: 'true'
+          sccache: "true"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

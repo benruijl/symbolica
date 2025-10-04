@@ -805,10 +805,12 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
             }
         }
 
-        let add_paren = opts.print_finite_field
-            || self.nterms() > 1 && state.in_product
+        let print_finite_field = opts.print_finite_field && self.ring.characteristic() > 0;
+
+        let add_paren = (self.nterms() > 1 || print_finite_field) && state.in_product
             || ((state.in_exp || state.in_exp_base)
                 && (self.nterms() > 1
+                    || print_finite_field
                     || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1
                     || !self.ring.is_one(&self.coefficients[0])));
 
@@ -840,6 +842,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
             })
             .collect();
 
+        state.level += 1;
         for monomial in self {
             let has_var = monomial.exponents.iter().any(|e| !e.is_zero());
             state.in_product = in_product || has_var;
@@ -873,21 +876,18 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
 
             state.in_sum = true;
         }
+        state.level -= 1;
 
         if self.is_zero() {
             f.write_char('0')?;
         }
 
-        if (state.in_exp || state.in_sum) && opts.print_finite_field {
+        if print_finite_field && state.level == 0 {
             f.write_fmt(format_args!("{}", self.ring))?;
         }
 
         if add_paren {
             f.write_str(")")?;
-        }
-
-        if !(state.in_exp || state.in_sum) && opts.print_finite_field {
-            f.write_fmt(format_args!("{}", self.ring))?;
         }
 
         Ok(false)

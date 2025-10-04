@@ -268,6 +268,43 @@ def T() -> Transformer:
     """
 
 
+@overload
+def P(poly: str, default_namespace: str = "python", vars: Optional[Sequence[Expression]] = None) -> Polynomial:
+    """Parse a string a polynomial, optionally, with the variable ordering specified in `vars`.
+    All non-polynomial parts will be converted to new, independent variables.
+    """
+
+
+@overload
+def P(poly: str,  minimal_poly: Polynomial, default_namespace: str = "python", vars: Optional[Sequence[Expression]] = None,
+      ) -> NumberFieldPolynomial:
+    """Parse string to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+    All non-polynomial elements will be converted to new independent variables.
+
+    The coefficients will be converted to a number field with the minimal polynomial `minimal_poly`.
+    The minimal polynomial must be a monic, irreducible univariate polynomial.
+    """
+
+
+@overload
+def P(poly: str,
+      modulus: int,
+      default_namespace: str = "python",
+      power: Optional[Tuple[int, Expression]] = None,
+      minimal_poly: Optional[Polynomial] = None,
+      vars: Optional[Sequence[Expression]] = None,
+      ) -> FiniteFieldPolynomial:
+    """Parse a string to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+    All non-polynomial elements will be converted to new independent variables.
+
+    The coefficients will be converted to finite field elements modulo `modulus`.
+    If on top a `power` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+    `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
+
+    If a `minimal_poly` is provided, the Galois field will be created with `minimal_poly` as the minimal polynomial.
+    """
+
+
 class AtomType(Enum):
     """Specifies the type of the atom."""
 
@@ -1539,7 +1576,7 @@ class Expression:
         """
 
     @overload
-    def to_polynomial(self, minimal_poly: Expression, vars: Optional[Sequence[Expression]] = None,
+    def to_polynomial(self, minimal_poly: Polynomial, vars: Optional[Sequence[Expression]] = None,
                       ) -> NumberFieldPolynomial:
         """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
         All non-polynomial elements will be converted to new independent variables.
@@ -1552,14 +1589,14 @@ class Expression:
     def to_polynomial(self,
                       modulus: int,
                       power: Optional[Tuple[int, Expression]] = None,
-                      minimal_poly: Optional[Expression] = None,
+                      minimal_poly: Optional[Polynomial] = None,
                       vars: Optional[Sequence[Expression]] = None,
                       ) -> FiniteFieldPolynomial:
         """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
         All non-polynomial elements will be converted to new independent variables.
 
         The coefficients will be converted to finite field elements modulo `modulus`.
-        If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+        If on top a `power` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
         `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
 
         If a `minimal_poly` is provided, the Galois field will be created with `minimal_poly` as the minimal polynomial.

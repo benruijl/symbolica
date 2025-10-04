@@ -1515,6 +1515,7 @@ pub trait AtomCore {
     }
 
     /// Return an iterator over matched expressions.
+    /// Alternatively, use [ReplaceBuilder::match_iter].
     ///
     /// # Example
     ///

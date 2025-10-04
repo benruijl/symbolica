@@ -6,7 +6,7 @@
 //! [Token::to_polynomial], [Token::to_rational_polynomial] or [Token::to_factorized_rational_polynomial] for accelerated parsing of polynomials written
 //! in Symbolica's fast format.
 
-use std::{fmt::Write, string::String, sync::Arc};
+use std::{borrow::Cow, fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
 use rug::Integer as MultiPrecisionInteger;
@@ -794,6 +794,24 @@ impl Token {
     pub fn parse(input: &str, distribute_neg: bool) -> Result<Token, String> {
         LicenseManager::check();
 
+        // Remove ANSI color codes from the input string.
+        let mut input = Cow::Borrowed(input);
+        if input.contains('\x1b') {
+            let mut s = String::with_capacity(input.len());
+            let mut in_ansi = false;
+            for c in input.chars() {
+                if c == '\x1b' {
+                    in_ansi = true;
+                } else if in_ansi && c == 'm' {
+                    in_ansi = false;
+                } else if !in_ansi {
+                    s.push(c);
+                }
+            }
+
+            input = Cow::Owned(s);
+        }
+
         let mut stack: Vec<_> = Vec::with_capacity(20);
         stack.push(Token::Start);
         let mut state = ParseState::Any;
@@ -852,6 +870,7 @@ impl Token {
                         if c.is_ascii_digit() {
                             id_buffer.push(c);
                             c = char_iter.next().unwrap_or('\0');
+                            column_counter += 1;
                             last_digit_is_exp = false;
                             continue;
                         }
@@ -876,6 +895,7 @@ impl Token {
                             let old_c = c;
                             // complex number has trailing i and must be followed by whitespace or an operator
                             c = char_iter.next().unwrap_or('\0');
+                            column_counter += 1;
 
                             let is_imag = Token::WHITESPACE.contains(&c) || Token::OPS.contains(&c);
 
@@ -911,6 +931,7 @@ impl Token {
                         last_digit_is_exp = digit_is_exp;
 
                         c = char_iter.next().unwrap_or('\0');
+                        column_counter += 1;
                     }
 
                     if !last_digit_is_exp {
@@ -929,6 +950,7 @@ impl Token {
                     while c != ']' && c != '\0' {
                         pos += 1;
                         c = char_iter.next().unwrap_or('\0');
+                        column_counter += 1;
                     }
 
                     if c == '\0' {
@@ -944,6 +966,7 @@ impl Token {
 
                     column_counter += pos + 1;
                     c = char_iter.next().unwrap_or('\0');
+                    column_counter += 1;
                 }
                 ParseState::Any => {}
             }

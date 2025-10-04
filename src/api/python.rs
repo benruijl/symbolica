@@ -270,6 +270,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_function(wrap_pyfunction!(number_shorthand, m)?)?;
     m.add_function(wrap_pyfunction!(expression_shorthand, m)?)?;
     m.add_function(wrap_pyfunction!(transformer_shorthand, m)?)?;
+    m.add_function(wrap_pyfunction!(poly_shorthand, m)?)?;
 
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
@@ -556,7 +557,7 @@ tags: Optional[Sequence[str]]
             deprecated: None,
             type_ignored: None,
         }
-    }
+}
 
 #[cfg(feature = "python_stubgen")]
 submit! {
@@ -723,7 +724,7 @@ custom_derivative: Optional[Callable[[Expression, int], Expression]]:
             deprecated: None,
             type_ignored: None,
         }
-    }
+}
 
 /// Create a new Symbolica number from an int, a float, or a string.
 /// A floating point number is kept as a float with the same precision as the input,
@@ -796,6 +797,145 @@ fn expression_shorthand(
 #[pyfunction(name = "T")]
 fn transformer_shorthand() -> PythonTransformer {
     PythonTransformer::new()
+}
+
+#[pyfunction(name = "P", signature = (expr, default_namespace="python", modulus = None, power = None, minimal_poly = None, vars = None))]
+pub fn poly_shorthand(
+    expr: &str,
+    default_namespace: &str,
+    modulus: Option<u32>,
+    power: Option<(u16, Symbol)>,
+    minimal_poly: Option<PythonPolynomial>,
+    vars: Option<Vec<PythonExpression>>,
+    py: Python,
+) -> PyResult<Py<PyAny>> {
+    PythonExpression::parse(&PythonExpression::type_object(py), expr, default_namespace)?
+        .to_polynomial(modulus, power, minimal_poly, vars, py)
+}
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+PyFunctionInfo {
+        name: "P",
+        args: &[
+            ArgInfo {
+                name: "poly",
+                signature: None,
+                r#type: || <&str>::type_input(),
+            },
+            ArgInfo {
+                name: "default_namespace",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || <Option<&str>>::type_input(),
+            },
+            ArgInfo {
+                name: "vars",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || Option::<Vec<PythonExpression>>::type_input(),
+            },
+        ],
+        r#return: || PythonPolynomial::type_output(),
+        doc:"
+Parse a string to a polynomial, optionally, with the variable ordering specified in `vars`.
+All non-polynomial parts will be converted to new, independent variables.",
+        module: Some("symbolica.core"),
+        is_async: false,
+        deprecated: None,
+        type_ignored: None,
+        }
+    }
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+    PyFunctionInfo {
+        name: "P",
+        args: &[
+            ArgInfo {
+                name: "poly",
+                signature: None,
+                r#type: || <&str>::type_input(),
+            },
+            ArgInfo {
+                name: "minimal_poly",
+                signature: None,
+                r#type: || PythonPolynomial::type_input(),
+            },
+            ArgInfo {
+                name: "default_namespace",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || <Option<&str>>::type_input(),
+            },
+            ArgInfo {
+                name: "vars",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || Option::<Vec<PythonExpression>>::type_input(),
+            },
+        ],
+        r#return: || PythonNumberFieldPolynomial::type_output(),
+        doc: "
+Parse a string to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+All non-polynomial elements will be converted to new independent variables.
+
+The coefficients will be converted to a number field with the minimal polynomial `minimal_poly`.
+The minimal polynomial must be a monic, irreducible univariate polynomial.",
+        module: Some("symbolica.core"),
+        is_async: false,
+        deprecated: None,
+        type_ignored: None,
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+submit! {
+    PyFunctionInfo {
+        name: "P",
+        args: &[
+            ArgInfo {
+                name: "poly",
+                signature: None,
+                r#type: || <&str>::type_input(),
+            },
+            ArgInfo {
+                name: "modulus",
+                signature: None,
+                r#type: || usize::type_input(),
+            },
+            ArgInfo {
+                name: "power",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || Option::<(usize, PythonExpression)>::type_input(),
+            },
+            ArgInfo {
+                name: "default_namespace",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || <Option<&str>>::type_input(),
+            },
+            ArgInfo {
+                name: "minimal_poly",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || Option::<PythonPolynomial>::type_input(),
+            },
+            ArgInfo {
+                name: "vars",
+                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                r#type: || Option::<Vec<PythonExpression>>::type_input(),
+            },
+        ],
+        r#return: || PythonFiniteFieldPolynomial::type_output(),
+        doc: "
+Parse a string to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+All non-polynomial elements will be converted to new independent variables.
+
+The coefficients will be converted to finite field elements modulo `modulus`.
+If on top a `power` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+`GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
+
+If a `minimal_poly` is provided, the Galois field will be created with `minimal_poly` as the minimal polynomial.",
+        module: Some("symbolica.core"),
+        is_async: false,
+        deprecated: None,
+        type_ignored: None,
+    }
 }
 
 #[cfg_attr(
@@ -5550,19 +5690,19 @@ impl PythonExpression {
     /// All non-polynomial elements will be converted to new independent variables.
     ///
     /// If a `modulus` is provided, the coefficients will be converted to finite field elements mod `modulus`.
-    /// If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+    /// If on top a `power` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
     /// `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
     ///
     /// If a `minimal_poly` is provided, the polynomial will be converted to a number field with the given minimal polynomial.
     /// The minimal polynomial must be a monic, irreducible univariate polynomial. If a `modulus` is provided as well,
     /// the Galois field will be created with `minimal_poly` as the minimal polynomial.
     #[gen_stub(skip)]
-    #[pyo3(signature = (modulus = None, extension = None, minimal_poly = None, vars = None))]
+    #[pyo3(signature = (modulus = None, power = None, minimal_poly = None, vars = None))]
     pub fn to_polynomial(
         &self,
         modulus: Option<u32>,
-        extension: Option<(u16, Symbol)>,
-        minimal_poly: Option<PythonExpression>,
+        power: Option<(u16, Symbol)>,
+        minimal_poly: Option<PythonPolynomial>,
         vars: Option<Vec<PythonExpression>>,
         py: Python,
     ) -> PyResult<Py<PyAny>> {
@@ -5587,13 +5727,13 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        if extension.is_some() && modulus.is_none() {
+        if power.is_some() && modulus.is_none() {
             return Err(exceptions::PyValueError::new_err(
                 "Extension field requires a modulus to be set",
             ));
         }
 
-        let poly = minimal_poly.map(|p| p.expr.to_polynomial::<_, u16>(&Q, None));
+        let poly = minimal_poly.map(|x| x.poly);
         if let Some(p) = &poly {
             if p.nvars() != 1 {
                 return Err(exceptions::PyValueError::new_err(
@@ -5603,7 +5743,7 @@ impl PythonExpression {
         }
 
         if let Some(m) = modulus {
-            if let Some((e, name)) = extension {
+            if let Some((e, name)) = power {
                 if let Some(p) = &poly {
                     if e != p.degree(0) {
                         return Err(exceptions::PyValueError::new_err(
@@ -5627,7 +5767,7 @@ impl PythonExpression {
 
                         let g = AlgebraicExtension::new(p);
                         PythonGaloisFieldPrimeTwoPolynomial {
-                            poly: self.expr.to_polynomial(&g, var_map),
+                            poly: self.expr.to_polynomial(&Z2, var_map).to_number_field(&g),
                         }
                         .into_py_any(py)
                     } else {
@@ -5641,20 +5781,21 @@ impl PythonExpression {
 
                         let g = AlgebraicExtension::new(p);
                         PythonGaloisFieldPolynomial {
-                            poly: self.expr.to_polynomial(&g, var_map),
+                            poly: self.expr.to_polynomial(&f, var_map).to_number_field(&g),
                         }
                         .into_py_any(py)
                     }
                 } else if m == 2 {
                     let g = AlgebraicExtension::galois_field(Z2, e as usize, name.into());
                     PythonGaloisFieldPrimeTwoPolynomial {
-                        poly: self.expr.to_polynomial(&g, var_map),
+                        poly: self.expr.to_polynomial(&Z2, var_map).to_number_field(&g),
                     }
                     .into_py_any(py)
                 } else {
+                    let f = Zp::new(m);
                     let g = AlgebraicExtension::galois_field(Zp::new(m), e as usize, name.into());
                     PythonGaloisFieldPolynomial {
-                        poly: self.expr.to_polynomial(&g, var_map),
+                        poly: self.expr.to_polynomial(&f, var_map).to_number_field(&g),
                     }
                     .into_py_any(py)
                 }
@@ -7215,7 +7356,7 @@ submit! {
                     ArgInfo {
                         name: "vars",
                         signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Sequence[Expression]]"),
+                        r#type: || Option::<Vec<PythonExpression>>::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7233,12 +7374,12 @@ All non-polynomial parts will be converted to new, independent variables.",
                     ArgInfo {
                         name: "minimal_poly",
                         signature: None,
-                        r#type: || PythonExpression::type_input(),
+                        r#type: || PythonPolynomial::type_input(),
                     },
                     ArgInfo {
                         name: "vars",
                         signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Sequence[Expression]]"),
+                        r#type: || Option::<Vec<PythonExpression>>::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7263,18 +7404,18 @@ The minimal polynomial must be a monic, irreducible univariate polynomial.",
                     },
                     ArgInfo {
                         name: "power",
-                        signature: None,
-                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Tuple[int, Expression]]"),
+                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
+                        r#type: || Option::<(usize, PythonExpression)>::type_input(),
                     },
                     ArgInfo {
                         name: "minimal_poly",
                         signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || Option::<PythonExpression>::type_input(),
+                        r#type: || Option::<PythonPolynomial>::type_input(),
                     },
                     ArgInfo {
                         name: "vars",
                         signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || TypeInfo::unqualified("typing.Optional[typing.Sequence[Expression]]"),
+                        r#type: || Option::<Vec<PythonExpression>>::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7284,7 +7425,7 @@ Convert the expression to a polynomial, optionally, with the variables and the o
 All non-polynomial elements will be converted to new independent variables.
 
 The coefficients will be converted to finite field elements modulo `modulus`.
-If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+If on top a `power` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
 `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
 
 If a `minimal_poly` is provided, the Galois field will be created with `minimal_poly` as the minimal polynomial.",

@@ -439,6 +439,26 @@ impl<'a, 'b> ReplaceBuilder<'a, 'b> {
             Some(&self.settings),
         )
     }
+
+    /// Return an iterator over all matches of the pattern in the target, without performing any replacements.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse, symbol};
+    ///
+    /// for x in parse!("f(x,y)").replace(parse!("x_")).match_iter() {
+    ///     println!("{}", x[&symbol!("x_")]);
+    /// }
+    /// ```
+    pub fn match_iter(&self) -> PatternAtomTreeIterator<'_, '_> {
+        PatternAtomTreeIterator::new(
+            &self.pattern,
+            self.target,
+            self.conditions.as_ref().map(|x| x.borrow()),
+            Some(&self.settings),
+        )
+    }
 }
 
 impl From<Atom> for BorrowedOrOwned<'_, Pattern> {

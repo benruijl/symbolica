@@ -147,10 +147,22 @@ impl Symbol {
 }
 
 /// An inline variable.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct InlineVar {
     data: [u8; 16],
     size: u8,
+}
+
+impl std::fmt::Display for InlineVar {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_view().fmt(fmt)
+    }
+}
+
+impl std::fmt::Debug for InlineVar {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_view().fmt(fmt)
+    }
 }
 
 impl InlineVar {
@@ -189,10 +201,22 @@ impl From<Symbol> for InlineVar {
 }
 
 /// An inline rational number that has 64-bit components.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct InlineNum {
     data: [u8; 24],
     size: u8,
+}
+
+impl std::fmt::Display for InlineNum {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_view().fmt(fmt)
+    }
+}
+
+impl std::fmt::Debug for InlineNum {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_view().fmt(fmt)
+    }
 }
 
 impl InlineNum {

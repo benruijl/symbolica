@@ -31,7 +31,7 @@ use crate::{
     },
     printer::{AtomPrinter, PrintOptions, PrintState},
     state::Workspace,
-    tensors::matrix::Matrix,
+    tensors::{CanonicalTensor, matrix::Matrix},
     utils::BorrowedOrOwned,
 };
 use std::sync::Arc;
@@ -1137,6 +1137,9 @@ pub trait AtomCore {
     /// specification.
     /// This makes sure that an index will not be renamed to an index from a different group.
     ///
+    /// Returns the canonical expression, as well as the external indices and ordered dummy indices
+    /// appearing in the canonical expression.
+    ///
     /// Example
     /// -------
     /// ```
@@ -1152,25 +1155,19 @@ pub trait AtomCore {
     /// let mu3 = parse!("mu3");
     /// let mu4 = parse!("mu4");
     ///
-    /// let r = a.canonize_tensors(&[(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]).unwrap();
-    /// println!("{}", r);
+    /// let r = a.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]).unwrap();
+    /// println!("{}", r.canonical_form);
     /// # }
     /// ```
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
     fn canonize_tensors<I, T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        indices: &I,
-    ) -> Result<Atom, String>
+        indices: I,
+    ) -> Result<CanonicalTensor<T, G>, String>
     where
-        for<'a> &'a I: IntoIterator<Item = &'a (T, G)>,
+        I: IntoIterator<Item = (T, G)>,
     {
-        let mut indices = indices
-            .into_iter()
-            .map(|(i, g)| (i.as_atom_view(), g))
-            .collect::<Vec<_>>();
-        indices.sort();
-        indices.dedup();
-        self.as_atom_view().canonize_tensors(&indices)
+        self.as_atom_view().canonize_tensors(indices)
     }
 
     fn to_pattern(&self) -> Pattern {

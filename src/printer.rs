@@ -661,7 +661,14 @@ impl AtomView<'_> {
 
 impl fmt::Debug for AtomView<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        self.fmt_debug(fmt)
+        if fmt.alternate() {
+            self.fmt_debug(fmt)
+        } else {
+            std::fmt::Display::fmt(
+                &AtomPrinter::new_with_options(*self, PrintOptions::file()),
+                fmt,
+            )
+        }
     }
 }
 
@@ -689,13 +696,13 @@ impl FormattedPrintVar for VarView<'_> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as std::fmt::Debug>::fmt(self, f)
+        f.write_fmt(format_args!("{:?}", self))
     }
 }
 
 impl FormattedPrintNum for NumView<'_> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as std::fmt::Debug>::fmt(self, f)
+        f.write_fmt(format_args!("{:?}", self))
     }
 
     fn fmt_output<W: std::fmt::Write>(
@@ -1097,7 +1104,7 @@ impl FormattedPrintNum for NumView<'_> {
 
 impl FormattedPrintMul for MulView<'_> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as std::fmt::Debug>::fmt(self, f)
+        f.write_fmt(format_args!("{:?}", self))
     }
 
     fn fmt_output<W: std::fmt::Write>(
@@ -1232,7 +1239,7 @@ impl FormattedPrintFn for FunView<'_> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as std::fmt::Debug>::fmt(self, f)
+        f.write_fmt(format_args!("{:?}", self))
     }
 }
 
@@ -1326,7 +1333,7 @@ impl FormattedPrintPow for PowView<'_> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as std::fmt::Debug>::fmt(self, f)
+        f.write_fmt(format_args!("{:?}", self))
     }
 }
 
@@ -1410,7 +1417,7 @@ impl FormattedPrintAdd for AddView<'_> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        <Self as std::fmt::Debug>::fmt(self, f)
+        f.write_fmt(format_args!("{:?}", self))
     }
 }
 

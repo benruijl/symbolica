@@ -2042,7 +2042,7 @@ class Expression:
         """
 
     def canonize_tensors(self,
-                         contracted_indices: Sequence[Tuple[Expression | int, Expression | int]]) -> Expression:
+                         contracted_indices: Sequence[Tuple[Expression | int, Expression | int]]) -> Tuple[Expression, list[Tuple[Expression, Expression]], list[Tuple[Expression, Expression]]]:
         """Canonize (products of) tensors in the expression by relabeling repeated indices.
         The tensors must be written as functions, with its indices as the arguments.
         Subexpressions, constants and open indices are supported.
@@ -2052,13 +2052,17 @@ class Expression:
         specification.
         This makes sure that an index will not be renamed to an index from a different group.
 
+        Returns the canonical expression, as well as the external indices and ordered dummy indices
+        appearing in the canonical expression.
+
         Examples
         --------
         >>> g = S('g', is_symmetric=True)
         >>> fc = S('fc', is_cyclesymmetric=True)
         >>> mu1, mu2, mu3, mu4, k1 = S('mu1', 'mu2', 'mu3', 'mu4', 'k1')
         >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
-        >>> print(e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]))
+        >>> (r, external, dummy) = e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)])
+        >>> print(r)
 
         yields `g(mu1, mu2)*fc(mu1, mu3, mu2, k1, mu3, k1)`.
         """

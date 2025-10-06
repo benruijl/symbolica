@@ -6937,6 +6937,9 @@ impl PythonExpression {
     /// specification.
     /// This makes sure that an index will not be renamed to an index from a different group.
     ///
+    /// Returns the canonical expression, as well as the external indices and ordered dummy indices
+    /// appearing in the canonical expression.
+    ///
     /// Examples
     /// --------
     /// g = S('g', is_symmetric=True)
@@ -6945,12 +6948,17 @@ impl PythonExpression {
     /// >>>
     /// >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
     /// >>>
-    /// >>> print(e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]))
+    /// >>> (r, external, dummy) = e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)])
+    /// >>> print(r)
     /// yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
     fn canonize_tensors(
         &self,
         contracted_indices: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
-    ) -> PyResult<Self> {
+    ) -> PyResult<(
+        Self,
+        Vec<(PythonExpression, PythonExpression)>,
+        Vec<(PythonExpression, PythonExpression)>,
+    )> {
         let contracted_indices = contracted_indices
             .into_iter()
             .map(|x| (x.0.to_expression().expr, x.1.to_expression().expr))
@@ -6958,12 +6966,22 @@ impl PythonExpression {
 
         let r = self
             .expr
-            .canonize_tensors(&contracted_indices)
+            .canonize_tensors(contracted_indices)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not canonize tensors: {e}"))
             })?;
 
-        Ok(r.into())
+        Ok((
+            r.canonical_form.into(),
+            r.external_indices
+                .into_iter()
+                .map(|(t, g)| (t.into(), g.into()))
+                .collect(),
+            r.dummy_indices
+                .into_iter()
+                .map(|(t, g)| (t.into(), g.into()))
+                .collect(),
+        ))
     }
 }
 

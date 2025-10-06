@@ -2444,7 +2444,7 @@ mod test {
     fn debug() {
         let x = parse!("v1+f1(v2)");
         assert_eq!(
-            format!("{x:?}"),
+            format!("{x:#?}"),
             "AddView { data: [5, 17, 2, 13, 2, 1, 11, 3, 5, 0, 0, 0, 1, 41, 2, 1, 12] }"
         );
         assert_eq!(

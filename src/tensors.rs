@@ -9,6 +9,18 @@ use crate::{
 
 pub mod matrix;
 
+/// A tensor in its canonical form and its list of external and dummy indices.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalTensor<T, G> {
+    /// The tensor in its canonical form, written as an expression.
+    pub canonical_form: Atom,
+    /// List of external indices and their group markers.
+    pub external_indices: Vec<(T, G)>,
+    /// List of dummy indices and their group markers that occur in the canonical form.
+    /// The order of the indices in this list reflects the assignment priority for the canonical labeling.
+    pub dummy_indices: Vec<(T, G)>,
+}
+
 /// A node in a graph representation of a tensor network.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum TensorGraphNode<'a> {
@@ -43,37 +55,93 @@ impl<'a> AtomView<'a> {
     /// If the contracted indices are distinguishable (for example in their dimension),
     /// you can provide an optional group marker for each index using `index_group`.
     /// This makes sure that an index will not be renamed to an index from a different group.
-    pub(crate) fn canonize_tensors<G: Ord + std::hash::Hash>(
+    pub(crate) fn canonize_tensors<I, T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        indices: &[(AtomView<'a>, G)],
-    ) -> Result<Atom, String> {
+        indices: I,
+    ) -> Result<CanonicalTensor<T, G>, String>
+    where
+        I: IntoIterator<Item = (T, G)>,
+    {
         if self.is_zero() {
-            return Ok(self.to_owned());
+            return Ok(CanonicalTensor {
+                canonical_form: self.to_owned(),
+                external_indices: vec![],
+                dummy_indices: vec![],
+            });
         }
 
-        Workspace::get_local().with(|ws| {
+        let mut orig_indices = indices.into_iter().map(|(i, g)| (i, g)).collect::<Vec<_>>();
+        orig_indices.sort_by(|a, b| a.0.as_atom_view().cmp(&b.0.as_atom_view()));
+        orig_indices.dedup_by(|a, b| a.0.as_atom_view().eq(&b.0.as_atom_view()));
+
+        let indices = orig_indices
+            .iter()
+            .map(|(i, g)| (i.as_atom_view(), g))
+            .collect::<Vec<_>>();
+
+        let (r, ind) = Workspace::get_local().with(move |ws| {
             if let AtomView::Add(a) = self {
                 let mut aa = ws.new_atom();
                 let add = aa.to_add();
 
+                let mut inds: Option<Vec<(bool, usize)>> = None;
+
                 for a in a.iter() {
-                    add.extend(a.canonize_tensor_product(indices)?.as_view());
+                    let (r, ind) = a.canonize_tensor_product(&indices)?;
+
+                    // check that all terms have the same open indices
+                    if let Some(ind_init) = &mut inds {
+                        for (j, (i, a)) in ind_init.iter_mut().zip(&ind).enumerate() {
+                            i.0 |= a.0;
+
+                            if a.1 == 1 && i.1 != 1 || i.1 == 1 && a.1 != 1 {
+                                return Err(format!(
+                                    "{} is not an external index in every term of {}",
+                                    indices[j].0.as_atom_view(),
+                                    self.printer(PrintOptions::file_no_namespace())
+                                ));
+                            }
+                        }
+                    } else {
+                        inds = Some(ind);
+                    }
+
+                    add.extend(r.as_view());
                 }
 
                 let mut out = Atom::new();
                 aa.as_view().normalize(ws, &mut out);
-                Ok(out)
+                Ok::<_, String>((out, inds.unwrap()))
             } else {
-                Ok(self.canonize_tensor_product(indices)?.into_inner())
+                let (r, ind) = self.canonize_tensor_product(&indices)?;
+
+                Ok((r.into_inner(), ind))
             }
+        })?;
+
+        let mut external = vec![];
+        let mut used_dummy = vec![];
+
+        for ((used, count), i) in ind.iter().zip(orig_indices.into_iter()) {
+            if *used && *count == 1 {
+                external.push(i);
+            } else if *used {
+                used_dummy.push(i);
+            }
+        }
+
+        Ok(CanonicalTensor {
+            canonical_form: r,
+            external_indices: external,
+            dummy_indices: used_dummy,
         })
     }
 
     /// Canonize a tensor product by relabeling repeated indices.
-    fn canonize_tensor_product<G: Ord + std::hash::Hash>(
+    fn canonize_tensor_product<T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        indices: &[(AtomView<'a>, G)],
-    ) -> Result<RecycledAtom, String> {
+        indices: &[(T, G)],
+    ) -> Result<(RecycledAtom, Vec<(bool, usize)>), String> {
         // strip all top-level factors that do not have any indices, so that
         // they do not influence the canonization
         if let AtomView::Mul(m) = self {
@@ -91,13 +159,13 @@ impl<'a> AtomView<'a> {
                 }
 
                 if r.get_nargs() != 0 {
-                    let mut res = stripped.as_view().canonize_tensor_product(indices)?;
+                    let (mut res, ind) = stripped.as_view().canonize_tensor_product(indices)?;
                     let mut p = Atom::new();
                     let m = p.to_mul();
                     m.extend(res.as_view());
                     m.extend(constants.as_view());
                     p.as_view().normalize(ws, &mut res);
-                    Ok::<_, String>(Some(res))
+                    Ok::<_, String>(Some((res, ind)))
                 } else {
                     Ok(None)
                 }
@@ -113,7 +181,7 @@ impl<'a> AtomView<'a> {
         let root = self.tensor_to_graph_impl(indices, &mut connections, &mut g)?;
 
         if let TensorGraphNode::Slot(Some(s)) = g.node(root).data {
-            return Ok(s.to_owned().into());
+            return Ok((s.to_owned().into(), used_indices));
         }
 
         for (i, (ii, (f, used, _))) in indices.iter().zip(&connections).enumerate() {
@@ -123,13 +191,13 @@ impl<'a> AtomView<'a> {
                     ii.0.as_atom_view()
                 ));
             } else if !f.is_empty() && !used {
-                used_indices[i] = (true, 0);
+                used_indices[i] = (true, 1);
 
                 for ff in f {
                     let mut data = g.node(*ff).data.clone();
 
                     if let TensorGraphNode::Slot(d) = &mut data {
-                        *d = Some(indices[i].0);
+                        *d = Some(indices[i].0.as_atom_view());
                     } else {
                         unreachable!()
                     }
@@ -179,11 +247,11 @@ impl<'a> AtomView<'a> {
             )
         });
 
-        Ok(res.into())
+        Ok((res.into(), used_indices))
     }
 
-    fn reconstruct<G: Ord + std::hash::Hash>(
-        indices: &[(AtomView<'a>, G)],
+    fn reconstruct<T: AtomCore, G: Ord + std::hash::Hash>(
+        indices: &[(T, G)],
         graph: &Graph<TensorGraphNode, HiddenData<(usize, Option<&G>), usize>>,
         cur_node: usize,
         used_indices: &mut [(bool, usize)],
@@ -386,9 +454,9 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    fn tensor_to_graph_impl<'b, G: Ord + std::hash::Hash>(
+    fn tensor_to_graph_impl<'b, T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        indices: &'b [(AtomView<'a>, G)],
+        indices: &'b [(T, G)],
         connections: &mut [(Vec<usize>, bool, usize)],
         g: &mut Graph<TensorGraphNode<'a>, HiddenData<(usize, Option<&'b G>), usize>>,
     ) -> Result<usize, String> {
@@ -439,7 +507,10 @@ impl<'a> AtomView<'a> {
                 // add a node for every slot
                 let start = g.nodes().len();
                 for (i, a) in f.iter().enumerate() {
-                    if let Some(p) = indices.iter().position(|x| x.0.as_atom_view() == a) {
+                    if let Some(p) = indices
+                        .iter()
+                        .position(|x| x.0.as_atom_view() == a.as_atom_view())
+                    {
                         g.add_node(TensorGraphNode::Slot(None));
 
                         if connections[p].1 {
@@ -571,7 +642,35 @@ mod test {
     use crate::{
         atom::{Atom, AtomCore, representation::InlineVar},
         parse, symbol,
+        tensors::CanonicalTensor,
     };
+
+    #[test]
+    fn open_index() {
+        let mus: Vec<_> = (0..5)
+            .map(|i| {
+                (
+                    InlineVar::new(symbol!(format!("open_index::mu{}", i + 1))),
+                    0,
+                )
+            })
+            .collect();
+
+        let a1 = parse!(
+            "f1(open_index::mu1,open_index::mu4)*(f1(open_index::mu1,open_index::mu4,open_index::mu5) + f1(open_index::mu1,open_index::mu3)*f1(open_index::mu3,open_index::mu4,open_index::mu5))"
+        );
+        let r1 = a1.canonize_tensors(mus.clone()).unwrap();
+        assert_eq!(
+            r1,
+            CanonicalTensor {
+                canonical_form: parse!(
+                    "f1(open_index::mu1,open_index::mu3)*(f1(open_index::mu1,open_index::mu3,open_index::mu5) + f1(open_index::mu1,open_index::mu2)*f1(open_index::mu2,open_index::mu3,open_index::mu5))"
+                ),
+                external_indices: vec![mus[4]],
+                dummy_indices: vec![mus[0], mus[1], mus[2]],
+            }
+        );
+    }
 
     #[test]
     fn nested_sum() {
@@ -582,12 +681,12 @@ mod test {
         let a1 = parse!(
             "(f(mu1,mu4)*(f(mu2,mu2,mu1) + f2(mu3,mu2,mu3,mu2,mu1)) + f4(mu3,mu3,mu4))*g(mu4)"
         );
-        let r1 = a1.canonize_tensors(&mus).unwrap();
+        let r1 = a1.canonize_tensors(mus.clone()).unwrap();
 
         let a2 = parse!(
             "(f(mu1,mu4)*(f(mu2,mu2,mu1) + f2(mu2,mu3,mu2,mu3,mu1)) + f4(mu1,mu1,mu4))*g(mu4)"
         );
-        let r2 = a2.canonize_tensors(&mus).unwrap();
+        let r2 = a2.canonize_tensors(mus).unwrap();
 
         assert_eq!(r1, r2);
     }
@@ -600,11 +699,11 @@ mod test {
 
         let a1 = parse!("fc1(mu1,mu2,mu1,mu3,mu4)*fs1(mu2,mu3,mu4)");
 
-        let r1 = a1.canonize_tensors(&mus).unwrap();
+        let r1 = a1.canonize_tensors(mus.clone()).unwrap();
 
         let a2 = parse!("fc1(mu4,mu3,mu1,mu2,mu3)*fs1(mu2,mu1,mu4)");
 
-        let r2 = a2.canonize_tensors(&mus).unwrap();
+        let r2 = a2.canonize_tensors(mus).unwrap();
 
         assert_eq!(r1, r2);
 
@@ -612,7 +711,7 @@ mod test {
             .map(|i| (InlineVar::new(symbol!(format!("mu{}", i + 1))), 0))
             .collect();
 
-        let r3 = a1.canonize_tensors(&mus).unwrap();
+        let r3 = a1.canonize_tensors(mus).unwrap();
 
         assert_ne!(r1, r3);
     }
@@ -628,13 +727,13 @@ mod test {
             "fs1(k2,mu1,mu2)*fs1(mu1,mu3)*fc1(mu4,mu2,k1,mu4,k1,mu3)*(1+x)*f(k)*fs1(mu5,mu6)^2*f(mu7,mu9,k3,mu9,mu7)*h(mu8)*i(mu8)+fc1(mu4,mu5,mu6)*fc1(mu5,mu4,mu6)"
         );
 
-        let r1 = a1.canonize_tensors(&mus).unwrap();
+        let r1 = a1.canonize_tensors(mus.clone()).unwrap();
 
         let a2 = parse!(
             "fs1(k2,mu2,mu9)*fs1(mu2,mu5)*fc1(k1,mu8,k1,mu5,mu8,mu9)*(1+x)*f(k)*fs1(mu3,mu6)^2*f(mu7,mu1,k3,mu1,mu7)*h(mu4)*i(mu4)+fc1(mu1,mu4,mu6)*fc1(mu4,mu1,mu6)"
         );
 
-        let r2 = a2.canonize_tensors(&mus).unwrap();
+        let r2 = a2.canonize_tensors(mus).unwrap();
 
         assert_eq!(r1, r2);
     }
@@ -647,11 +746,11 @@ mod test {
 
         let a1 = parse!("f1(mu3,mu2,mu3,mu1)*fa1(mu1,mu2)");
 
-        let r1 = a1.canonize_tensors(&mus).unwrap();
+        let r1 = a1.canonize_tensors(mus.clone()).unwrap();
 
         let a2 = parse!("-f1(mu1,mu2,mu1,mu3)*fa1(mu2,mu3)");
 
-        let r2 = a2.canonize_tensors(&mus).unwrap();
+        let r2 = a2.canonize_tensors(mus).unwrap();
 
         assert_eq!(r1, r2);
     }
@@ -659,7 +758,14 @@ mod test {
     #[test]
     fn canonize_constant() {
         let a1 = parse!("x+5");
-        let r1 = a1.canonize_tensors::<_, Atom, usize>(&[]).unwrap();
-        assert_eq!(a1, r1);
+        let r = a1.canonize_tensors::<_, Atom, usize>([]).unwrap();
+        assert_eq!(
+            r,
+            CanonicalTensor {
+                canonical_form: a1,
+                external_indices: vec![],
+                dummy_indices: vec![],
+            },
+        );
     }
 }

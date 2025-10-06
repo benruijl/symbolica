@@ -10,7 +10,8 @@ use std::{
 use ahash::HashMap;
 use brotli::CompressorWriter;
 use numpy::{
-    Complex64, IntoPyArray, PyArrayDyn, PyArrayLike2, PyUntypedArrayMethods, TypeMustMatch,
+    Complex64, IntoPyArray, PyArrayDyn, PyArrayLike1, PyArrayLike2, PyUntypedArrayMethods,
+    TypeMustMatch,
     ndarray::{ArrayD, Axis},
 };
 use pyo3::{
@@ -8884,6 +8885,73 @@ impl PythonPolynomial {
         }
     }
 
+    /// Evaluate the polynomial at point `input`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> P('x*y+2*x+x^2').evaluate([2., 3.])
+    ///
+    /// Yields `14.0`.
+    fn evaluate<'py>(
+        &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
+        inputs: PyArrayLike1<'py, f64, TypeMustMatch>,
+    ) -> PyResult<f64> {
+        let input = inputs.as_slice().map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Could not convert input to slice: {}", e))
+        })?;
+
+        if input.len() != self.poly.get_vars_ref().len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Expected {} variables, got {}",
+                self.poly.get_vars_ref().len(),
+                input.len()
+            )));
+        }
+
+        Ok(self.poly.evaluate(|c| c.to_f64(), input))
+    }
+
+    /// Evaluate the polynomial at point `input` with complex input.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> P('x*y+2*x+x^2').evaluate([2+1j, 3+2j])
+    ///
+    /// Yields `11+13j`.
+    fn evaluate_complex<'py>(
+        &mut self,
+        #[gen_stub(override_type(
+            type_repr = "numpy.typing.ArrayLike",
+            imports = ("numpy.typing",),
+        ))]
+        inputs: PyArrayLike1<'py, Complex64, TypeMustMatch>,
+    ) -> PyResult<Complex64> {
+        let input = inputs.as_slice().map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Could not convert input to slice: {}", e))
+        })?;
+
+        if input.len() != self.poly.get_vars_ref().len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Expected {} variables, got {}",
+                self.poly.get_vars_ref().len(),
+                input.len()
+            )));
+        }
+
+        let input = unsafe { std::mem::transmute::<&[Complex64], &[Complex<f64>]>(input) };
+
+        let r = self.poly.evaluate(|c| Complex::new(c.to_f64(), 0.), input);
+        Ok(Complex64::new(r.re, r.im))
+    }
+
     /// Replace the variable `x` with a polynomial `v`.
     ///
     /// Examples
@@ -9965,6 +10033,35 @@ impl PythonFiniteFieldPolynomial {
         }
     }
 
+    /// Evaluate the polynomial at the given values.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> x, y = S('x', 'y')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial(modulus=5)
+    /// >>> print(p.evaluate([2, 3]))
+    /// 4
+    pub fn evaluate(&self, values: Vec<Integer>) -> PyResult<Integer> {
+        if values.len() != self.poly.get_vars_ref().len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Expected {} values, got {}",
+                self.poly.get_vars_ref().len(),
+                values.len()
+            )));
+        }
+
+        let input = values
+            .into_iter()
+            .map(|x| self.poly.ring.element_from_integer(x))
+            .collect::<Vec<_>>();
+
+        let r = self.poly.replace_all(&input);
+
+        Ok(self.poly.ring.to_integer(&r))
+    }
+
     /// Replace the variable `x` with a polynomial `v`.
     ///
     /// Examples
@@ -10787,6 +10884,35 @@ impl PythonPrimeTwoPolynomial {
                 })
                 .collect())
         }
+    }
+
+    /// Evaluate the polynomial at the given values.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> x, y = S('x', 'y')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial(modulus=5)
+    /// >>> print(p.evaluate([2, 3]))
+    /// 4
+    pub fn evaluate(&self, values: Vec<Integer>) -> PyResult<Integer> {
+        if values.len() != self.poly.get_vars_ref().len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Expected {} values, got {}",
+                self.poly.get_vars_ref().len(),
+                values.len()
+            )));
+        }
+
+        let input = values
+            .into_iter()
+            .map(|x| self.poly.ring.element_from_integer(x))
+            .collect::<Vec<_>>();
+
+        let r = self.poly.replace_all(&input);
+
+        Ok(self.poly.ring.to_integer(&r))
     }
 
     /// Replace the variable `x` with a polynomial `v`.
@@ -11627,6 +11753,35 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         }
     }
 
+    /// Evaluate the polynomial at the given values.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> x, y = S('x', 'y')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial(modulus=5)
+    /// >>> print(p.evaluate([2, 3]))
+    /// 4
+    pub fn evaluate(&self, values: Vec<Integer>) -> PyResult<Integer> {
+        if values.len() != self.poly.get_vars_ref().len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Expected {} values, got {}",
+                self.poly.get_vars_ref().len(),
+                values.len()
+            )));
+        }
+
+        let input = values
+            .into_iter()
+            .map(|x| self.poly.ring.element_from_integer(x))
+            .collect::<Vec<_>>();
+
+        let r = self.poly.replace_all(&input);
+
+        Ok(self.poly.ring.to_integer(&r))
+    }
+
     /// Replace the variable `x` with a polynomial `v`.
     ///
     /// Examples
@@ -12405,6 +12560,35 @@ impl PythonGaloisFieldPolynomial {
                 })
                 .collect())
         }
+    }
+
+    /// Evaluate the polynomial at the given values.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> x, y = S('x', 'y')
+    /// >>> p = E('x*y+2*x+x^2').to_polynomial(modulus=5)
+    /// >>> print(p.evaluate([2, 3]))
+    /// 4
+    pub fn evaluate(&self, values: Vec<Integer>) -> PyResult<Integer> {
+        if values.len() != self.poly.get_vars_ref().len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Expected {} values, got {}",
+                self.poly.get_vars_ref().len(),
+                values.len()
+            )));
+        }
+
+        let input = values
+            .into_iter()
+            .map(|x| self.poly.ring.element_from_integer(x))
+            .collect::<Vec<_>>();
+
+        let r = self.poly.replace_all(&input);
+
+        Ok(self.poly.ring.to_integer(&r))
     }
 
     /// Replace the variable `x` with a polynomial `v`.

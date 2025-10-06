@@ -3499,6 +3499,30 @@ class Polynomial:
         >>> print((e - p.to_expression()).expand())
         """
 
+    def evaluate(self, input: npt.ArrayLike) -> float:
+        """Evaluate the polynomial at point `input`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> P('x*y+2*x+x^2').evaluate([2., 3.])
+
+        Yields `14.0`.
+        """
+
+    def evaluate_complex(self, input: npt.ArrayLike) -> complex:
+        """Evaluate the polynomial at point `input` with complex input.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> P('x*y+2*x+x^2').evaluate([2+1j, 3+2j])
+
+        Yields `11+13j`.
+        """
+
     def replace(self, x: Expression, v: Polynomial) -> Polynomial:
         """Replace the variable `x` with a polynomial `v`.
 
@@ -4043,6 +4067,18 @@ class FiniteFieldPolynomial:
         >>> E('y^2+x').to_polynomial().reduce([E('x').to_polynomial()])
 
         yields `y^2`
+        """
+
+    def evaluate(self, input: Sequence[int]) -> int:
+        """Evaluate the polynomial at point `input`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> P('x*y+2*x+x^2', modulus=5).evaluate([2, 3])
+
+        Yields `4`.
         """
 
     def replace(self, x: Expression, v: Polynomial) -> Polynomial:

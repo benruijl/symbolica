@@ -11,6 +11,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
 use crate::domains::algebraic_number::AlgebraicExtension;
+use crate::domains::float::NumericalFloatLike;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::{FractionField, FractionNormalization, Q, RationalField};
 use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
@@ -1695,6 +1696,28 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         res
     }
 
+    pub fn evaluate<T: NumericalFloatLike, M: Fn(&F::Element) -> T>(
+        &self,
+        map_coeff: M,
+        point: &[T],
+    ) -> T {
+        let mut res = map_coeff(&self.ring.zero());
+
+        for t in self {
+            let mut c = map_coeff(&t.coefficient);
+
+            for (i, v) in point.iter().zip(t.exponents) {
+                if v != &E::zero() {
+                    c = c * i.pow(v.to_u32() as u64);
+                }
+            }
+
+            res = res + c;
+        }
+
+        res
+    }
+
     /// Replace all variables in the polynomial by an element from
     /// the ring `v`.
     pub fn replace_all(&self, r: &[F::Element]) -> F::Element {
@@ -1707,7 +1730,7 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
             for (i, v) in r.iter().zip(t.exponents) {
                 if v != &E::zero() {
                     self.ring
-                        .mul_assign(&mut c, &self.ring.pow(i, v.to_i32() as u64));
+                        .mul_assign(&mut c, &self.ring.pow(i, v.to_u32() as u64));
                 }
             }
 

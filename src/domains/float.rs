@@ -38,9 +38,23 @@ impl Default for FloatField<F64> {
     }
 }
 
+impl Default for FloatField<Complex<F64>> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FloatField<F64> {
-    pub fn new() -> Self {
-        FloatField { rep: (0.).into() }
+    pub const fn new() -> Self {
+        FloatField { rep: F64(0.) }
+    }
+}
+
+impl FloatField<Complex<F64>> {
+    pub const fn new() -> Self {
+        FloatField {
+            rep: Complex::new(F64(0.), F64(0.)),
+        }
     }
 }
 
@@ -712,10 +726,11 @@ impl From<Rational> for f64 {
 
 /// A wrapper around `f64` that implements `Eq`, `Ord`, and `Hash`.
 /// All `NaN` values are considered equal, and `-0` is considered equal to `0`.
+#[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Copy, Clone)]
-pub struct F64(f64);
+pub struct F64(pub f64);
 
 impl F64 {
     pub fn into_inner(self) -> f64 {

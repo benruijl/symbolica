@@ -530,7 +530,11 @@ impl<'a> AtomView<'a> {
         match self {
             AtomView::Num(n) => n.get_coeff_view().is_real(),
             AtomView::Var(v) => v.get_symbol().is_real(),
-            AtomView::Fun(f) => f.get_symbol().is_real(),
+            AtomView::Fun(f) => match f.get_symbol() {
+                Symbol::EXP => f.iter().next().map_or(false, |arg| arg.is_real()),
+                Symbol::SQRT => f.iter().next().map_or(false, |arg| arg.is_positive()),
+                x => x.is_real(),
+            },
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
                 base.is_real() && (exp.is_integer() || base.is_positive() && exp.is_real())
@@ -568,7 +572,11 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Var(v) => v.get_symbol().is_positive(),
-            AtomView::Fun(f) => f.get_symbol().is_positive(),
+            AtomView::Fun(f) => match f.get_symbol() {
+                Symbol::EXP => f.iter().next().map_or(false, |arg| arg.is_real()),
+                Symbol::SQRT => f.iter().next().map_or(false, |arg| arg.is_positive()),
+                x => x.is_positive(),
+            },
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
@@ -603,6 +611,32 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Mul(m) => m.iter().all(|child| child.is_finite()),
             AtomView::Add(a) => a.iter().all(|child| child.is_finite()),
+        }
+    }
+
+    /// Returns true iff an expression is explicitly constant. It can contain no user-defined variables or functions.
+    pub(crate) fn is_constant(&self) -> bool {
+        match self {
+            AtomView::Num(n) => match n.get_coeff_view() {
+                CoefficientView::RationalPolynomial(r) => r.deserialize().is_constant(),
+                _ => true,
+            },
+            AtomView::Var(v) => match v.get_symbol() {
+                Symbol::PI | Symbol::E => true,
+                _ => false,
+            },
+            AtomView::Fun(f) => match f.get_symbol() {
+                Symbol::EXP | Symbol::LOG | Symbol::SQRT | Symbol::SIN | Symbol::COS => {
+                    f.get_nargs() == 1 && f.iter().next().map_or(false, |arg| arg.is_constant())
+                }
+                _ => false,
+            },
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+                base.is_constant() && exp.is_constant()
+            }
+            AtomView::Mul(m) => m.iter().all(|child| child.is_constant()),
+            AtomView::Add(a) => a.iter().all(|child| child.is_constant()),
         }
     }
 

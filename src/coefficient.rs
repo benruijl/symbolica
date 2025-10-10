@@ -722,7 +722,7 @@ impl SerializedFloat<'_> {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.to_float().is_zero()
+        self.to_float().is_zero() // TODO: improve
     }
 }
 
@@ -2673,9 +2673,9 @@ impl AtomView<'_> {
         }
     }
 
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// Convert all coefficients and built-in functions to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    pub(crate) fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+    pub(crate) fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
         let binary_prec = (decimal_prec as f64 * LOG2_10).ceil() as u32;
 
         Workspace::get_local().with(|ws| self.to_float_impl(binary_prec, true, false, ws, out))
@@ -3051,7 +3051,7 @@ mod test {
     #[test]
     fn float_convert() {
         let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)");
-        let expr = expr.coefficients_to_float(60);
+        let expr = expr.to_float(60);
         let r = format!(
             "{}",
             AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file_no_namespace())
@@ -3065,8 +3065,8 @@ mod test {
     #[test]
     fn float_to_rat() {
         let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)");
-        let expr = expr.coefficients_to_float(60);
-        let expr = expr.rationalize_coefficients(&(1, 10000).into());
+        let expr = expr.to_float(60);
+        let expr = expr.rationalize(&(1, 10000).into());
         assert_eq!(expr, parse!("1/2*x+137/201"));
     }
 

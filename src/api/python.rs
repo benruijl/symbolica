@@ -3799,29 +3799,36 @@ impl PythonExpression {
     /// The built-in cosine function.
     #[classattr]
     #[pyo3(name = "COS")]
-    pub fn cos() -> PythonExpression {
+    pub fn cos_attr() -> PythonExpression {
         Atom::var(Symbol::COS).into()
     }
 
     /// The built-in sine function.
     #[classattr]
     #[pyo3(name = "SIN")]
-    pub fn sin() -> PythonExpression {
+    pub fn sin_attr() -> PythonExpression {
         Atom::var(Symbol::SIN).into()
     }
 
     /// The built-in exponential function.
     #[classattr]
     #[pyo3(name = "EXP")]
-    pub fn exp() -> PythonExpression {
+    pub fn exp_attr() -> PythonExpression {
         Atom::var(Symbol::EXP).into()
     }
 
     /// The built-in logarithm function.
     #[classattr]
     #[pyo3(name = "LOG")]
-    pub fn log() -> PythonExpression {
+    pub fn log_attr() -> PythonExpression {
         Atom::var(Symbol::LOG).into()
+    }
+
+    /// The built-in square root function.
+    #[classattr]
+    #[pyo3(name = "SQRT")]
+    pub fn sqrt_attr() -> PythonExpression {
+        Atom::var(Symbol::SQRT).into()
     }
 
     /// Return all defined symbol names (function names and variables).
@@ -4246,6 +4253,17 @@ impl PythonExpression {
         self.expr.is_finite()
     }
 
+    /// Check if the expression is constant, i.e. contains no user-defined symbols or functions.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = E('cos(2 + exp(3)) + 5')
+    /// >>> print(e.is_constant())
+    /// True
+    pub fn is_constant(&self) -> bool {
+        self.expr.is_constant()
+    }
+
     /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
@@ -4424,6 +4442,26 @@ impl PythonExpression {
         }
     }
 
+    pub fn cos(&self) -> PythonExpression {
+        self.expr.cos().into()
+    }
+
+    pub fn sin(&self) -> PythonExpression {
+        self.expr.sin().into()
+    }
+
+    pub fn exp(&self) -> PythonExpression {
+        self.expr.exp().into()
+    }
+
+    pub fn log(&self) -> PythonExpression {
+        self.expr.log().into()
+    }
+
+    pub fn sqrt(&self) -> PythonExpression {
+        self.expr.sqrt().into()
+    }
+
     /// Create a held expression that delays the execution of the transformer `t` until the
     /// resulting held expression is called. Held expressions can be composed like regular expressions
     /// and are useful for the right-hand side of pattern matching, to act a transformer
@@ -4515,8 +4553,9 @@ impl PythonExpression {
 
     /// Convert all coefficients to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    pub fn coefficients_to_float(&self, decimal_prec: u32) -> PythonExpression {
-        self.expr.coefficients_to_float(decimal_prec).into()
+    #[pyo3(signature = (decimal_prec = 16))]
+    pub fn to_float(&self, decimal_prec: u32) -> PythonExpression {
+        self.expr.to_float(decimal_prec).into()
     }
 
     /// Complex conjugate all complex numbers in the expression.
@@ -4526,17 +4565,15 @@ impl PythonExpression {
 
     /// Map all floating point and rational coefficients to the best rational approximation
     /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
-    pub fn rationalize_coefficients(&self, relative_error: f64) -> PyResult<PythonExpression> {
+    #[pyo3(signature = (relative_error = 0.01))]
+    pub fn rationalize(&self, relative_error: f64) -> PyResult<PythonExpression> {
         if relative_error <= 0. || relative_error > 1. {
             return Err(exceptions::PyValueError::new_err(
                 "Relative error must be between 0 and 1",
             ));
         }
 
-        Ok(self
-            .expr
-            .rationalize_coefficients(&relative_error.into())
-            .into())
+        Ok(self.expr.rationalize(&relative_error.into()).into())
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.
@@ -8812,6 +8849,38 @@ impl PythonPolynomial {
         })
     }
 
+    /// Get the primitive part of the polynomial, i.e., the polynomial divided
+    /// by its content.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+2*x+3`.
+    pub fn primitive(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Get the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+    /// >>> print(p)
+    ///
+    /// Yields `3`.
+    pub fn lcoeff(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.lcoeff().clone()),
+        })
+    }
+
     /// Get the coefficient list, optionally in the variables `vars`.
     ///
     /// Examples
@@ -9946,17 +10015,35 @@ impl PythonFiniteFieldPolynomial {
         })
     }
 
-    /// Get the content, i.e., the GCD of the coefficients.
+    /// Get the primitive part of the polynomial, i.e., the polynomial
+    /// with a leading coefficient of 1.
     ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial()
-    /// >>> print(p.content())
-    pub fn content(&self) -> PyResult<Self> {
+    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+2*x+3`.
+    pub fn primitive(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.constant(self.poly.content()),
+            poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Get the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+    /// >>> print(p)
+    ///
+    /// Yields `3`.
+    pub fn lcoeff(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.lcoeff().clone()),
         })
     }
 
@@ -10799,17 +10886,35 @@ impl PythonPrimeTwoPolynomial {
         })
     }
 
-    /// Get the content, i.e., the GCD of the coefficients.
+    /// Get the primitive part of the polynomial, i.e., the polynomial
+    /// with a leading coefficient of 1.
     ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial()
-    /// >>> print(p.content())
-    pub fn content(&self) -> PyResult<Self> {
+    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+2*x+3`.
+    pub fn primitive(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.constant(self.poly.content()),
+            poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Get the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+    /// >>> print(p)
+    ///
+    /// Yields `3`.
+    pub fn lcoeff(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.lcoeff().clone()),
         })
     }
 
@@ -11666,17 +11771,35 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         })
     }
 
-    /// Get the content, i.e., the GCD of the coefficients.
+    /// Get the primitive part of the polynomial, i.e., the polynomial
+    /// with a leading coefficient of 1.
     ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial()
-    /// >>> print(p.content())
-    pub fn content(&self) -> PyResult<Self> {
+    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+2*x+3`.
+    pub fn primitive(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.constant(self.poly.content()),
+            poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Get the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+    /// >>> print(p)
+    ///
+    /// Yields `3`.
+    pub fn lcoeff(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.lcoeff().clone()),
         })
     }
 
@@ -12475,17 +12598,35 @@ impl PythonGaloisFieldPolynomial {
         })
     }
 
-    /// Get the content, i.e., the GCD of the coefficients.
+    /// Get the primitive part of the polynomial, i.e., the polynomial
+    /// with a leading coefficient of 1.
     ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial()
-    /// >>> print(p.content())
-    pub fn content(&self) -> PyResult<Self> {
+    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+2*x+3`.
+    pub fn primitive(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.constant(self.poly.content()),
+            poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Get the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+    /// >>> print(p)
+    ///
+    /// Yields `3`.
+    pub fn lcoeff(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.lcoeff().clone()),
         })
     }
 
@@ -13296,6 +13437,38 @@ impl PythonNumberFieldPolynomial {
     pub fn content(&self) -> PyResult<Self> {
         Ok(Self {
             poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the primitive part of the polynomial, i.e., the polynomial
+    /// with the content removed.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+2*x+3`.
+    pub fn primitive(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Get the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+    /// >>> print(p)
+    ///
+    /// Yields `3`.
+    pub fn lcoeff(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.lcoeff().clone()),
         })
     }
 

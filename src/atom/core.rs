@@ -6,6 +6,7 @@ use ahash::{HashMap, HashSet};
 use rayon::ThreadPool;
 
 use crate::{
+    atom::FunctionBuilder,
     coefficient::{Coefficient, CoefficientView, ConvertToRing},
     domains::{
         EuclideanDomain, InternalOrdering,
@@ -777,25 +778,24 @@ pub trait AtomCore {
         self.as_atom_view().set_coefficient_ring(vars)
     }
 
-    /// Convert all coefficients to floats with a given precision `decimal_prec`.
+    /// Convert all coefficients and built-in functions to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
     ///
     /// # Example
     ///
     /// ```
     /// use symbolica::{atom::AtomCore, parse};
-    /// let expr = parse!("1/3");
-    /// let result = expr.coefficients_to_float(2);
-    /// assert_eq!(result.to_string(), "3.3e-1");
+    /// let expr = parse!("cos(1/3) + 1/2");
+    /// let result = expr.to_float(2);
+    /// assert_eq!(result.to_string(), "1.4");
     /// ```
-    fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
+    fn to_float(&self, decimal_prec: u32) -> Atom {
         let mut a = Atom::new();
-        self.as_atom_view()
-            .coefficients_to_float_into(decimal_prec, &mut a);
+        self.as_atom_view().to_float_into(decimal_prec, &mut a);
         a
     }
 
-    /// Convert all coefficients to floats with a given precision `decimal_prec`.
+    /// Convert all coefficients and built-in functions to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
     ///
     /// # Example
@@ -804,12 +804,11 @@ pub trait AtomCore {
     /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("1/3");
     /// let mut out = Atom::new();
-    /// expr.coefficients_to_float_into(2, &mut out);
+    /// expr.to_float_into(2, &mut out);
     /// assert_eq!(out.to_string(), "3.3e-1");
     /// ```
-    fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
-        self.as_atom_view()
-            .coefficients_to_float_into(decimal_prec, out);
+    fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+        self.as_atom_view().to_float_into(decimal_prec, out);
     }
 
     /// Complex conjugate all numbers in the expression.
@@ -889,10 +888,10 @@ pub trait AtomCore {
     /// ```
     /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("0.333");
-    /// let result = expr.rationalize_coefficients(&(1, 100).into());
+    /// let result = expr.rationalize(&(1, 100).into());
     /// assert_eq!(result, Atom::num((1, 3)));
     /// ```
-    fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
+    fn rationalize(&self, relative_error: &Rational) -> Atom {
         self.as_atom_view().rationalize_coefficients(relative_error)
     }
 
@@ -1302,6 +1301,18 @@ pub trait AtomCore {
         self.as_atom_view().is_finite()
     }
 
+    /// Returns true iff an expression is constant, i.e. contains no user-defined symbols or functions.
+    ///
+    /// # Example
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
+    /// let expr = parse!("cos(2 + exp(3) ) + 1/3");
+    /// assert!(expr.is_constant());
+    /// ```
+    fn is_constant(&self) -> bool {
+        self.as_atom_view().is_constant()
+    }
+
     /// Check if the expression can be considered a polynomial in some variables, including
     /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
     /// `f(x)+x` is not a polynomial.
@@ -1324,6 +1335,41 @@ pub trait AtomCore {
     ) -> Option<HashSet<AtomView<'_>>> {
         self.as_atom_view()
             .is_polynomial(allow_not_expanded, allow_negative_powers)
+    }
+
+    /// Exponentiate the atom.
+    fn exp(&self) -> Atom {
+        FunctionBuilder::new(Symbol::EXP)
+            .add_arg(self.as_atom_view())
+            .finish()
+    }
+
+    /// Take the logarithm of the atom.
+    fn log(&self) -> Atom {
+        FunctionBuilder::new(Symbol::LOG)
+            .add_arg(self.as_atom_view())
+            .finish()
+    }
+
+    /// Take the sine the atom.
+    fn sin(&self) -> Atom {
+        FunctionBuilder::new(Symbol::SIN)
+            .add_arg(self.as_atom_view())
+            .finish()
+    }
+
+    ///  Take the cosine the atom.
+    fn cos(&self) -> Atom {
+        FunctionBuilder::new(Symbol::COS)
+            .add_arg(self.as_atom_view())
+            .finish()
+    }
+
+    ///  Take the square root of the atom.
+    fn sqrt(&self) -> Atom {
+        FunctionBuilder::new(Symbol::SQRT)
+            .add_arg(self.as_atom_view())
+            .finish()
     }
 
     /// Replace all occurrences of the pattern. The right-hand side is

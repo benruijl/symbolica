@@ -429,6 +429,9 @@ class Expression:
     LOG: Expression
     """The built-in logarithm function."""
 
+    SQRT: Expression
+    """The built-in square root function."""
+
     @overload
     @classmethod
     def symbol(_cls,
@@ -888,6 +891,17 @@ class Expression:
         False
         """
 
+    def is_constant(self) -> bool:
+        """
+        Check if the expression is constant, i.e. contains no user-defined symbols or functions.
+
+        Examples
+        --------
+        >>> e = E('cos(2 + exp(3)) + 5')
+        >>> print(e.is_constant())
+        True
+        """
+
     def __add__(self, other: Expression | int | float | complex | Decimal) -> Expression:
         """
         Add this expression to `other`, returning the result.
@@ -940,12 +954,12 @@ class Expression:
 
     def __xor__(self, a: Any) -> Expression:
         """
-        Returns a warning that `**` should be used instead of `^` for taking a power.
+        Returns a warning that `**` should be used instead of ` ^ ` for taking a power.
         """
 
     def __rxor__(self, a: Any) -> Expression:
         """
-        Returns a warning that `**` should be used instead of `^` for taking a power.
+        Returns a warning that `**` should be used instead of ` ^ ` for taking a power.
         """
 
     def __neg__(self) -> Expression:
@@ -956,6 +970,31 @@ class Expression:
     def __len__(self) -> int:
         """
         Return the number of terms in this expression.
+        """
+
+    def cos(self) -> Expression:
+        """
+        Take the cosine of this expression, returning the result.
+        """
+
+    def sin(self) -> Expression:
+        """
+        Take the sine of this expression, returning the result.
+        """
+
+    def exp(self) -> Expression:
+        """
+        Take the exponential of this expression, returning the result.
+        """
+
+    def log(self) -> Expression:
+        """
+        Take the logarithm of this expression, returning the result.
+        """
+
+    def sqrt(self) -> Expression:
+        """
+        Take the square root of this expression, returning the result.
         """
 
     def hold(self, t: Transformer) -> HeldExpression:
@@ -995,14 +1034,14 @@ class Expression:
         The symbols are sorted in Symbolica's internal ordering.
         """
 
-    def coefficients_to_float(self, decimal_prec: int) -> Expression:
-        """Convert all coefficients to floats with a given precision `decimal_prec`.
+    def to_float(self, decimal_prec: int = 16) -> Expression:
+        """Convert all coefficients and built-in functions to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
 
     def conjugate(self) -> Expression:
         """Complex conjugate all complex numbers in the expression."""
 
-    def rationalize_coefficients(self, relative_error: float) -> Expression:
+    def rationalize(self, relative_error: float = 0.01) -> Expression:
         """Map all floating point and rational coefficients to the best rational approximation
         in the interval `[self*(1-relative_error),self*(1+relative_error)]`."""
 
@@ -3442,6 +3481,33 @@ class Polynomial:
         >>> print(p.content())
         """
 
+    def primitive(self) -> Polynomial:
+        """
+        Get the primitive part of the polynomial, i.e., the polynomial
+        with the content removed.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('3x^2+6x+9').to_polynomial()
+        >>> print(p.primitive())
+
+        Yields `x^2+2*x+3`.
+        """
+
+    def lcoeff(self) -> Polynomial:
+        """
+        Get the leading coefficient.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+        >>> print(p)
+
+        Yields `3`.
+        """
+
     def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]] = None) -> list[Tuple[list[int], Polynomial]]:
         """Get the coefficient list, optionally in the variables `xs`.
 
@@ -3743,6 +3809,33 @@ class NumberFieldPolynomial:
         >>> print(p.content())
         """
 
+    def primitive(self) -> NumberFieldPolynomial:
+        """
+        Get the primitive part of the polynomial, i.e., the polynomial
+        with the content removed.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('3x^2+6x+9').to_polynomial()
+        >>> print(p.primitive())
+
+        Yields `x^2+2*x+3`.
+        """
+
+    def lcoeff(self) -> NumberFieldPolynomial:
+        """
+        Get the leading coefficient.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+        >>> print(p)
+
+        Yields `3`.
+        """
+
     def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]] = None) -> list[Tuple[list[int], NumberFieldPolynomial]]:
         """Get the coefficient list, optionally in the variables `xs`.
 
@@ -4011,15 +4104,31 @@ class FiniteFieldPolynomial:
         >>> print(p.integrate(x))
         """
 
-    def content(self) -> FiniteFieldPolynomial:
-        """Get the content, i.e., the GCD of the coefficients.
+    def primitive(self) -> FiniteFieldPolynomial:
+        """
+        Get the primitive part of the polynomial, i.e., the polynomial
+        with a leading coefficient of 1.
 
         Examples
         --------
-
-        >>> from symbolica import *
+        >>> from symbolica import Expression as E
         >>> p = E('3x^2+6x+9').to_polynomial()
-        >>> print(p.content())
+        >>> print(p.primitive())
+
+        Yields `x^2+2*x+3`.
+        """
+
+    def lcoeff(self) -> FiniteFieldPolynomial:
+        """
+        Get the leading coefficient.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('3x^2+6x+9').to_polynomial().lcoeff()
+        >>> print(p)
+
+        Yields `3`.
         """
 
     def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]] = None) -> list[Tuple[list[int], FiniteFieldPolynomial]]:

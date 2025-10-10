@@ -840,7 +840,12 @@ impl UnivariatePolynomial<RationalField> {
             .to_multivariate::<u16>()
             .square_free_factorization()
         {
-            let f = f.to_univariate_from_univariate(0);
+            if f.is_constant() {
+                continue;
+            }
+
+            // make monic to prevent casting large integers that may overflow the float
+            let f = f.to_univariate_from_univariate(0).make_monic();
 
             match f
                 .map_coeff(

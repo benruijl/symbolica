@@ -8,9 +8,10 @@ use crate::{
     atom::Atom,
     coefficient::ConvertToRing,
     combinatorics::CombinationIterator,
+    domains::rational::Q,
     poly::{
         PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
-        polynomial::MultivariatePolynomial,
+        polynomial::MultivariatePolynomial, univariate::UnivariatePolynomial,
     },
     symbol,
     tensors::matrix::Matrix,
@@ -24,6 +25,55 @@ use super::{
     integer::Integer,
     rational::Rational,
 };
+
+/// Information about a specific root of a polynomial.
+/// The roots are sorted in the following way: first
+/// all real roots in ascending order, then complex roots
+/// sorted by their real part and then by their imaginary part.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RootInfo {
+    pub index: u16,
+    pub is_real: bool,
+    pub isolating_interval: Option<(Rational, Rational)>,
+    pub complex_interval: Option<(Rational, Rational)>,
+}
+
+impl RootInfo {
+    /// Create root information for the `index`-th root of the polynomial `poly`.
+    pub fn from_index(index: usize, poly: &UnivariatePolynomial<Q>) -> Self {
+        if index > poly.degree() {
+            panic!(
+                "Index {} is out of bounds for polynomial of degree {}",
+                index,
+                poly.degree(),
+            );
+        }
+
+        let roots = poly.isolate_roots(None);
+
+        let mut counter = 0;
+        for (a, b, pow) in roots {
+            if counter + pow > index {
+                return RootInfo {
+                    index: index as u16,
+                    is_real: true,
+                    isolating_interval: Some((a, b)),
+                    complex_interval: None,
+                };
+            } else {
+                counter += pow;
+            }
+        }
+
+        // TODO: complex root isolation?
+        RootInfo {
+            index: index as u16,
+            is_real: false,
+            isolating_interval: None,
+            complex_interval: None,
+        }
+    }
+}
 
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
 ///
@@ -62,6 +112,7 @@ use super::{
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct AlgebraicExtension<R: Ring> {
     poly: Arc<MultivariatePolynomial<R, u16>>, // TODO: convert to univariate polynomial
+    embedding: Option<Arc<RootInfo>>,
 }
 
 impl<T: FiniteFieldWorkspace> GaloisField for AlgebraicExtension<FiniteField<T>>
@@ -387,6 +438,7 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
         if poly.nvars() == 1 {
             return AlgebraicExtension {
                 poly: Arc::new(poly),
+                embedding: None,
             };
         }
 
@@ -396,6 +448,17 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
 
         AlgebraicExtension {
             poly: Arc::new(uni.to_multivariate()),
+            embedding: None,
+        }
+    }
+
+    pub fn new_with_embedding(
+        poly: MultivariatePolynomial<R, u16>,
+        embedding: RootInfo,
+    ) -> AlgebraicExtension<R> {
+        AlgebraicExtension {
+            poly: Arc::new(poly),
+            embedding: Some(Arc::new(embedding)),
         }
     }
 
@@ -423,6 +486,7 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
                 self.poly
                     .map_coeff(|c| c.to_finite_field(field), field.clone()),
             ),
+            embedding: None,
         }
     }
 
@@ -469,6 +533,12 @@ impl<R: Ring> AlgebraicExtension<R> {
 
         AlgebraicExtension {
             poly: Arc::new(poly),
+            embedding: Some(Arc::new(RootInfo {
+                index: 1, // positive imaginary part
+                is_real: false,
+                isolating_interval: Some((0.into(), 0.into())),
+                complex_interval: Some((1.into(), 1.into())),
+            })),
         }
     }
 }
@@ -509,6 +579,9 @@ impl<R: Ring> std::fmt::Display for AlgebraicExtension<R> {
 pub struct AlgebraicNumber<R: Ring> {
     pub(crate) poly: MultivariatePolynomial<R, u16>,
 }
+
+// can we use AlgebraicNumber directly the same as Root?
+// index specifies the index of the root of the minimal polynomial
 
 impl<R: Ring> InternalOrdering for AlgebraicNumber<R> {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -916,15 +989,86 @@ impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
     }
 }
 
+impl AlgebraicExtension<Q> {
+    /// Determine if the algebraic number is negative.
+    /// This requires the embedding information to be set.
+    pub fn is_negative(&self, element: &AlgebraicNumber<Q>) -> Result<bool, String> {
+        if self.is_zero(element) {
+            Ok(false)
+        } else {
+            self.is_positive(element).map(|b| !b)
+        }
+    }
+
+    /// Determine if the algebraic number is positive.
+    /// This requires the embedding information to be set.
+    pub fn is_positive(&self, element: &AlgebraicNumber<Q>) -> Result<bool, String> {
+        if element.poly.is_constant() {
+            return Ok(!element.poly.get_constant().is_negative());
+        }
+
+        if let Some(embedding) = &self.embedding {
+            if embedding.is_real {
+                // use the isolating interval if available
+                if let Some((l, h)) = &embedding.isolating_interval {
+                    let mut tolerance = (h - l) / (l + h).abs();
+                    let (mut l, mut h) = (l.clone(), h.clone());
+                    loop {
+                        let eval_lower = element.poly.replace_all(&[l.clone()]);
+                        let eval_upper = element.poly.replace_all(&[h.clone()]);
+
+                        if !eval_lower.is_negative() && !eval_upper.is_negative() {
+                            return Ok(true);
+                        } else if eval_lower.is_negative() && eval_upper.is_negative() {
+                            return Ok(false);
+                        }
+
+                        // refine the interval
+                        let uni = self.poly.to_univariate_from_univariate(0);
+                        tolerance *= &(1, 2).into();
+                        (l, h) = uni.refine_root_interval((l, h), &tolerance);
+                    }
+                }
+
+                Err("Isolating interval missing for number field".to_string())
+            } else {
+                Err(format!(
+                    "Cannot determine the sign of a non-real algebraic number {}",
+                    self.printer(&element)
+                ))
+            }
+        } else {
+            Err(format!(
+                "Cannot determine the sign of an algebraic number without embedding information {}",
+                self.printer(&element)
+            ))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::atom::AtomCore;
     use crate::domains::Ring;
-    use crate::domains::algebraic_number::AlgebraicExtension;
+    use crate::domains::algebraic_number::{AlgebraicExtension, RootInfo};
     use crate::domains::finite_field::{PrimeIteratorU64, Z2, Zp};
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
     use crate::{parse, symbol};
+
+    #[test]
+    fn is_algebraic_number_positive() {
+        let ring = parse!("a^3 + 3a^2 - 46*a + 1").to_polynomial(&Q, None);
+        let ring = AlgebraicExtension::new_with_embedding(
+            ring.clone(),
+            RootInfo::from_index(2, &ring.to_univariate_from_univariate(0)),
+        );
+
+        let a = parse!("1/5a^2-a-1/10").to_polynomial::<_, u16>(&Q, None);
+        let a = ring.to_element(a);
+
+        assert_eq!(ring.is_positive(&a), Ok(true));
+    }
 
     #[test]
     fn gcd_number_field() {

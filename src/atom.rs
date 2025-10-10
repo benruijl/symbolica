@@ -1499,31 +1499,6 @@ impl Atom {
     pub fn i() -> Atom {
         Atom::num(Complex::<Rational>::new_i())
     }
-
-    /// Exponentiate the atom.
-    pub fn exp(&self) -> Atom {
-        FunctionBuilder::new(Symbol::EXP).add_arg(self).finish()
-    }
-
-    /// Take the logarithm of the atom.
-    pub fn log(&self) -> Atom {
-        FunctionBuilder::new(Symbol::LOG).add_arg(self).finish()
-    }
-
-    /// Take the sine the atom.
-    pub fn sin(&self) -> Atom {
-        FunctionBuilder::new(Symbol::SIN).add_arg(self).finish()
-    }
-
-    ///  Take the cosine the atom.
-    pub fn cos(&self) -> Atom {
-        FunctionBuilder::new(Symbol::COS).add_arg(self).finish()
-    }
-
-    ///  Take the square root of the atom.
-    pub fn sqrt(&self) -> Atom {
-        FunctionBuilder::new(Symbol::SQRT).add_arg(self).finish()
-    }
 }
 
 impl Default for Atom {

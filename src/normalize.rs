@@ -6,7 +6,7 @@ use crate::{
     atom::{Atom, AtomCore, AtomView, Fun, Symbol, representation::InlineNum},
     coefficient::{Coefficient, CoefficientView},
     domains::{
-        float::{Complex, Real},
+        float::{Complex, NumericalFloatLike, Real},
         integer::Z,
         rational::{Q, Rational},
     },
@@ -891,7 +891,14 @@ impl AtomView<'_> {
 
                 out_f.set_normalized(true);
 
-                if [Symbol::COS, Symbol::SIN, Symbol::EXP, Symbol::LOG].contains(&id)
+                if [
+                    Symbol::COS,
+                    Symbol::SIN,
+                    Symbol::EXP,
+                    Symbol::LOG,
+                    Symbol::SQRT,
+                ]
+                .contains(&id)
                     && out_f.to_fun_view().get_nargs() == 1
                 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
@@ -900,7 +907,7 @@ impl AtomView<'_> {
                             if id == Symbol::COS || id == Symbol::EXP {
                                 out.to_num(Coefficient::one());
                                 return;
-                            } else if id == Symbol::SIN || id == Symbol::LOG {
+                            } else if id == Symbol::SIN || id == Symbol::LOG || id == Symbol::SQRT {
                                 out.to_num(Coefficient::zero());
                                 return;
                             }
@@ -946,6 +953,16 @@ impl AtomView<'_> {
                                         r.to_float().log().into()
                                     } else {
                                         Complex::new(r.to_float(), i.to_float()).log()
+                                    };
+                                    out.to_num(Coefficient::Float(r));
+                                    return;
+                                }
+                                Symbol::SQRT => {
+                                    let r = if i.is_zero() {
+                                        let r = r.to_float();
+                                        Complex::new(r.sqrt(), r.zero())
+                                    } else {
+                                        Complex::new(r.to_float(), i.to_float()).sqrt()
                                     };
                                     out.to_num(Coefficient::Float(r));
                                     return;

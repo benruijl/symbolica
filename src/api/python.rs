@@ -3140,7 +3140,7 @@ impl<'py> IntoPyObject<'py> for Integer {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
-            Integer::Natural(n) => n.into_pyobject(py),
+            Integer::Single(n) => n.into_pyobject(py),
             Integer::Double(d) => d.into_pyobject(py),
             Integer::Large(l) => unsafe {
                 Ok(Bound::from_owned_ptr(
@@ -7843,8 +7843,8 @@ impl PythonSeries {
     /// Get the trailing exponent; the exponent of the first non-zero term.
     pub fn get_trailing_exponent(&self) -> PyResult<(i64, i64)> {
         let r = self.series.get_trailing_exponent();
-        if let Integer::Natural(n) = r.numerator_ref() {
-            if let Integer::Natural(d) = r.denominator_ref() {
+        if let Integer::Single(n) = r.numerator_ref() {
+            if let Integer::Single(d) = r.denominator_ref() {
                 return Ok((*n, *d));
             }
         }
@@ -7855,8 +7855,8 @@ impl PythonSeries {
     /// Get the relative order.
     pub fn get_relative_order(&self) -> PyResult<(i64, i64)> {
         let r = self.series.relative_order();
-        if let Integer::Natural(n) = r.numerator_ref() {
-            if let Integer::Natural(d) = r.denominator_ref() {
+        if let Integer::Single(n) = r.numerator_ref() {
+            if let Integer::Single(d) = r.denominator_ref() {
                 return Ok((*n, *d));
             }
         }
@@ -7867,8 +7867,8 @@ impl PythonSeries {
     /// Get the absolute order.
     pub fn get_absolute_order(&self) -> PyResult<(i64, i64)> {
         let r = self.series.absolute_order();
-        if let Integer::Natural(n) = r.numerator_ref() {
-            if let Integer::Natural(d) = r.denominator_ref() {
+        if let Integer::Single(n) = r.numerator_ref() {
+            if let Integer::Single(d) = r.denominator_ref() {
                 return Ok((*n, *d));
             }
         }

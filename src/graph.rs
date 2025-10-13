@@ -30,6 +30,7 @@ use std::{
 use crate::{
     combinatorics::{CombinationIterator, unique_permutations},
     domains::integer::Integer,
+    error,
     utils::AbortCheck,
 };
 
@@ -821,7 +822,8 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         mut settings: GenerationSettings<N, E>,
     ) -> Result<HashMap<Graph<N, E>, Integer>, HashMap<Graph<N, E>, Integer>> {
         if settings.max_vertices.is_none() && settings.max_loops.is_none() {
-            panic!("At least one of max_vertices or max_loops must be set");
+            error!("At least one of max_vertices or max_loops must be set");
+            return Err(HashMap::default());
         }
 
         let vertex_sorted: Vec<_> = vertex_signatures

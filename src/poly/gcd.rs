@@ -1838,7 +1838,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
         ) -> MultivariatePolynomial<IntegerRing, E> {
             let mut g = gamma.zero();
             let mut i = 0;
-            let xi_half = xi / &Integer::Natural(2);
+            let xi_half = xi / &Integer::Single(2);
             while !gamma.is_zero() {
                 // create xi-adic representation using the symmetric modulus
                 let mut g_i = gamma.zero_with_capacity(gamma.nterms());
@@ -1901,13 +1901,13 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 .coefficients
                 .iter()
                 .max_by(|x1, x2| x1.abs_cmp(x2))
-                .unwrap_or(&Integer::Natural(0));
+                .unwrap_or(&Integer::Single(0));
 
             let max_b = b
                 .coefficients
                 .iter()
                 .max_by(|x1, x2| x1.abs_cmp(x2))
-                .unwrap_or(&Integer::Natural(0));
+                .unwrap_or(&Integer::Single(0));
 
             let min = if max_a.abs_cmp(max_b) == Ordering::Greater {
                 max_b.abs()
@@ -1915,12 +1915,12 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 max_a.abs()
             };
 
-            let mut xi = &(&min * &Integer::Natural(2)) + &Integer::Natural(29);
+            let mut xi = &(&min * &Integer::Single(2)) + &Integer::Single(29);
 
             for retry in 0..6 {
                 debug!("round {}, xi={}", retry, xi);
-                match &xi * &Integer::Natural(a.degree(var).max(b.degree(var)).to_u32() as i64) {
-                    Integer::Natural(_) => {}
+                match &xi * &Integer::Single(a.degree(var).max(b.degree(var)).to_u32() as i64) {
+                    Integer::Single(_) => {}
                     Integer::Double(_) => {}
                     Integer::Large(r) => {
                         if r.as_limbs().len() > 4 {
@@ -1940,7 +1940,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     }
                     Err(HeuristicGCDError::BadReconstruction) => {
                         xi = Z
-                            .quot_rem(&(&xi * &Integer::Natural(73794)), &Integer::Natural(27011))
+                            .quot_rem(&(&xi * &Integer::Single(73794)), &Integer::Single(27011))
                             .0;
                         continue;
                     }
@@ -1984,7 +1984,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 }
 
                 xi = Z
-                    .quot_rem(&(&xi * &Integer::Natural(73794)), &Integer::Natural(27011))
+                    .quot_rem(&(&xi * &Integer::Single(73794)), &Integer::Single(27011))
                     .0;
             }
 
@@ -2049,7 +2049,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
             };
 
             for p in f.iter() {
-                let k = Integer::Natural(SMALL_PRIMES[prime_index % num_primes]);
+                let k = Integer::Single(SMALL_PRIMES[prime_index % num_primes]);
                 prime_index += 1;
                 b = b + p.clone().mul_coeff(k);
             }
@@ -3413,10 +3413,10 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         let mut tight_bounds: SmallVec<[E; INLINED_EXPONENTS]> = bounds.iter().cloned().collect();
         if a.coefficients
             .iter()
-            .any(|x| !matches!(x, Integer::Natural(_)))
+            .any(|x| !matches!(x, Integer::Single(_)))
             || b.coefficients
                 .iter()
-                .any(|x| !matches!(x, Integer::Natural(_)))
+                .any(|x| !matches!(x, Integer::Single(_)))
         {
             MultivariatePolynomial::gcd_zippel::<u64>(a, b, vars, bounds, &mut tight_bounds)
         } else {

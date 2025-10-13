@@ -2466,7 +2466,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             }
             let p = p as u32;
 
-            if (&self.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
+            if (&self.lcoeff() % &Integer::Single(p as i64)).is_zero() {
                 continue;
             }
 
@@ -2728,7 +2728,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             }
             let p = p as u32;
 
-            if (&uni_f.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
+            if (&uni_f.lcoeff() % &Integer::Single(p as i64)).is_zero() {
                 continue;
             }
 
@@ -2943,10 +2943,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         // move the 2^n into the sqrt to prevent precision loss when converting the sqrt
         // to an integer
-        bound = &bound * &Integer::Natural(2).pow((total_degree * 2).saturating_sub(non_zero_vars));
+        bound = &bound * &Integer::Single(2).pow((total_degree * 2).saturating_sub(non_zero_vars));
 
         bound = &match bound {
-            Integer::Natural(b) => Integer::Natural((b as f64).sqrt() as i64),
+            Integer::Single(b) => Integer::Single((b as f64).sqrt() as i64),
             Integer::Double(b) => Integer::from(rug::Integer::from(b).sqrt()),
             Integer::Large(b) => Integer::from(b.sqrt()),
         } + &1i64.into();
@@ -3317,7 +3317,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut content_fail_count = 0;
         'new_sample: loop {
             for s in &mut cur_sample_points {
-                s.1 = Integer::Natural(rng.random_range(0..=coefficient_upper_bound));
+                s.1 = Integer::Single(rng.random_range(0..=coefficient_upper_bound));
                 debug!("Sample x{} {}", s.0, s.1);
             }
 
@@ -3579,7 +3579,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         // perform the Hensel lifting in a performance-optimized finite field if possible
         let factorization = if max_p < u64::MAX {
             let prime = match max_p {
-                Integer::Natural(b) => b as u64,
+                Integer::Single(b) => b as u64,
                 Integer::Double(b) => b as u64,
                 Integer::Large(b) => b.to_u64().unwrap(),
             };

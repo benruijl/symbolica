@@ -167,6 +167,10 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
         0.into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if a.is_zero() { None } else { Some(a.inv()) }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         Some(a.clone() / b)
     }
@@ -1664,7 +1668,7 @@ impl Add<Rational> for Float {
 
         fn get_bits(i: &Integer) -> i32 {
             match i {
-                Integer::Natural(n) => n.unsigned_abs().ilog2() as i32 + 1,
+                Integer::Single(n) => n.unsigned_abs().ilog2() as i32 + 1,
                 Integer::Double(n) => n.unsigned_abs().ilog2() as i32 + 1,
                 Integer::Large(r) => r.significant_bits() as i32,
             }

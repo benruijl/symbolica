@@ -192,6 +192,14 @@ impl Ring for AtomField {
         true
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if SelfRing::is_zero(a) {
+            None
+        } else {
+            Some(self.inv(a))
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if SelfRing::is_zero(b) {
             None

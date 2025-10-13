@@ -161,7 +161,7 @@ pub trait FiniteFieldWorkspace: Clone + Display + Eq + Hash {
     /// Convert to u64.
     fn to_u64(&self) -> Option<u64> {
         match self.to_integer() {
-            Integer::Natural(s) => {
+            Integer::Single(s) => {
                 if s >= 0 {
                     Some(s as u64)
                 } else {
@@ -264,7 +264,7 @@ impl FiniteFieldWorkspace for u32 {
 
     fn try_from_integer(n: Integer) -> Option<Self> {
         match n {
-            Integer::Natural(s) => {
+            Integer::Single(s) => {
                 if s >= 0 && s <= u32::MAX as i64 {
                     Some(s as u32)
                 } else {
@@ -276,7 +276,7 @@ impl FiniteFieldWorkspace for u32 {
     }
 
     fn to_integer(&self) -> Integer {
-        Integer::Natural(*self as i64)
+        Integer::Single(*self as i64)
     }
 }
 
@@ -442,6 +442,46 @@ impl Ring for Zp {
         self.get_prime().into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if self.is_zero(a) {
+            return None;
+        }
+
+        // apply multiplication with 1 twice to get the correct scaling of R=2^32
+        // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
+        let x_mont = self
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
+            .0;
+
+        // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
+        let mut u1: u32 = 1;
+        let mut u3 = x_mont;
+        let mut v1: u32 = 0;
+        let mut v3 = self.p;
+        let mut even_iter: bool = true;
+
+        while v3 != 0 {
+            let q = u3 / v3;
+            let t3 = u3 % v3;
+            let t1 = u1 + q * v1;
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        if u3 != 1 {
+            return None;
+        }
+
+        if even_iter {
+            Some(FiniteFieldElement(u1))
+        } else {
+            Some(FiniteFieldElement(self.p - u1))
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if self.is_zero(b) {
             None
@@ -500,38 +540,8 @@ impl Field for Zp {
 
     /// Computes x^-1 mod n.
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        assert!(a.0 != 0, "0 is not invertible");
-
-        // apply multiplication with 1 twice to get the correct scaling of R=2^32
-        // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
-        let x_mont = self
-            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
-            .0;
-
-        // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
-        let mut u1: u32 = 1;
-        let mut u3 = x_mont;
-        let mut v1: u32 = 0;
-        let mut v3 = self.p;
-        let mut even_iter: bool = true;
-
-        while v3 != 0 {
-            let q = u3 / v3;
-            let t3 = u3 % v3;
-            let t1 = u1 + q * v1;
-            u1 = v1;
-            v1 = t1;
-            u3 = v3;
-            v3 = t3;
-            even_iter = !even_iter;
-        }
-
-        debug_assert!(u3 == 1);
-        if even_iter {
-            FiniteFieldElement(u1)
-        } else {
-            FiniteFieldElement(self.p - u1)
-        }
+        self.try_inv(a)
+            .unwrap_or_else(|| panic!("{} is not invertible mod {}", self.printer(a), self.p))
     }
 }
 
@@ -542,7 +552,7 @@ impl FiniteFieldWorkspace for u64 {
 
     fn try_from_integer(n: Integer) -> Option<Self> {
         match n {
-            Integer::Natural(s) => {
+            Integer::Single(s) => {
                 if s >= 0 {
                     Some(s as u64)
                 } else {
@@ -857,6 +867,46 @@ impl Ring for Zp64 {
         self.get_prime().into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if self.is_zero(a) {
+            return None;
+        }
+
+        // apply multiplication with 1 twice to get the correct scaling of R=2^64
+        // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
+        let x_mont = self
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
+            .0;
+
+        // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
+        let mut u1: u64 = 1;
+        let mut u3 = x_mont;
+        let mut v1: u64 = 0;
+        let mut v3 = self.p;
+        let mut even_iter: bool = true;
+
+        while v3 != 0 {
+            let q = u3 / v3;
+            let t3 = u3 % v3;
+            let t1 = u1 + q * v1;
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        if u3 != 1 {
+            return None;
+        }
+
+        if even_iter {
+            Some(FiniteFieldElement(u1))
+        } else {
+            Some(FiniteFieldElement(self.p - u1))
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if self.is_zero(b) {
             None
@@ -915,38 +965,8 @@ impl Field for Zp64 {
 
     /// Computes x^-1 mod n.
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        assert!(a.0 != 0, "0 is not invertible");
-
-        // apply multiplication with 1 twice to get the correct scaling of R=2^64
-        // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
-        let x_mont = self
-            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
-            .0;
-
-        // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
-        let mut u1: u64 = 1;
-        let mut u3 = x_mont;
-        let mut v1: u64 = 0;
-        let mut v3 = self.p;
-        let mut even_iter: bool = true;
-
-        while v3 != 0 {
-            let q = u3 / v3;
-            let t3 = u3 % v3;
-            let t1 = u1 + q * v1;
-            u1 = v1;
-            v1 = t1;
-            u3 = v3;
-            v3 = t3;
-            even_iter = !even_iter;
-        }
-
-        debug_assert!(u3 == 1);
-        if even_iter {
-            FiniteFieldElement(u1)
-        } else {
-            FiniteFieldElement(self.p - u1)
-        }
+        self.try_inv(a)
+            .unwrap_or_else(|| panic!("{} is not invertible mod {}", self.printer(a), self.p))
     }
 }
 
@@ -1150,6 +1170,10 @@ impl Ring for FiniteField<Two> {
         2.into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if *a == 0 { None } else { Some(self.inv(a)) }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if *b == 0 { None } else { Some(*a) }
     }
@@ -1250,7 +1274,7 @@ impl FiniteFieldWorkspace for Mersenne64 {
     fn try_from_integer(n: Integer) -> Option<Self> {
         if n <= Self::PRIME {
             match n {
-                Integer::Natural(s) => {
+                Integer::Single(s) => {
                     if s >= 0 {
                         Some(Mersenne64(s as u64))
                     } else {
@@ -1429,6 +1453,10 @@ impl Ring for FiniteField<Mersenne64> {
         Mersenne64::PRIME.into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if *a == 0 { None } else { Some(self.inv(a)) }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if self.is_zero(b) {
             None
@@ -1581,40 +1609,6 @@ impl FiniteField<Integer> {
             *c -= &self.p;
         }
     }
-
-    /// Compute the inverse when `a` and the modulus are coprime,
-    /// otherwise panic.
-    pub fn try_inv(&self, a: &Integer) -> Option<Integer> {
-        if a.is_zero() {
-            return None;
-        }
-
-        let mut u1 = Integer::one();
-        let mut u3 = a.clone();
-        let mut v1 = Integer::zero();
-        let mut v3 = self.get_prime();
-        let mut even_iter: bool = true;
-
-        while !v3.is_zero() {
-            let (q, t3) = Z.quot_rem(&u3, &v3);
-            let t1 = &u1 + &(&q * &v1);
-            u1 = v1;
-            v1 = t1;
-            u3 = v3;
-            v3 = t3;
-            even_iter = !even_iter;
-        }
-
-        if !u3.is_one() {
-            return None;
-        }
-
-        if even_iter {
-            Some(u1)
-        } else {
-            Some(&self.p - &u1)
-        }
-    }
 }
 
 impl Ring for FiniteField<Integer> {
@@ -1694,6 +1688,38 @@ impl Ring for FiniteField<Integer> {
 
     fn size(&self) -> Integer {
         self.get_prime()
+    }
+
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if a.is_zero() {
+            return None;
+        }
+
+        let mut u1 = Integer::one();
+        let mut u3 = a.clone();
+        let mut v1 = Integer::zero();
+        let mut v3 = self.get_prime();
+        let mut even_iter: bool = true;
+
+        while !v3.is_zero() {
+            let (q, t3) = Z.quot_rem(&u3, &v3);
+            let t1 = &u1 + &(&q * &v1);
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        if !u3.is_one() {
+            return None;
+        }
+
+        if even_iter {
+            Some(u1)
+        } else {
+            Some(&self.p - &u1)
+        }
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {

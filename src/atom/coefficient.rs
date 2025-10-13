@@ -94,7 +94,7 @@ impl SerializedRationalPolynomial<'_> {
 
         fn parse_num(source: &mut &[u8]) -> Integer {
             match source.get_u8() {
-                1 => Integer::Natural(source.get_i64_le()),
+                1 => Integer::Single(source.get_i64_le()),
                 2 => Integer::Double(source.get_i128_le()),
                 x @ 4 | x @ 5 => {
                     let (num_digits, _, new_source) = source.get_frac_u64();
@@ -143,7 +143,7 @@ impl PackedRationalNumberWriter for Coefficient {
         #[inline(always)]
         fn write_rational(r: &Fraction<IntegerRing>, dest: &mut Vec<u8>) {
             match (r.numerator_ref(), r.denominator_ref()) {
-                (Integer::Natural(num), Integer::Natural(den)) => {
+                (Integer::Single(num), Integer::Single(den)) => {
                     (*num, *den as u64).write_packed(dest)
                 }
                 _ => {
@@ -233,7 +233,7 @@ impl PackedRationalNumberWriter for Coefficient {
                     .chain(&p.denominator.coefficients)
                 {
                     match i {
-                        Integer::Natural(n) => {
+                        Integer::Single(n) => {
                             dest.put_u8(1);
                             dest.put_i64_le(*n);
                         }
@@ -274,7 +274,7 @@ impl PackedRationalNumberWriter for Coefficient {
                     dest.put_u8(COMPLEX);
                 }
                 match (c.re.numerator_ref(), c.re.denominator_ref()) {
-                    (Integer::Natural(num), Integer::Natural(den)) => {
+                    (Integer::Single(num), Integer::Single(den)) => {
                         (*num, *den as u64).write_packed_fixed(dest);
                     }
                     _ => todo!("Writing large packed rational not implemented"),
@@ -282,7 +282,7 @@ impl PackedRationalNumberWriter for Coefficient {
 
                 if !real {
                     match (c.im.numerator_ref(), c.im.denominator_ref()) {
-                        (Integer::Natural(num), Integer::Natural(den)) => {
+                        (Integer::Single(num), Integer::Single(den)) => {
                             (*num, *den as u64).write_packed_fixed(dest);
                         }
                         _ => todo!("Writing large packed rational not implemented"),
@@ -314,7 +314,7 @@ impl PackedRationalNumberWriter for Coefficient {
         #[inline(always)]
         fn packed_size_rat(r: &Fraction<IntegerRing>) -> u64 {
             match (r.numerator_ref(), r.denominator_ref()) {
-                (Integer::Natural(num), Integer::Natural(den)) => {
+                (Integer::Single(num), Integer::Single(den)) => {
                     (*num, *den as u64).get_packed_size()
                 }
                 _ => packed_size_multi_rat(r),

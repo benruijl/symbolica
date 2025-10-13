@@ -151,6 +151,10 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     /// The number of elements in the ring. 0 is used for infinite rings.
     fn size(&self) -> Integer;
 
+    /// Invert `a` if `a` is a unit in the ring. If is not, return `None`.
+    /// For example, in [Z](type@integer::Z), only `1` and `-1` are invertible.
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element>;
+
     /// Return the result of dividing `a` by `b`, if possible and if the result is unique.
     /// For example, in [Z](type@integer::Z), `4/2` is possible but `3/2` is not.
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element>;
@@ -460,6 +464,13 @@ impl<R: Ring, C: Clone + Borrow<R>> Ring for WrappedRingElement<R, C> {
         f: &mut W,
     ) -> Result<bool, Error> {
         self.ring().format(&element.element, opts, state, f)
+    }
+
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        Some(WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().try_inv(&a.element)?,
+        })
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {

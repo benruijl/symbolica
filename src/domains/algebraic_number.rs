@@ -725,7 +725,15 @@ impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
         self.poly.ring.size().pow(self.poly.degree(0) as u64)
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        self.try_div(&self.one(), a)
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if self.is_zero(b) {
+            return None;
+        }
+
         // solve the linear system (c_0 + c_1*x + c_(d-1)*x^(d-1)) * b % self = a
         // TODO: use the inverse if R is a field (requires specialization)
         let d = self.poly.degree(0) as usize;

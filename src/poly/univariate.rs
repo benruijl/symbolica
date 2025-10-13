@@ -126,6 +126,15 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         0.into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if a.is_constant() {
+            let inv = self.ring.try_inv(&a.get_constant())?;
+            Some(a.constant(inv))
+        } else {
+            None
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         a.try_div(b)
     }
@@ -1605,7 +1614,7 @@ impl<F: Field> UnivariatePolynomial<F> {
         let mut x = self.rem(m);
         let mut y = self.one();
         while !n.is_one() {
-            if (&n % &Integer::Natural(2)).is_one() {
+            if (&n % &Integer::Single(2)).is_one() {
                 y = (&y * &x).quot_rem(m).1;
                 n -= &Integer::one();
             }

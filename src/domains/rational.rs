@@ -365,6 +365,14 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
         self.ring.size() * self.ring.size()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if self.ring.is_zero(&a.numerator) {
+            None
+        } else {
+            Some(self.inv(a))
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if self.is_zero(b) {
             None
@@ -950,7 +958,7 @@ impl Rational {
             None => {
                 // set t to 2^20*ceil(log2(m))
                 let ceil_log2 = match &p {
-                    Integer::Natural(n) => u64::BITS as u64 - (*n as u64).leading_zeros() as u64,
+                    Integer::Single(n) => u64::BITS as u64 - (*n as u64).leading_zeros() as u64,
                     Integer::Double(n) => u128::BITS as u64 - (*n as u128).leading_zeros() as u64,
                     Integer::Large(n) => {
                         let mut pos = 0;
@@ -1056,7 +1064,7 @@ impl Rational {
                 let new_result = Integer::chinese_remainder(
                     eval_conv,
                     cur_result.clone(),
-                    Integer::Natural(p as i64),
+                    Integer::Single(p as i64),
                     prime_accum.clone(),
                 );
 
@@ -1066,7 +1074,7 @@ impl Rational {
                 cur_result = new_result;
             }
 
-            prime_accum *= &Integer::Natural(p as i64);
+            prime_accum *= &Integer::Single(p as i64);
 
             if cur_result < Integer::zero() {
                 cur_result += &prime_accum;

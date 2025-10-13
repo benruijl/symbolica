@@ -149,6 +149,15 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
         0.into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if a.is_constant() {
+            let inv = self.ring.try_inv(&a.get_constant())?;
+            Some(a.constant(inv))
+        } else {
+            None
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         a.try_div(b)
     }
@@ -4070,7 +4079,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut x = self.quot_rem_univariate(m).1;
         let mut y = self.one();
         while !n.is_one() {
-            if (&n % &Integer::Natural(2)).is_one() {
+            if (&n % &Integer::Single(2)).is_one() {
                 y = (&y * &x).quot_rem_univariate(m).1;
                 n -= &Integer::one();
             }
@@ -4133,7 +4142,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut x = self.quot_rem_univariate_fast(m, var, m_inv).1;
         let mut y = self.one();
         while !n.is_one() {
-            if (&n % &Integer::Natural(2)).is_one() {
+            if (&n % &Integer::Single(2)).is_one() {
                 y = (&y * &x).quot_rem_univariate_fast(m, var, m_inv).1;
                 n -= &Integer::one();
             }

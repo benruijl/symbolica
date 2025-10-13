@@ -858,6 +858,14 @@ where
         0.into()
     }
 
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if a.is_zero() {
+            None
+        } else {
+            Some(a.clone().inv())
+        }
+    }
+
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         if b.is_zero() {
             None

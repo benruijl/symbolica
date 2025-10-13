@@ -851,7 +851,7 @@ impl ConvertToRing for IntegerRing {
             CoefficientView::Infinity(_) => Err("Cannot convert infinity to integer".to_owned()),
             CoefficientView::Natural(nr, dr, ni, _di) => {
                 if dr == 1 && ni == 0 {
-                    Ok(Integer::Natural(nr))
+                    Ok(Integer::Single(nr))
                 } else {
                     Err("Cannot convert rational or complex number to integer".to_owned())
                 }
@@ -1937,8 +1937,8 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                 }
                 let r = p.deserialize();
                 let r2 = RationalPolynomial {
-                    numerator: r.numerator.constant(Integer::Natural(n)),
-                    denominator: r.denominator.constant(Integer::Natural(d)),
+                    numerator: r.numerator.constant(Integer::Single(n)),
+                    denominator: r.denominator.constant(Integer::Single(d)),
                 };
                 Coefficient::RationalPolynomial(&r + &r2)
             }
@@ -2083,7 +2083,7 @@ impl Mul for CoefficientView<'_> {
                 }
 
                 let mut r = p.deserialize();
-                let (n, d) = (Integer::Natural(n), Integer::Natural(d));
+                let (n, d) = (Integer::Single(n), Integer::Single(d));
 
                 let gcd1 = Z.gcd(&n, &r.denominator.content());
                 let gcd2 = Z.gcd(&d, &r.numerator.content());
@@ -2243,8 +2243,8 @@ impl Add<i64> for CoefficientView<'_> {
             CoefficientView::RationalPolynomial(p) => {
                 let p = p.deserialize();
                 let a = RationalPolynomial {
-                    numerator: p.numerator.constant(Integer::Natural(other)),
-                    denominator: p.denominator.constant(Integer::Natural(1)),
+                    numerator: p.numerator.constant(Integer::Single(other)),
+                    denominator: p.denominator.constant(Integer::Single(1)),
                 };
 
                 Coefficient::RationalPolynomial(&p + &a)

@@ -196,6 +196,12 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> EuclideanDomain
     }
 }
 
+impl<R: Ring + FractionNormalization, E: Exponent> FractionNormalization for PolynomialRing<R, E> {
+    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
+        a.constant(a.ring.get_normalization_factor(&a.lcoeff()))
+    }
+}
+
 /// Multivariate polynomial with a sparse degree and dense variable representation.
 /// Negative exponents are supported, if they are allowed by the exponent type.
 #[derive(Clone)]

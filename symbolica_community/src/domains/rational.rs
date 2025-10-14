@@ -103,17 +103,11 @@ impl FractionNormalization for Z {
     }
 }
 
-// impl<R: Ring + FractionNormalization, E: Exponent> FractionNormalization for PolynomialRing<R, E> {
-//     fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
-//         a.constant(a.ring.get_normalization_factor(&a.lcoeff()))
-//     }
-// }
-
-// impl<T: Field> FractionNormalization for T {
-//     fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
-//         self.inv(a)
-//     }
-// }
+impl<T: Field> FractionNormalization for T {
+    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
+    }
+}
 
 /// A fraction of two elements of a ring. Create a new one through [FractionField::to_element].
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

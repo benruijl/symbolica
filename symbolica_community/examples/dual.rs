@@ -1,4 +1,4 @@
-use symbolica::{
+use symbolica_community::{
     create_hyperdual_from_components,
     domains::{float::NumericalFloatLike, rational::Rational},
 };

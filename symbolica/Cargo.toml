@@ -32,9 +32,16 @@ python_api = [
     "pyo3-log",
     "tracing/log",
     "pyo3-stub-gen-derive",
+    "symbolica_community/python",
 ]
 # export the Python API
-python_export = ["pyo3", "numpy", "bincode", "pyo3-stub-gen-derive"]
+python_export = [
+    "pyo3",
+    "numpy",
+    "bincode",
+    "pyo3-stub-gen-derive",
+    "symbolica_community/python",
+]
 # generate stubs for Python API
 python_stubgen = [
     "python_export",

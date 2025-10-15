@@ -5,8 +5,8 @@
 //! Solve an underdetermined linear system:
 //!
 //! ```
-//! # use symbolica_community::domains::rational::Q;
-//! # use symbolica_community::tensors::matrix::Matrix;
+//! # use numerica::domains::rational::Q;
+//! # use numerica::tensors::matrix::Matrix;
 //! let m = vec![
 //!     vec![1.into(), 1.into(), 1.into()],
 //!     vec![1.into(), 1.into(), 2.into()],
@@ -38,8 +38,8 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// # use symbolica_community::domains::rational::Q;
-/// # use symbolica_community::tensors::matrix::Vector;
+/// # use numerica::domains::rational::Q;
+/// # use numerica::tensors::matrix::Vector;
 /// let v1 = Vector::new(vec![(3,1).into(), (1,1).into()], Q);
 /// let v2 = Vector::new(vec![(2,1).into(), (2,1).into()], Q);
 /// let b = Vector::orthogonalize(&[v1, v2]);
@@ -698,8 +698,8 @@ impl<F: Ring> Neg for Vector<F> {
 /// # Examples
 ///
 /// ```    
-/// # use symbolica_community::domains::rational::Q;
-/// # use symbolica_community::tensors::matrix::Matrix;    
+/// # use numerica::domains::rational::Q;
+/// # use numerica::tensors::matrix::Matrix;    
 /// let a = Matrix::from_linear(vec![3.into(), 2.into(), 15.into(), 4.into()], 2, 2, Q).unwrap();
 /// let inv = a.inv().unwrap();
 /// assert_eq!(&a * &inv, Matrix::identity(2, Q));

@@ -5,7 +5,7 @@
 //! Combinations without replacements:
 //!
 //! ```rust
-//! # use symbolica_community::combinatorics::CombinationIterator;
+//! # use numerica::combinatorics::CombinationIterator;
 //!
 //! let mut c = CombinationIterator::new(4, 3);
 //! let mut combinations = vec![];
@@ -21,7 +21,7 @@
 //! Partitions:
 //!
 //! ```rust
-//! # use symbolica_community::combinatorics::partitions;
+//! # use numerica::combinatorics::partitions;
 //!
 //! let p = partitions(
 //!     &[1, 1, 1, 2, 2],
@@ -52,7 +52,7 @@ use crate::domains::integer::Integer;
 ///
 /// Create an iterator to generate combinations of 3 elements from a total of 4:
 /// ```rust
-/// # use symbolica_community::combinatorics::CombinationIterator;
+/// # use numerica::combinatorics::CombinationIterator;
 /// let mut combos = CombinationIterator::new(4, 3);
 ///
 /// while let Some(c) = combos.next() {
@@ -124,7 +124,7 @@ impl CombinationIterator {
 ///
 /// ```rust
 ///
-/// # use symbolica_community::combinatorics::CombinationWithReplacementIterator;
+/// # use numerica::combinatorics::CombinationWithReplacementIterator;
 ///
 /// let mut comb_iter = CombinationWithReplacementIterator::new(3, 2);
 /// while let Some(combination) = comb_iter.next() {
@@ -267,7 +267,7 @@ fn unique_permutations_impl<T: Clone>(
 /// # Example
 ///
 /// ```
-/// # use symbolica_community::combinatorics::partitions;
+/// # use numerica::combinatorics::partitions;
 /// let result = partitions(
 ///     &[1, 1, 1, 2, 2],
 ///     &[('f', 2), ('g', 2), ('f', 1)],

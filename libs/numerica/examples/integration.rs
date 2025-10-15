@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use symbolica_community::numerical_integration::{
+use numerica::numerical_integration::{
     ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample,
 };
 

@@ -1,10 +1,10 @@
 [package]
-name = "symbolica_community"
+name = "numerica"
 authors = ["Ben Ruijl <ben@symbolica.io>"]
 version = "0.1.0"
 edition = "2024"
-license = "CUSTOM"                                 # TODO: set license
-description = "The open-source API for Symbolica."
+license = "CUSTOM"                                                                 # TODO: set license
+description = "Open-source math library for exact and floating point computations"
 
 [features]
 # import/export objects that do not depend on the state using serde

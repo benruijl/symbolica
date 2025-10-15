@@ -3,7 +3,7 @@
 //! # Examples
 //!
 //! ```
-//! # use symbolica_community::graph::Graph;
+//! # use numerica::graph::Graph;
 //! let mut g = Graph::new();
 //! let n0 = g.add_node(0);
 //! let n1 = g.add_node(1);
@@ -176,7 +176,7 @@ impl<T: Ord, U> Ord for HiddenData<T, U> {
 /// # Example
 ///
 /// ```
-/// # use symbolica_community::graph::Graph;
+/// # use numerica::graph::Graph;
 /// let mut g = Graph::new();
 /// let n0 = g.add_node(0);
 /// let n1 = g.add_node(1);
@@ -783,7 +783,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     ///
     /// The vertex signatures specify all allowed connections of directed half-edges. For example:
     /// ```
-    /// # use symbolica_community::graph::{HalfEdge, GenerationSettings, Graph};
+    /// # use numerica::graph::{HalfEdge, GenerationSettings, Graph};
     /// let g = HalfEdge::undirected("g");
     /// let q = HalfEdge::incoming("q");
     /// let vertex_signatures = [vec![g, g, g], vec![q.flip(), q, g]];
@@ -797,7 +797,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     /// # Example
     ///
     /// ```
-    /// # use symbolica_community::graph::{HalfEdge, GenerationSettings, Graph};
+    /// # use numerica::graph::{HalfEdge, GenerationSettings, Graph};
     /// let g = HalfEdge::undirected("g");
     /// let q = HalfEdge::incoming("q");
     ///

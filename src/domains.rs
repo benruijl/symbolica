@@ -3,4 +3,4 @@ pub mod atom;
 pub mod factorized_rational_polynomial;
 pub mod rational_polynomial;
 
-pub use symbolica_community::domains::*;
+pub use numerica::domains::*;

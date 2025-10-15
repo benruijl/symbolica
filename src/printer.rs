@@ -4,7 +4,7 @@ use std::fmt::{self, Error, Write};
 
 use colored::Colorize;
 
-pub use symbolica_community::printer::*;
+pub use numerica::printer::*;
 
 use crate::{
     atom::{

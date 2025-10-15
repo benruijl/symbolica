@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-pub use symbolica_community::utils::*;
+pub use numerica::utils::*;
 
 /// An enum that contains either an owned value of type `T` or a reference to a value of type `T`.
 ///

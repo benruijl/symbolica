@@ -185,7 +185,7 @@ pub trait Field: EuclideanDomain {
     ///
     /// # Example
     /// ```rust
-    /// # use symbolica_community::domains::{Field, rational::Q};
+    /// # use numerica::domains::{Field, rational::Q};
     /// let (res, s) = Q.find_linear_recurrence_relation(&[0.into(), 1.into(), 1.into(), 3.into(),
     ///                                               5.into(), 11.into(), 21.into()]);
     /// assert_eq!(s, 3);

@@ -7,7 +7,7 @@ use crate::{
     state::{RecycledAtom, Workspace},
 };
 
-pub use symbolica_community::tensors::*;
+pub use numerica::tensors::*;
 
 /// A tensor in its canonical form and its list of external and dummy indices.
 #[derive(Clone, Debug, PartialEq, Eq)]

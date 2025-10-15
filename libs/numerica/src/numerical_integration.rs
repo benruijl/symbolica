@@ -10,7 +10,7 @@
 //! # Examples
 //!
 //! ```
-//! # use symbolica_community::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
+//! # use numerica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
 //!
 //! let f = |x: &[f64]| (x[0] * std::f64::consts::PI).sin() + x[1];
 //!
@@ -438,7 +438,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
 /// # Examples
 ///
 ///  ```
-/// # use symbolica_community::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
+/// # use numerica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
 ///
 /// let f = |x: &[f64]| (x[0] * std::f64::consts::PI).sin() + x[1];
 ///

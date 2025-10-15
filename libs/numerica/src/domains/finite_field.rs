@@ -1838,7 +1838,7 @@ impl Iterator for PrimeIteratorU64 {
 ///
 /// # Example
 /// ```rust
-/// # use symbolica_community::domains::finite_field::{SmoothPrimeIterator};
+/// # use numerica::domains::finite_field::{SmoothPrimeIterator};
 /// let mut iter = SmoothPrimeIterator::new(vec![2, 3]);
 ///
 /// while let Some((p, pows)) = iter.next() {

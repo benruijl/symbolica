@@ -73,7 +73,7 @@ pub mod tensors;
 pub mod transformer;
 pub mod utils;
 
-pub use symbolica_community::*;
+pub use numerica::*;
 
 #[cfg(feature = "faster_alloc")]
 #[global_allocator]

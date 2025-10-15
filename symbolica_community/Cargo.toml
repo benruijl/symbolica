@@ -18,6 +18,7 @@ python_stubgen = ["python", "pyo3-stub-gen"]
 pyo3 = { version = "0.26", features = ["num-complex"], optional = true }
 numpy = { version = "0.26", optional = true }
 rand = "0.9"
+rand_xoshiro = "0.7"
 rug = "1.27.0"
 wide = "0.7"
 ahash = "0.8.7"

@@ -63,7 +63,6 @@ pub mod evaluate;
 mod expand;
 pub mod id;
 mod normalize;
-pub mod numerical_integration;
 pub mod parser;
 pub mod poly;
 pub mod printer;

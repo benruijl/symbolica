@@ -3364,8 +3364,8 @@ class Polynomial:
     def reorder(self, vars: Sequence[Expression]) -> None:
         """Reorder the polynomial in-place to use the given variable order."""
 
-    def gcd(self, rhs: Polynomial) -> Polynomial:
-        """Compute the greatest common divisor (GCD) of two polynomials."""
+    def gcd(self, *rhs: Polynomial) -> Polynomial:
+        """Compute the greatest common divisor (GCD) of two or more polynomials."""
 
     def extended_gcd(self, rhs: Polynomial) -> Tuple[Polynomial, Polynomial, Polynomial]:
         """Compute the extended GCD of two polynomials, yielding the GCD and the Bezout coefficients `s` and `t`
@@ -3737,8 +3737,8 @@ class NumberFieldPolynomial:
     def reorder(self, vars: Sequence[Expression]) -> None:
         """Reorder the polynomial in-place to use the given variable order."""
 
-    def gcd(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
-        """Compute the greatest common divisor (GCD) of two polynomials."""
+    def gcd(self, *rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Compute the greatest common divisor (GCD) of two or more polynomials."""
 
     def extended_gcd(self, rhs: NumberFieldPolynomial) -> Tuple[NumberFieldPolynomial, NumberFieldPolynomial, NumberFieldPolynomial]:
         """Compute the extended GCD of two polynomials, yielding the GCD and the Bezout coefficients `s` and `t`
@@ -4030,8 +4030,8 @@ class FiniteFieldPolynomial:
     def reorder(self, vars: Sequence[Expression]) -> None:
         """Reorder the polynomial in-place to use the given variable order."""
 
-    def gcd(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
-        """Compute the greatest common divisor (GCD) of two polynomials."""
+    def gcd(self, *rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Compute the greatest common divisor (GCD) of two or more polynomials."""
 
     def extended_gcd(self, rhs: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial]:
         """Compute the extended GCD of two polynomials, yielding the GCD and the Bezout coefficients `s` and `t`

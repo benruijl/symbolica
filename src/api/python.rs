@@ -85,7 +85,7 @@ use crate::{
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
     poly::{
-        GrevLexOrder, INLINED_EXPONENTS, LexOrder, Variable, factor::Factorize,
+        GrevLexOrder, INLINED_EXPONENTS, LexOrder, Variable, factor::Factorize, gcd::PolynomialGCD,
         groebner::GroebnerBasis, polynomial::MultivariatePolynomial, series::Series,
     },
     printer::{AtomPrinter, PrintMode, PrintOptions, PrintState},
@@ -6992,7 +6992,7 @@ impl PythonExpression {
         &self,
         contracted_indices: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
     ) -> PyResult<(
-        Self,
+        PythonExpression,
         Vec<(PythonExpression, PythonExpression)>,
         Vec<(PythonExpression, PythonExpression)>,
     )> {
@@ -8690,15 +8690,37 @@ impl PythonPolynomial {
         }
     }
 
-    /// Compute the greatest common divisor (GCD) of two polynomials.
-    pub fn gcd(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
+    /// Compute the greatest common divisor (GCD) of two or more polynomials.
+    #[pyo3(signature = (*rhs))]
+    pub fn gcd(
+        &self,
+        #[gen_stub(override_type(type_repr = "Polynomial"))] rhs: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        if rhs.len() == 1 {
+            let rhs = rhs.get_item(0)?.extract::<Self>()?;
+            if self.poly.ring != rhs.poly.ring {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomials have different rings".to_string(),
+                ))
+            } else {
+                Ok(Self {
+                    poly: self.poly.gcd(&rhs.poly),
+                })
+            }
         } else {
+            let mut args = vec![self.poly.clone()];
+            for r in rhs.iter() {
+                let p = r.extract::<Self>()?;
+                if args[0].ring != p.poly.ring {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ));
+                }
+                args.push(p.poly);
+            }
+
             Ok(Self {
-                poly: self.poly.gcd(&rhs.poly),
+                poly: PolynomialGCD::gcd_multiple(args),
             })
         }
     }
@@ -9852,15 +9874,37 @@ impl PythonFiniteFieldPolynomial {
         }
     }
 
-    /// Compute the greatest common divisor (GCD) of two polynomials.
-    pub fn gcd(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
+    /// Compute the greatest common divisor (GCD) of two or more polynomials.
+    #[pyo3(signature = (*rhs))]
+    pub fn gcd(
+        &self,
+        #[gen_stub(override_type(type_repr = "FiniteFieldPolynomial"))] rhs: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        if rhs.len() == 1 {
+            let rhs = rhs.get_item(0)?.extract::<Self>()?;
+            if self.poly.ring != rhs.poly.ring {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomials have different rings".to_string(),
+                ))
+            } else {
+                Ok(Self {
+                    poly: self.poly.gcd(&rhs.poly),
+                })
+            }
         } else {
+            let mut args = vec![self.poly.clone()];
+            for r in rhs.iter() {
+                let p = r.extract::<Self>()?;
+                if args[0].ring != p.poly.ring {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ));
+                }
+                args.push(p.poly);
+            }
+
             Ok(Self {
-                poly: self.poly.gcd(&rhs.poly),
+                poly: PolynomialGCD::gcd_multiple(args),
             })
         }
     }
@@ -10778,9 +10822,29 @@ impl PythonPrimeTwoPolynomial {
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
-    pub fn gcd(&self, rhs: Self) -> Self {
-        Self {
-            poly: self.poly.gcd(&rhs.poly),
+    /// Compute the greatest common divisor (GCD) of two or more polynomials.
+    #[pyo3(signature = (*rhs))]
+    pub fn gcd(
+        &self,
+        #[gen_stub(override_type(type_repr = "FiniteFieldPolynomial"))] rhs: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        if rhs.len() == 1 {
+            let rhs = rhs.get_item(0)?.extract::<Self>()?;
+
+            Ok(Self {
+                poly: self.poly.gcd(&rhs.poly),
+            })
+        } else {
+            let mut args = vec![self.poly.clone()];
+            for r in rhs.iter() {
+                let p = r.extract::<Self>()?;
+
+                args.push(p.poly);
+            }
+
+            Ok(Self {
+                poly: PolynomialGCD::gcd_multiple(args),
+            })
         }
     }
 
@@ -11622,15 +11686,37 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         }
     }
 
-    /// Compute the greatest common divisor (GCD) of two polynomials.
-    pub fn gcd(&self, rhs: Self) -> PyResult<Self> {
-        if self.poly.ring != rhs.poly.ring {
-            Err(exceptions::PyValueError::new_err(
-                "Polynomials have different rings".to_string(),
-            ))
+    /// Compute the greatest common divisor (GCD) of two or more polynomials.
+    #[pyo3(signature = (*rhs))]
+    pub fn gcd(
+        &self,
+        #[gen_stub(override_type(type_repr = "FiniteFieldPolynomial"))] rhs: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        if rhs.len() == 1 {
+            let rhs = rhs.get_item(0)?.extract::<Self>()?;
+            if self.poly.ring != rhs.poly.ring {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomials have different rings".to_string(),
+                ))
+            } else {
+                Ok(Self {
+                    poly: self.poly.gcd(&rhs.poly),
+                })
+            }
         } else {
+            let mut args = vec![self.poly.clone()];
+            for r in rhs.iter() {
+                let p = r.extract::<Self>()?;
+                if args[0].ring != p.poly.ring {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ));
+                }
+                args.push(p.poly);
+            }
+
             Ok(Self {
-                poly: self.poly.gcd(&rhs.poly),
+                poly: PolynomialGCD::gcd_multiple(args),
             })
         }
     }
@@ -12489,10 +12575,38 @@ impl PythonGaloisFieldPolynomial {
         }
     }
 
-    /// Compute the greatest common divisor (GCD) of two polynomials.
-    pub fn gcd(&self, rhs: Self) -> Self {
-        Self {
-            poly: self.poly.gcd(&rhs.poly),
+    /// Compute the greatest common divisor (GCD) of two or more polynomials.
+    #[pyo3(signature = (*rhs))]
+    pub fn gcd(
+        &self,
+        #[gen_stub(override_type(type_repr = "GaloisFieldPolynomial"))] rhs: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        if rhs.len() == 1 {
+            let rhs = rhs.get_item(0)?.extract::<Self>()?;
+            if self.poly.ring != rhs.poly.ring {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomials have different rings".to_string(),
+                ))
+            } else {
+                Ok(Self {
+                    poly: self.poly.gcd(&rhs.poly),
+                })
+            }
+        } else {
+            let mut args = vec![self.poly.clone()];
+            for r in rhs.iter() {
+                let p = r.extract::<Self>()?;
+                if args[0].ring != p.poly.ring {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ));
+                }
+                args.push(p.poly);
+            }
+
+            Ok(Self {
+                poly: PolynomialGCD::gcd_multiple(args),
+            })
         }
     }
 
@@ -13317,10 +13431,38 @@ impl PythonNumberFieldPolynomial {
         }
     }
 
-    /// Compute the greatest common divisor (GCD) of two polynomials.
-    pub fn gcd(&self, rhs: Self) -> Self {
-        Self {
-            poly: self.poly.gcd(&rhs.poly),
+    /// Compute the greatest common divisor (GCD) of two or more polynomials.
+    #[pyo3(signature = (*rhs))]
+    pub fn gcd(
+        &self,
+        #[gen_stub(override_type(type_repr = "NumberFieldPolynomial"))] rhs: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        if rhs.len() == 1 {
+            let rhs = rhs.get_item(0)?.extract::<Self>()?;
+            if self.poly.ring != rhs.poly.ring {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomials have different rings".to_string(),
+                ))
+            } else {
+                Ok(Self {
+                    poly: self.poly.gcd(&rhs.poly),
+                })
+            }
+        } else {
+            let mut args = vec![self.poly.clone()];
+            for r in rhs.iter() {
+                let p = r.extract::<Self>()?;
+                if args[0].ring != p.poly.ring {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Polynomials have different rings".to_string(),
+                    ));
+                }
+                args.push(p.poly);
+            }
+
+            Ok(Self {
+                poly: PolynomialGCD::gcd_multiple(args),
+            })
         }
     }
 

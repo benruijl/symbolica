@@ -8,7 +8,7 @@ use std::{
 
 use crate::domains::{
     EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
-    float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
+    float::{Complex, FloatField, FloatLike, Real, SingleFloat},
     integer::{Integer, IntegerRing, Z},
     rational::{Q, Rational, RationalField},
 };

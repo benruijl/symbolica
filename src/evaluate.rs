@@ -22,8 +22,8 @@ use crate::{
     domains::{
         InternalOrdering,
         float::{
-            Complex, ConstructibleFloat, ErrorPropagatingFloat, F64, Float, NumericalFloatLike,
-            Real, RealNumberLike, SingleFloat,
+            Complex, Constructible, ErrorPropagatingFloat, F64, Float, FloatLike, Real, Roundable,
+            SingleFloat,
         },
         integer::Integer,
         rational::Rational,
@@ -7506,7 +7506,7 @@ impl Default for InlineASM {
     }
 }
 
-impl<T: NumericalFloatLike> EvalTree<T> {
+impl<T: FloatLike> EvalTree<T> {
     /// Export the evaluation tree to C++ code. For much improved performance,
     /// optimize the tree instead.
     pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {

@@ -11,7 +11,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
 use crate::domains::{
-    float::NumericalFloatLike,
+    float::FloatLike,
     integer::{Integer, IntegerRing},
     rational::{Fraction, FractionField, FractionNormalization, Q, RationalField},
     {Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing},
@@ -1714,7 +1714,7 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         res
     }
 
-    pub fn evaluate<T: NumericalFloatLike, M: Fn(&F::Element) -> T>(
+    pub fn evaluate<T: FloatLike, M: Fn(&F::Element) -> T>(
         &self,
         map_coeff: M,
         point: &[T],

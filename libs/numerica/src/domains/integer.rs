@@ -20,7 +20,7 @@ use crate::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Z2,
             Zp, Zp64,
         },
-        float::{FloatField, NumericalFloatLike, Real, RealNumberLike, SingleFloat},
+        float::{FloatField, FloatLike, Real, Roundable, SingleFloat},
         rational::Rational,
     },
     printer::{PrintOptions, PrintState},
@@ -1179,8 +1179,8 @@ impl Integer {
     // ///
     // /// If the procedure runs out of iterations, the current best solution is returned.
     pub fn solve_integer_relation<
-        T: NumericalFloatLike
-            + RealNumberLike
+        T: FloatLike
+            + Roundable
             + Real
             + SingleFloat
             + std::hash::Hash

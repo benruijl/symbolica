@@ -7,7 +7,7 @@ use crate::{
     coefficient::{Coefficient, CoefficientView},
     domains::{
         float::Complex,
-        float::NumericalFloatLike,
+        float::FloatLike,
         float::Real,
         integer::Z,
         rational::{Q, Rational},

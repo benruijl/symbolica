@@ -1,6 +1,6 @@
 use numerica::{
     create_hyperdual_from_components,
-    domains::{float::NumericalFloatLike, rational::Rational},
+    domains::{float::FloatLike, rational::Rational},
 };
 
 create_hyperdual_from_components!(

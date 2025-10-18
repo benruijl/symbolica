@@ -31,7 +31,7 @@ use crate::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
             Zp64,
         },
-        float::{Complex, Float, NumericalFloatLike, Real, SingleFloat},
+        float::{Complex, Float, FloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Fraction, Q, Rational},
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},

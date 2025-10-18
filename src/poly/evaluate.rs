@@ -11,7 +11,7 @@ use rand::{Rng, rng};
 
 use crate::domains::{
     EuclideanDomain, Ring,
-    float::NumericalFloatLike,
+    float::FloatLike,
     float::Real,
     rational::{Q, Rational, RationalField},
 };
@@ -839,7 +839,7 @@ impl HornerScheme<RationalField> {
 
 // An arithmetical instruction that is part of an `InstructionList`.
 #[derive(Debug, Clone)]
-pub enum Instruction<N: NumericalFloatLike> {
+pub enum Instruction<N: FloatLike> {
     Init(Variable<N>),
     Add(Vec<usize>),
     Mul(Vec<usize>),
@@ -850,7 +850,7 @@ pub enum Instruction<N: NumericalFloatLike> {
 // An variable that is part of an `InstructionList`,
 // which may refer to another instruction in the instruction list.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Variable<N: NumericalFloatLike> {
+pub enum Variable<N: FloatLike> {
     Var(usize, Option<usize>), // var or var[index]
     Constant(N),
 }
@@ -900,7 +900,7 @@ impl Variable<Rational> {
     }
 }
 
-impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
+impl<N: FloatLike> std::fmt::Display for Variable<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Variable::Var(v, index) => {
@@ -915,8 +915,8 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
     }
 }
 
-impl<N: NumericalFloatLike> Variable<N> {
-    pub fn convert<NO: NumericalFloatLike, F: Fn(&N) -> NO>(&self, coeff_map: F) -> Variable<NO> {
+impl<N: FloatLike> Variable<N> {
+    pub fn convert<NO: FloatLike, F: Fn(&N) -> NO>(&self, coeff_map: F) -> Variable<NO> {
         match self {
             Variable::Var(v, index) => Variable::Var(*v, *index),
             Variable::Constant(c) => Variable::Constant(coeff_map(c)),
@@ -1323,7 +1323,7 @@ impl InstructionList {
 }
 
 /// A list of instructions suitable for fast numerical evaluation.
-pub struct InstructionListOutput<N: NumericalFloatLike> {
+pub struct InstructionListOutput<N: FloatLike> {
     instr: Vec<(usize, Instruction<N>)>,
     input_map: Vec<super::Variable>,
 }
@@ -1354,7 +1354,7 @@ enum InstructionRange {
 /// indices in the `Z` array and their evaluation can therefore
 /// be done efficiently.
 #[derive(Clone)]
-pub struct InstructionEvaluator<N: NumericalFloatLike> {
+pub struct InstructionEvaluator<N: FloatLike> {
     input_map: Vec<super::Variable>,
     instr: Vec<InstructionRange>,
     indices: Vec<usize>,
@@ -1362,7 +1362,7 @@ pub struct InstructionEvaluator<N: NumericalFloatLike> {
     out: Vec<N>,  // output buffer
 }
 
-impl<N: NumericalFloatLike> InstructionEvaluator<N> {
+impl<N: FloatLike> InstructionEvaluator<N> {
     pub fn output_len(&self) -> usize {
         let mut len = 0;
         for x in &self.instr {
@@ -1492,9 +1492,9 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
     }
 }
 
-impl<N: NumericalFloatLike> InstructionListOutput<N> {
+impl<N: FloatLike> InstructionListOutput<N> {
     /// Convert all numbers in the instruction list from the field `N` to the field `NO`.
-    pub fn convert<'a, NO: NumericalFloatLike + for<'b> From<&'b N>>(
+    pub fn convert<'a, NO: FloatLike + for<'b> From<&'b N>>(
         &'a self,
     ) -> InstructionListOutput<NO> {
         self.convert_with_map(|x| x.into())
@@ -1502,7 +1502,7 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
 
     /// Convert all numbers in the instruction list from the field `N` to the field `NO`,
     /// using a custom map function.
-    pub fn convert_with_map<NO: NumericalFloatLike, F: Fn(&N) -> NO + Copy>(
+    pub fn convert_with_map<NO: FloatLike, F: Fn(&N) -> NO + Copy>(
         &self,
         coeff_map: F,
     ) -> InstructionListOutput<NO> {

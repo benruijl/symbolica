@@ -59,7 +59,7 @@ use crate::{
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
         finite_field::{FiniteFieldCore, PrimeIteratorU64, ToFiniteField, Z2, Zp, is_prime_u64},
-        float::{Complex, F64, Float, PythonMultiPrecisionFloat, RealNumberLike},
+        float::{Complex, F64, Float, PythonMultiPrecisionFloat, Roundable},
         integer::{FromFiniteField, Integer, IntegerRelationError, IntegerRing, Z},
         rational::{Q, Rational, RationalField},
         rational_polynomial::{

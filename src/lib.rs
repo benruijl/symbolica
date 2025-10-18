@@ -73,6 +73,7 @@ pub mod tensors;
 pub mod transformer;
 pub mod utils;
 
+pub use graphica as graph;
 pub use numerica::*;
 
 #[cfg(feature = "faster_alloc")]

@@ -27,13 +27,15 @@ use std::{
     hash::Hash,
 };
 
-use crate::{
+use numerica::{
     combinatorics::{CombinationIterator, unique_permutations},
     domains::integer::Integer,
     utils::AbortCheck,
 };
 
 /// A node in a graph, with arbitrary data.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Node<NodeData = Empty> {
     /// Arbitrary data associated with the node.
@@ -46,6 +48,8 @@ pub struct Node<NodeData = Empty> {
 }
 
 /// An edge in a graph, with arbitrary data.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge<EdgeData = Empty> {
     /// Indices of the vertices connected by the edge.
@@ -57,6 +61,8 @@ pub struct Edge<EdgeData = Empty> {
 }
 
 /// Represents a part of an edge that connects to one vertex. It can be directed or undirected.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HalfEdge<E> {
     /// The direction of the half-edge with respect to a vertex it would connect to. `None` if there is no direction, `Some(true)` for outgoing, `Some(false)` for incoming.
@@ -125,6 +131,8 @@ impl Display for Empty {
 
 /// Data that has a public part and a private part. The private
 /// part is not used for equality or hashing.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Clone)]
 pub struct HiddenData<T, U> {
     pub data: T,
@@ -192,6 +200,8 @@ impl<T: Ord, U> Ord for HiddenData<T, U> {
 /// assert_eq!(g.node(0).edges, [0, 1, 2]);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct Graph<NodeData = Empty, EdgeData = Empty> {
     nodes: Vec<Node<NodeData>>,
     edges: Vec<Edge<EdgeData>>,
@@ -281,6 +291,8 @@ impl<N: Display, E: Display> Graph<N, E> {
 }
 
 /// Information about a node in a spanning tree.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub position: Option<usize>,
@@ -295,6 +307,8 @@ pub struct NodeInfo {
 /// A spanning tree representation of a graph.
 /// Parts of the graph may not be in the tree.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct SpanningTree {
     pub nodes: Vec<NodeInfo>,
     pub order: Vec<usize>,
@@ -1964,10 +1978,26 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        combinatorics::unique_permutations,
-        graph::{GenerationSettings, Graph, HalfEdge, SearchTreeNode},
-    };
+    use crate::{GenerationSettings, Graph, HalfEdge, SearchTreeNode};
+    use numerica::combinatorics::unique_permutations;
+
+    #[test]
+    fn gena() {
+        let g = HalfEdge::undirected("g");
+        let q = HalfEdge::incoming("q");
+        let gs = Graph::<_, &str>::generate(
+            &[(1, g), (2, g)],
+            &[vec![g, g, g], vec![q.flip(), q, g], vec![g, g, g, g]],
+            GenerationSettings::new()
+                .max_loops(2)
+                .max_bridges(0)
+                .allow_self_loops(true),
+        )
+        .unwrap();
+
+        let r = gs.keys().next().unwrap().to_mermaid();
+        println!("{}", r);
+    }
 
     #[test]
     fn directed() {

@@ -10,7 +10,7 @@
 Numerica is an open-source mathematics crate for Rust, that allows for easy operations of exact and floating point operations.
 
 It provides
-- Abstractions over rings, Euclidean domains, fields
+- Abstractions over rings, Euclidean domains, fields and floats
 - High-performance Integer with automatic up-and-downgrading to arbitrary precision types
 - Rational numbers with reconstruction algorithms
 - Fast finite field arithmetic

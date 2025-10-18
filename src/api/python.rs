@@ -22,8 +22,8 @@ use pyo3::{
     pyclass::CompareOp,
     pyfunction, pymethods,
     types::{
-        IntoPyDict, PyAnyMethods, PyBytes, PyComplex, PyInt, PyModule, PyTuple, PyTupleMethods,
-        PyType, PyTypeMethods,
+        PyAnyMethods, PyBytes, PyComplex, PyDict, PyInt, PyModule, PyTuple, PyTupleMethods, PyType,
+        PyTypeMethods,
     },
     wrap_pyfunction,
 };
@@ -87,7 +87,7 @@ use crate::{
         GrevLexOrder, INLINED_EXPONENTS, LexOrder, Variable, factor::Factorize,
         groebner::GroebnerBasis, polynomial::MultivariatePolynomial, series::Series,
     },
-    printer::{AtomPrinter, PrintOptions, PrintState, PythonPrintMode},
+    printer::{AtomPrinter, PrintMode, PrintOptions, PrintState},
     state::{RecycledAtom, State, Workspace},
     streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
@@ -855,6 +855,95 @@ If a `minimal_poly` is provided, the Galois field will be created with `minimal_
         deprecated: None,
         type_ignored: None,
     }
+}
+
+/// Specifies the print mode.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass_enum(module = "symbolica.core")
+)]
+#[pyclass(name = "PrintMode", eq, eq_int)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PythonPrintMode {
+    /// Print using Symbolica notation.
+    Symbolica,
+    /// Print using LaTeX notation.
+    Latex,
+    /// Print using Mathematica notation.
+    Mathematica,
+    /// Print using Sympy notation.
+    Sympy,
+}
+
+impl From<PrintMode> for PythonPrintMode {
+    fn from(mode: PrintMode) -> Self {
+        match mode {
+            PrintMode::Symbolica => PythonPrintMode::Symbolica,
+            PrintMode::Latex => PythonPrintMode::Latex,
+            PrintMode::Mathematica => PythonPrintMode::Mathematica,
+            PrintMode::Sympy => PythonPrintMode::Sympy,
+            _ => {
+                error!(
+                    "Unsupported PrintMode conversion to PythonPrintMode: {:?}",
+                    mode
+                );
+                PythonPrintMode::Symbolica
+            }
+        }
+    }
+}
+
+impl From<PythonPrintMode> for PrintMode {
+    fn from(mode: PythonPrintMode) -> Self {
+        match mode {
+            PythonPrintMode::Symbolica => PrintMode::Symbolica,
+            PythonPrintMode::Latex => PrintMode::Latex,
+            PythonPrintMode::Mathematica => PrintMode::Mathematica,
+            PythonPrintMode::Sympy => PrintMode::Sympy,
+        }
+    }
+}
+
+fn print_options_to_dict<'py>(
+    options: &PrintOptions,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("mode", PythonPrintMode::from(options.mode))?;
+    dict.set_item("terms_on_new_line", options.terms_on_new_line)?;
+    dict.set_item("color_top_level_sum", options.color_top_level_sum)?;
+    dict.set_item("color_builtin_symbols", options.color_builtin_symbols)?;
+    dict.set_item("print_finite_field", options.print_finite_field)?;
+    dict.set_item(
+        "symmetric_representation_for_finite_field",
+        options.symmetric_representation_for_finite_field,
+    )?;
+    dict.set_item(
+        "explicit_rational_polynomial",
+        options.explicit_rational_polynomial,
+    )?;
+    dict.set_item(
+        "number_thousands_separator",
+        options.number_thousands_separator,
+    )?;
+    dict.set_item("multiplication_operator", options.multiplication_operator)?;
+    dict.set_item(
+        "double_star_for_exponentiation",
+        options.double_star_for_exponentiation,
+    )?;
+    dict.set_item(
+        "square_brackets_for_function",
+        options.square_brackets_for_function,
+    )?;
+    dict.set_item("num_exp_as_superscript", options.num_exp_as_superscript)?;
+    dict.set_item("precision", options.precision)?;
+    dict.set_item("pretty_matrix", options.pretty_matrix)?;
+    dict.set_item("hide_namespace", options.hide_namespace)?;
+    dict.set_item("hide_all_namespaces", options.hide_all_namespaces)?;
+    dict.set_item("color_namespace", options.color_namespace)?;
+    dict.set_item("max_terms", options.max_terms)?;
+    dict.set_item("custom_print_mode", options.custom_print_mode.map(|x| x.1))?;
+    Ok(dict)
 }
 
 #[cfg_attr(
@@ -3342,7 +3431,7 @@ impl PythonExpression {
                 symbol = symbol.with_print_function(Box::new(
                     move |input: AtomView<'_>, opts: &PrintOptions| {
                         Python::attach(|py| {
-                            let kwargs = opts.into_py_dict(py).unwrap();
+                            let kwargs = print_options_to_dict(opts, py).unwrap();
                             f.call(
                                 py,
                                 (PythonExpression::from(input.to_owned()),),

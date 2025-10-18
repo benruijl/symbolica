@@ -1,0 +1,6 @@
+[submodule "libs/graphica"]
+	path = libs/graphica
+	url = https://github.com/symbolica-dev/graphica
+[submodule "libs/numerica"]
+	path = libs/numerica
+	url = https://github.com/symbolica-dev/numerica

@@ -3194,7 +3194,7 @@ extern "C" {{
                                                     &format!("\t\t\"ldr d31, {addr}\\n\\t\"\n",);
 
                                                 *out += &format!(
-                                                    "\t\t\"fdiv d{out_reg}, d31, d{out_reg}\\n\\t\"\n"
+                                                    "\t\t\"fdiv d{out_reg}, d{out_reg}, d31\\n\\t\"\n"
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),

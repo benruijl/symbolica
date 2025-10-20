@@ -781,6 +781,10 @@ where
     ) -> Result<bool, Error> {
         element.format(opts, state, f)
     }
+
+    fn has_independent_elements(&self) -> bool {
+        true
+    }
 }
 
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> EuclideanDomain

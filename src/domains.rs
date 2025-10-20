@@ -160,6 +160,7 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element>;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
+
     /// Format a ring element with custom [PrintOptions] and [PrintState].
     fn format<W: std::fmt::Write>(
         &self,
@@ -168,6 +169,22 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
         state: PrintState,
         f: &mut W,
     ) -> Result<bool, Error>;
+
+    /// Whether the ring does not contain additional information
+    /// that cannot be inferred from any element of the ring.
+    fn has_independent_elements(&self) -> bool {
+        false
+    }
+
+    /// Format the ring itself.
+    fn format_ring<W: std::fmt::Write>(
+        &self,
+        _opts: &PrintOptions,
+        _state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        f.write_fmt(format_args!("{}", self)).map(|_| false)
+    }
 
     /// Create a new printer for the given ring element that
     /// can be used in a [format!] macro.

@@ -55,7 +55,7 @@ pub struct PrintOptions {
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
     pub color_builtin_symbols: bool,
-    pub print_finite_field: bool,
+    pub print_ring: bool,
     pub symmetric_representation_for_finite_field: bool,
     pub explicit_rational_polynomial: bool,
     pub number_thousands_separator: Option<char>,
@@ -82,7 +82,7 @@ impl PrintOptions {
             terms_on_new_line: false,
             color_top_level_sum: true,
             color_builtin_symbols: true,
-            print_finite_field: true,
+            print_ring: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
@@ -108,7 +108,7 @@ impl PrintOptions {
             terms_on_new_line: false,
             color_top_level_sum: false,
             color_builtin_symbols: false,
-            print_finite_field: true,
+            print_ring: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
@@ -134,7 +134,7 @@ impl PrintOptions {
             terms_on_new_line: false,
             color_top_level_sum: false,
             color_builtin_symbols: false,
-            print_finite_field: true,
+            print_ring: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
@@ -160,7 +160,7 @@ impl PrintOptions {
             terms_on_new_line: false,
             color_top_level_sum: false,
             color_builtin_symbols: false,
-            print_finite_field: false,
+            print_ring: false,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
@@ -1490,7 +1490,7 @@ mod test {
         let mut s = String::new();
         a.format(
             &PrintOptions {
-                print_finite_field: true,
+                print_ring: true,
                 symmetric_representation_for_finite_field: true,
                 ..PrintOptions::file()
             },

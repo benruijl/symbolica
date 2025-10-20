@@ -490,21 +490,44 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
         }
     }
 
-    pub fn to_element(&self, mut poly: MultivariatePolynomial<R, u16>) -> <Self as Ring>::Element {
+    pub fn try_to_element(
+        &self,
+        poly: MultivariatePolynomial<R, u16>,
+    ) -> Result<<Self as Ring>::Element, String> {
         if poly.nvars() == 0 {
-            poly.variables = self.poly.variables.clone();
-            poly.exponents = vec![0; poly.coefficients.len()];
+            let mut new_poly = poly;
+            new_poly.variables = self.poly.variables.clone();
+            new_poly.exponents = vec![0; new_poly.coefficients.len()];
+
+            return Ok(AlgebraicNumber { poly: new_poly });
         }
 
-        assert!(poly.nvars() == 1);
+        if poly.nvars() != 1 {
+            return Err(format!(
+                "Polynomial has {} variables, expected 1",
+                poly.nvars()
+            ));
+        }
+
+        if poly.get_vars_ref()[0] != self.poly.get_vars_ref()[0] {
+            return Err(format!(
+                "Polynomial variable {:?} does not match extension variable {:?}",
+                poly.get_vars_ref()[0],
+                self.poly.get_vars_ref()[0]
+            ));
+        }
 
         if poly.degree(0) >= self.poly.degree(0) {
-            AlgebraicNumber {
+            Ok(AlgebraicNumber {
                 poly: poly.quot_rem_univariate_monic(&self.poly).1,
-            }
+            })
         } else {
-            AlgebraicNumber { poly }
+            Ok(AlgebraicNumber { poly })
         }
+    }
+
+    pub fn to_element(&self, poly: MultivariatePolynomial<R, u16>) -> <Self as Ring>::Element {
+        self.try_to_element(poly).unwrap()
     }
 }
 
@@ -895,20 +918,24 @@ impl<R: Field> AlgebraicExtension<R> {
 }
 
 impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
-    /// Extend the current algebraic extension `R[a]` with `b`, whose minimal polynomial
+    /// Adjoin the current algebraic extension `R[a]` with `b`, whose minimal polynomial
     /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
     ///
     /// `b` must be irreducible over `R` and `R[a]`; this is not checked.
-    pub fn extend(
+    ///
+    /// If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+    /// Otherwise, the variable of the new extension will be the same as that of `b`.
+    pub fn adjoin(
         &self,
         b: &MultivariatePolynomial<AlgebraicExtension<R>>,
+        new_symbol: Option<Variable>,
     ) -> (
         AlgebraicExtension<R>,
         <AlgebraicExtension<R> as Ring>::Element,
         <AlgebraicExtension<R> as Ring>::Element,
     )
     where
-        AlgebraicExtension<R>: PolynomialGCD<u16>,
+        AlgebraicExtension<R>: PolynomialGCD<u16> + Ring<Element = AlgebraicNumber<R>>,
         MultivariatePolynomial<R>: Factorize,
         MultivariatePolynomial<AlgebraicExtension<R>>: Factorize,
     {
@@ -917,16 +944,30 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
         let (_, s, g, r) = b.norm_impl();
         debug_assert!(r.is_irreducible());
 
-        let f: AlgebraicExtension<R> = AlgebraicExtension::new(r.clone());
+        let mut f = AlgebraicExtension::new(r);
         let mut g2 = g.to_number_field(&f);
         let mut h = self.poly.to_number_field(&f); // yields constant coeffs
 
         g2.unify_variables(&mut h);
         let g2 = g2.gcd(&h);
 
-        let a = f.neg(&f.div(&g2.get_constant(), &g2.lcoeff()));
+        let mut a = f.neg(&f.div(&g2.get_constant(), &g2.lcoeff()));
         let y = f.to_element(g2.ring.poly.one().mul_exp(&[1]));
-        let b = f.sub(&y, &f.mul(&a, &f.nth(s.into())));
+        let mut b = f.sub(&y, &f.mul(&a, &f.nth(s.into())));
+
+        if let Some(v) = &new_symbol {
+            let old_var = &f.poly.get_vars_ref()[0];
+            a.poly.rename_variable(&old_var, v);
+            b.poly.rename_variable(&old_var, v);
+
+            let mut new_poly = f.poly.as_ref().clone();
+            new_poly.rename_variable(&old_var, v);
+
+            f = AlgebraicExtension {
+                poly: Arc::new(new_poly),
+                embedding: f.embedding,
+            };
+        }
 
         (f, a, b)
     }
@@ -1131,7 +1172,7 @@ mod tests {
 
         let b = parse!("y^2-3").to_polynomial(&Q, None).to_number_field(&ae);
 
-        let (c, rep1, rep2) = ae.extend(&b);
+        let (c, rep1, rep2) = ae.adjoin(&b, None);
 
         let rf = parse!("1-10*y^2+y^4").to_polynomial(&Q, None);
 

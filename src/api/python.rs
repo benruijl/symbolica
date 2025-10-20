@@ -200,7 +200,7 @@ impl<'py> IntoPyDict<'py> for PrintOptions {
         dict.set_item("terms_on_new_line", self.terms_on_new_line)?;
         dict.set_item("color_top_level_sum", self.color_top_level_sum)?;
         dict.set_item("color_builtin_symbols", self.color_builtin_symbols)?;
-        dict.set_item("print_finite_field", self.print_finite_field)?;
+        dict.set_item("print_ring", self.print_ring)?;
         dict.set_item(
             "symmetric_representation_for_finite_field",
             self.symmetric_representation_for_finite_field,
@@ -2565,7 +2565,7 @@ impl PythonTransformer {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -2585,7 +2585,7 @@ impl PythonTransformer {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -2603,7 +2603,7 @@ impl PythonTransformer {
             terms_on_new_line,
             color_top_level_sum,
             color_builtin_symbols,
-            print_finite_field,
+            print_ring,
             symmetric_representation_for_finite_field,
             explicit_rational_polynomial,
             number_thousands_separator,
@@ -3941,7 +3941,7 @@ impl PythonExpression {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -3961,7 +3961,7 @@ impl PythonExpression {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -3983,7 +3983,7 @@ impl PythonExpression {
                     terms_on_new_line,
                     color_top_level_sum,
                     color_builtin_symbols,
-                    print_finite_field,
+                    print_ring,
                     symmetric_representation_for_finite_field,
                     explicit_rational_polynomial,
                     number_thousands_separator,
@@ -5739,7 +5739,7 @@ impl PythonExpression {
     pub fn to_polynomial(
         &self,
         modulus: Option<u32>,
-        power: Option<(u16, Symbol)>,
+        mut power: Option<(u16, Symbol)>,
         minimal_poly: Option<PythonPolynomial>,
         vars: Option<Vec<PythonExpression>>,
         py: Python,
@@ -5777,6 +5777,16 @@ impl PythonExpression {
                 return Err(exceptions::PyValueError::new_err(
                     "Minimal polynomial must be a univariate polynomial",
                 ));
+            }
+
+            if power.is_none() {
+                if let Variable::Symbol(name) = p.get_vars_ref()[0] {
+                    power = Some((p.degree(0) as u16, name));
+                } else {
+                    return Err(exceptions::PyValueError::new_err(format!(
+                        "Extension field polynomial {p} must have a symbol as a variable"
+                    )));
+                }
             }
         }
 
@@ -5848,6 +5858,7 @@ impl PythonExpression {
                 }
                 .into_py_any(py)
             }
+            // FIXME: ignoring minimal poly!
         } else if let Some(p) = poly {
             if !p.is_irreducible() || !p.lcoeff().is_one() {
                 return Err(exceptions::PyValueError::new_err(
@@ -7710,7 +7721,7 @@ impl PythonSeries {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -7730,7 +7741,7 @@ impl PythonSeries {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -7751,7 +7762,7 @@ impl PythonSeries {
                     terms_on_new_line,
                     color_top_level_sum,
                     color_builtin_symbols,
-                    print_finite_field,
+                    print_ring,
                     symmetric_representation_for_finite_field,
                     explicit_rational_polynomial,
                     number_thousands_separator,
@@ -8346,7 +8357,7 @@ impl PythonPolynomial {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -8366,7 +8377,7 @@ impl PythonPolynomial {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -8385,7 +8396,7 @@ impl PythonPolynomial {
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
-                print_finite_field,
+                print_ring,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
@@ -9435,6 +9446,90 @@ impl PythonPolynomial {
             poly: MultivariatePolynomial::newton_interpolation(&sample_points, &values, index),
         })
     }
+
+    /// Convert the polynomial to a number field defined by the minimal polynomial `minimal_poly`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> a = P('a').to_number_field(P('a^2-2'))
+    /// >>> print(a * a)
+    ///
+    /// Yields `2`.
+    pub fn to_number_field(&self, minimal_poly: Self) -> PyResult<PythonNumberFieldPolynomial> {
+        let a = AlgebraicExtension::new(minimal_poly.poly.clone());
+        let poly_nf = self.poly.to_number_field(&a);
+
+        Ok(PythonNumberFieldPolynomial { poly: poly_nf })
+    }
+
+    /// Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
+    /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+    ///
+    /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+    ///
+    /// If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+    /// Otherwise, the variable of the new extension will be the same as that of `b`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> sqrt2 = P('a^2-2')
+    /// >>> sqrt23 = P('b^2-a-3')
+    /// >>> (min_poly, rep2, rep23) = sqrt2.adjoin(sqrt23)
+    /// >>>
+    /// >>> # convert to number field
+    /// >>> a = P('a^2+b').replace(S('a'), rep2).replace(S('b'), rep23).to_number_field(min_poly)
+    #[pyo3(signature = (b, new_symbol = None))]
+    pub fn adjoin(
+        &self,
+        b: Self,
+        new_symbol: Option<Variable>,
+    ) -> PyResult<(PythonPolynomial, PythonPolynomial, PythonPolynomial)> {
+        let a = AlgebraicExtension::new(self.poly.clone());
+        let bb = b.poly.to_number_field(&a);
+
+        let (new_field, map1, map2) =
+            AlgebraicExtension::new(self.poly.clone()).adjoin(&bb, new_symbol);
+
+        Ok((
+            Self {
+                poly: new_field.poly().clone(),
+            },
+            PythonPolynomial {
+                poly: map1.poly().clone(),
+            },
+            PythonPolynomial {
+                poly: map2.poly().clone(),
+            },
+        ))
+    }
+
+    /// Find the minimal polynomial for the algebraic number represented by this polynomial
+    /// expressed in the number field defined by `minimal_poly`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> (min_poly, rep2, rep23) = P('a^2-2').adjoin(P('b^2-3'))
+    /// >>> rep2.simplify_algebraic_number(min_poly)
+    ///
+    /// Yields `b^2-2`.
+    pub fn simplify_algebraic_number(&self, minimal_poly: Self) -> PyResult<Self> {
+        let a = AlgebraicExtension::new(minimal_poly.poly);
+        let m = a.try_to_element(self.poly.clone()).map_err(|e| {
+            exceptions::PyValueError::new_err(format!(
+                "Could not convert polynomial to algebraic number: {}",
+                e
+            ))
+        })?;
+        let poly_nf = a.simplify(&m).poly().clone();
+
+        Ok(Self { poly: poly_nf })
+    }
 }
 
 /// A Symbolica polynomial over finite fields.
@@ -9510,7 +9605,7 @@ impl PythonFiniteFieldPolynomial {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -9530,7 +9625,7 @@ impl PythonFiniteFieldPolynomial {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -9549,7 +9644,7 @@ impl PythonFiniteFieldPolynomial {
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
-                print_finite_field,
+                print_ring,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
@@ -10400,6 +10495,86 @@ impl PythonFiniteFieldPolynomial {
 
         Ok(p.to_expression().into())
     }
+
+    /// Convert the polynomial to a Galois field defined by the minimal polynomial `minimal_poly`.
+    pub fn to_galois_field(&self, minimal_poly: Self) -> PyResult<PythonGaloisFieldPolynomial> {
+        if self.poly.ring != minimal_poly.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different moduli".to_string(),
+            ));
+        }
+
+        let a = AlgebraicExtension::new(minimal_poly.poly.clone());
+        let poly_nf = self.poly.to_number_field(&a);
+
+        Ok(PythonGaloisFieldPolynomial { poly: poly_nf })
+    }
+
+    /// Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
+    /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+    ///
+    /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+    ///
+    /// If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+    /// Otherwise, the variable of the new extension will be the same as that of `b`.
+    #[pyo3(signature = (b, new_symbol = None))]
+    pub fn adjoin(
+        &self,
+        b: Self,
+        new_symbol: Option<Variable>,
+    ) -> PyResult<(
+        PythonFiniteFieldPolynomial,
+        PythonFiniteFieldPolynomial,
+        PythonFiniteFieldPolynomial,
+    )> {
+        if self.poly.ring != b.poly.ring {
+            return Err(exceptions::PyValueError::new_err(
+                "Polynomials have different moduli".to_string(),
+            ));
+        }
+
+        let a = AlgebraicExtension::new(self.poly.clone());
+        let bb = b.poly.to_number_field(&a);
+
+        let (new_field, map1, map2) =
+            AlgebraicExtension::new(self.poly.clone()).adjoin(&bb, new_symbol);
+
+        Ok((
+            Self {
+                poly: new_field.poly().clone(),
+            },
+            Self {
+                poly: map1.poly().clone(),
+            },
+            Self {
+                poly: map2.poly().clone(),
+            },
+        ))
+    }
+
+    /// Find the minimal polynomial for the algebraic number represented by this polynomial
+    /// expressed in the number field defined by `minimal_poly`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> (min_poly, rep2, rep23) = P('a^2-2').adjoin(P('b^2-3'))
+    /// >>> rep2.simplify_algebraic_number(min_poly)
+    ///
+    /// Yields `b^2-2`.
+    pub fn simplify_algebraic_number(&self, minimal_poly: Self) -> PyResult<Self> {
+        let a = AlgebraicExtension::new(minimal_poly.poly);
+        let m = a.try_to_element(self.poly.clone()).map_err(|e| {
+            exceptions::PyValueError::new_err(format!(
+                "Could not convert polynomial to algebraic number: {}",
+                e
+            ))
+        })?;
+        let poly_nf = a.simplify(&m).poly().clone();
+
+        Ok(Self { poly: poly_nf })
+    }
 }
 
 /// A Symbolica polynomial over Galois fields.
@@ -10475,7 +10650,7 @@ impl PythonPrimeTwoPolynomial {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -10495,7 +10670,7 @@ impl PythonPrimeTwoPolynomial {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -10514,7 +10689,7 @@ impl PythonPrimeTwoPolynomial {
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
-                print_finite_field,
+                print_ring,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
@@ -11319,7 +11494,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         terms_on_new_line = false,
         color_top_level_sum = true,
         color_builtin_symbols = true,
-        print_finite_field = true,
+        print_ring = true,
         symmetric_representation_for_finite_field = false,
         explicit_rational_polynomial = false,
         number_thousands_separator = None,
@@ -11339,7 +11514,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -11358,7 +11533,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
-                print_finite_field,
+                print_ring,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
@@ -12154,6 +12329,37 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             })
             .into())
     }
+
+    /// Convert the polynomial to a polynomial over simple finite fields.
+    pub fn to_polynomial(&self) -> PyResult<PythonPrimeTwoPolynomial> {
+        let mut c = self.poly.clone();
+        let mut min_poly = MultivariatePolynomial::new(
+            &c.ring,
+            None,
+            Arc::new(self.poly.ring.poly().get_vars_ref().to_vec()),
+        );
+        c.unify_variables(&mut min_poly);
+
+        let mut poly = MultivariatePolynomial::new(
+            &c.ring.poly().ring,
+            None,
+            Arc::new(c.get_vars_ref().to_vec()),
+        );
+
+        for term in c.into_iter() {
+            let mut t = term.coefficient.poly.clone();
+            poly.unify_variables(&mut t);
+            poly = poly + t.mul_exp(&term.exponents);
+        }
+        Ok(PythonPrimeTwoPolynomial { poly })
+    }
+
+    /// Get the minimal polynomial of the algebraic extension.
+    pub fn get_minimal_polynomial(&self) -> PythonPrimeTwoPolynomial {
+        PythonPrimeTwoPolynomial {
+            poly: self.poly.ring.poly().clone(),
+        }
+    }
 }
 
 /// A Symbolica polynomial over Galois fields.
@@ -12229,7 +12435,7 @@ impl PythonGaloisFieldPolynomial {
             terms_on_new_line = false,
             color_top_level_sum = true,
             color_builtin_symbols = true,
-            print_finite_field = true,
+            print_ring = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
@@ -12249,7 +12455,7 @@ impl PythonGaloisFieldPolynomial {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -12268,7 +12474,7 @@ impl PythonGaloisFieldPolynomial {
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
-                print_finite_field,
+                print_ring,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
@@ -13010,6 +13216,37 @@ impl PythonGaloisFieldPolynomial {
             })
             .into())
     }
+
+    /// Convert the polynomial to a polynomial over simple finite fields.
+    pub fn to_polynomial(&self) -> PyResult<PythonFiniteFieldPolynomial> {
+        let mut c = self.poly.clone();
+        let mut min_poly = MultivariatePolynomial::new(
+            &c.ring,
+            None,
+            Arc::new(self.poly.ring.poly().get_vars_ref().to_vec()),
+        );
+        c.unify_variables(&mut min_poly);
+
+        let mut poly = MultivariatePolynomial::new(
+            &c.ring.poly().ring,
+            None,
+            Arc::new(c.get_vars_ref().to_vec()),
+        );
+
+        for term in c.into_iter() {
+            let mut t = term.coefficient.poly.clone();
+            poly.unify_variables(&mut t);
+            poly = poly + t.mul_exp(&term.exponents);
+        }
+        Ok(PythonFiniteFieldPolynomial { poly })
+    }
+
+    /// Get the minimal polynomial of the algebraic extension.
+    pub fn get_minimal_polynomial(&self) -> PythonFiniteFieldPolynomial {
+        PythonFiniteFieldPolynomial {
+            poly: self.poly.ring.poly().clone(),
+        }
+    }
 }
 
 /// A Symbolica polynomial over number fields.
@@ -13085,7 +13322,7 @@ impl PythonNumberFieldPolynomial {
         terms_on_new_line = false,
         color_top_level_sum = true,
         color_builtin_symbols = true,
-        print_finite_field = true,
+        print_ring = true,
         symmetric_representation_for_finite_field = false,
         explicit_rational_polynomial = false,
         number_thousands_separator = None,
@@ -13105,7 +13342,7 @@ impl PythonNumberFieldPolynomial {
         terms_on_new_line: bool,
         color_top_level_sum: bool,
         color_builtin_symbols: bool,
-        print_finite_field: bool,
+        print_ring: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
@@ -13124,7 +13361,7 @@ impl PythonNumberFieldPolynomial {
                 terms_on_new_line,
                 color_top_level_sum,
                 color_builtin_symbols,
-                print_finite_field,
+                print_ring,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
@@ -13848,47 +14085,31 @@ impl PythonNumberFieldPolynomial {
             .into())
     }
 
+    /// Convert the polynomial to a polynomial over rationals.
+    pub fn to_polynomial(&self) -> PyResult<PythonPolynomial> {
+        let mut c = self.poly.clone();
+        let mut min_poly = MultivariatePolynomial::new(
+            &c.ring,
+            None,
+            Arc::new(self.poly.ring.poly().get_vars_ref().to_vec()),
+        );
+        c.unify_variables(&mut min_poly);
+
+        let mut poly = MultivariatePolynomial::new(&Q, None, Arc::new(c.get_vars_ref().to_vec()));
+
+        for term in c.into_iter() {
+            let mut t = term.coefficient.poly.clone();
+            poly.unify_variables(&mut t);
+            poly = poly + t.mul_exp(&term.exponents);
+        }
+        Ok(PythonPolynomial { poly })
+    }
+
     /// Get the minimal polynomial of the algebraic extension.
     pub fn get_minimal_polynomial(&self) -> PythonPolynomial {
         PythonPolynomial {
             poly: self.poly.ring.poly().clone(),
         }
-    }
-
-    /// Extend the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
-    /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
-    ///
-    /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
-    pub fn extend(
-        &self,
-        b: Self,
-    ) -> (
-        PythonNumberFieldPolynomial,
-        PythonPolynomial,
-        PythonPolynomial,
-    ) {
-        let (new_field, map1, map2) = self.poly.ring.extend(&b.poly);
-
-        (
-            Self {
-                poly: self.poly.map_coeff(
-                    |f| {
-                        let mut new_num = new_field.zero();
-                        for (p, coeff) in f.poly.coefficients.iter().enumerate() {
-                            new_field.add_assign(
-                                &mut new_num,
-                                &new_field.pow(&map1, p as u64).mul_coeff(coeff.clone()),
-                            );
-                        }
-
-                        new_num
-                    },
-                    new_field.clone(),
-                ),
-            },
-            PythonPolynomial { poly: map1.poly },
-            PythonPolynomial { poly: map2.poly },
-        )
     }
 }
 
@@ -16541,7 +16762,7 @@ impl PythonMatrix {
                 terms_on_new_line: false,
                 color_top_level_sum: false,
                 color_builtin_symbols: false,
-                print_finite_field: false,
+                print_ring: false,
                 symmetric_representation_for_finite_field: false,
                 explicit_rational_polynomial: false,
                 number_thousands_separator,
@@ -16681,7 +16902,7 @@ impl PythonMatrix {
 }
 
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
-/// accessible with `d` (empty when there are not discrete layers), and the final continuous layer `c` if it is present.
+/// accessible with `d` (empty when there are no discrete layers), and the final continuous layer `c` if it is present.
 #[cfg_attr(
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")

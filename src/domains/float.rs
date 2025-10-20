@@ -1970,8 +1970,9 @@ impl Real for Float {
     #[inline(always)]
     fn log(&self) -> Self {
         // Log grows in precision if the input is less than 1/e and more than e
-        let e = self.0.get_exp().unwrap();
-        if !(0..2).contains(&e) {
+        if let Some(e) = self.0.get_exp()
+            && !(0..2).contains(&e)
+        {
             MultiPrecisionFloat::with_val(
                 self.0.prec() + e.unsigned_abs().ilog2() + 1,
                 self.0.ln_ref(),

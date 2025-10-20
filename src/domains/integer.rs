@@ -1518,6 +1518,10 @@ impl Ring for IntegerRing {
     ) -> Result<bool, Error> {
         element.format(opts, state, f)
     }
+
+    fn has_independent_elements(&self) -> bool {
+        true
+    }
 }
 
 impl SelfRing for Integer {
@@ -2617,6 +2621,10 @@ impl Ring for MultiPrecisionIntegerRing {
         }
 
         Ok(false)
+    }
+
+    fn has_independent_elements(&self) -> bool {
+        true
     }
 }
 

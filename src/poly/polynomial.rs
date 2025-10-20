@@ -175,6 +175,11 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
     ) -> Result<bool, std::fmt::Error> {
         element.format(opts, state, f)
     }
+
+    fn has_independent_elements(&self) -> bool {
+        // the coefficient ring is stored in the polynomial
+        true
+    }
 }
 
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> EuclideanDomain
@@ -810,17 +815,17 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
                 }
                 f.write_char('0')?;
                 return Ok(false);
-            } else {
+            } else if !opts.print_ring || state.level > 0 {
                 return self.ring.format(&self.coefficients[0], opts, state, f);
             }
         }
 
-        let print_finite_field = opts.print_finite_field && self.ring.characteristic() > 0;
+        let print_ring = opts.print_ring && !self.ring.has_independent_elements();
 
-        let add_paren = (self.nterms() > 1 || print_finite_field) && state.in_product
+        let add_paren = (self.nterms() > 1 || print_ring) && state.in_product
             || ((state.in_exp || state.in_exp_base)
                 && (self.nterms() > 1
-                    || print_finite_field
+                    || print_ring
                     || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1
                     || !self.ring.is_one(&self.coefficients[0])));
 
@@ -857,7 +862,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
             let has_var = monomial.exponents.iter().any(|e| !e.is_zero());
             state.in_product = in_product || has_var;
             state.suppress_one = has_var; // any products before should not be considered
-            state.in_exp |= opts.print_finite_field; // make sure to add parentheses
+            state.in_exp |= opts.print_ring; // make sure to add parentheses
 
             let mut suppressed_one = self.ring.format(monomial.coefficient, opts, state, f)?;
 
@@ -892,8 +897,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
             f.write_char('0')?;
         }
 
-        if print_finite_field && state.level == 0 {
-            f.write_fmt(format_args!("{}", self.ring))?;
+        if print_ring && state.level == 0 {
+            self.ring.format_ring(opts, state, f)?;
         }
 
         if add_paren {
@@ -1380,7 +1385,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     #[inline]
-    fn mul_monomial(self, coefficient: &F::Element, exponents: &[E]) -> Self {
+    pub fn mul_monomial(self, coefficient: &F::Element, exponents: &[E]) -> Self {
         self.mul_coeff(coefficient.clone()).mul_exp(exponents)
     }
 

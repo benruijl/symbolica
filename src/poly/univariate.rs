@@ -152,6 +152,10 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
     ) -> Result<bool, std::fmt::Error> {
         element.format(opts, state, f)
     }
+
+    fn has_independent_elements(&self) -> bool {
+        self.ring.has_independent_elements()
+    }
 }
 
 impl<R: EuclideanDomain> EuclideanDomain for UnivariatePolynomialRing<R> {

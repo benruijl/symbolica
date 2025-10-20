@@ -895,11 +895,11 @@ impl<R: Field> AlgebraicExtension<R> {
 }
 
 impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
-    /// Extend the current algebraic extension `R[a]` with `b`, whose minimal polynomial
+    /// Adjoin the current algebraic extension `R[a]` with `b`, whose minimal polynomial
     /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
     ///
     /// `b` must be irreducible over `R` and `R[a]`; this is not checked.
-    pub fn extend(
+    pub fn adjoin(
         &self,
         b: &MultivariatePolynomial<AlgebraicExtension<R>>,
     ) -> (
@@ -1131,7 +1131,7 @@ mod tests {
 
         let b = parse!("y^2-3").to_polynomial(&Q, None).to_number_field(&ae);
 
-        let (c, rep1, rep2) = ae.extend(&b);
+        let (c, rep1, rep2) = ae.adjoin(&b);
 
         let rf = parse!("1-10*y^2+y^4").to_polynomial(&Q, None);
 

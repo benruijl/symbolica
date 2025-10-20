@@ -439,6 +439,10 @@ impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
 
         Ok(false)
     }
+
+    fn has_independent_elements(&self) -> bool {
+        self.ring.has_independent_elements()
+    }
 }
 
 impl<R: Ring> SelfRing for Fraction<R>

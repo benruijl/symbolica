@@ -738,7 +738,7 @@ class Expression:
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
+        print_ring: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
@@ -2918,7 +2918,7 @@ class Transformer:
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
+        print_ring: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
@@ -3045,7 +3045,7 @@ class Series:
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
+        print_ring: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
@@ -3267,7 +3267,7 @@ class Polynomial:
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
+        print_ring: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
@@ -3621,6 +3621,36 @@ class Polynomial:
         yields `25-5*x+5*y^2-y^2*x-4*y^3+y^3*x`.
         """
 
+    def to_number_field(self, min_poly: Polynomial) -> NumberFieldPolynomial:
+        """Convert the coefficients of the polynomial to a number field defined by the minimal polynomial `min_poly`.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> a = P('a').to_number_field(P('a^2-2'))
+        >>> print(a * a)
+
+        Yields `2`.
+        """
+
+    def adjoin(self, min_poly: Polynomial) -> tuple[Polynomial, Polynomial, Polynomial]:
+        """Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
+        is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+
+        `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> sqrt2 = P('a^2-2')
+        >>> sqrt23 = P('b^2-a-3')
+        >>> (min_poly, rep2, rep23) = sqrt2.adjoin(sqrt23)
+        >>>
+        >>> # convert to number field
+        >>> a = P('a^2+b').replace(S('b'), rep23).replace(S('a'), rep2).to_number_field(min_poly)
+        """
+
 
 class NumberFieldPolynomial:
     """A Symbolica polynomial with rational coefficients."""
@@ -3640,7 +3670,7 @@ class NumberFieldPolynomial:
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
+        print_ring: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
@@ -3900,11 +3930,8 @@ class NumberFieldPolynomial:
     def get_minimal_polynomial(self) -> Polynomial:
         """Get the minimal polynomial of the algebraic extension."""
 
-    def extend(self, b: NumberFieldPolynomial) -> Tuple[NumberFieldPolynomial, Polynomial, Polynomial]:
-        """Extend the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
-        is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
-
-        `b`  must be irreducible over `R` and `R[a]`; this is not checked."""
+    def to_polynomial(self) -> Polynomial:
+        """Convert the number field polynomial to a rational polynomial."""
 
 
 class FiniteFieldPolynomial:
@@ -3945,7 +3972,7 @@ class FiniteFieldPolynomial:
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
         color_builtin_symbols: bool = True,
-        print_finite_field: bool = True,
+        print_ring: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
@@ -4208,6 +4235,21 @@ class FiniteFieldPolynomial:
 
     def to_expression(self) -> Expression:
         """ Convert the polynomial to an expression."""
+
+    def to_polynomial(self) -> Polynomial:
+        """Convert a Galois field polynomial to a simple finite field polynomial."""
+
+    def to_galois_field(self, min_poly: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Convert the coefficients of the polynomial to a Galois field defined by the minimal polynomial `min_poly`."""
+
+    def get_minimal_polynomial(self) -> FiniteFieldPolynomial:
+        """Get the minimal polynomial of the algebraic extension."""
+
+    def adjoin(self, b: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial]:
+        """Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
+        is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+
+        `b`  must be irreducible over `R` and `R[a]`; this is not checked."""
 
 
 class RationalPolynomial:

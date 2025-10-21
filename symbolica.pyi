@@ -3593,7 +3593,7 @@ class Polynomial:
         Yields `11+13j`.
         """
 
-    def replace(self, x: Expression, v: Polynomial) -> Polynomial:
+    def replace(self, x: Expression, v: Polynomial | int) -> Polynomial:
         """Replace the variable `x` with a polynomial `v`.
 
         Examples
@@ -3914,7 +3914,7 @@ class NumberFieldPolynomial:
         >>> print((e - p.to_expression()).expand())
         """
 
-    def replace(self, x: Expression, v: NumberFieldPolynomial) -> NumberFieldPolynomial:
+    def replace(self, x: Expression, v: NumberFieldPolynomial | int) -> NumberFieldPolynomial:
         """Replace the variable `x` with a polynomial `v`.
 
         Examples
@@ -4221,7 +4221,7 @@ class FiniteFieldPolynomial:
         Yields `4`.
         """
 
-    def replace(self, x: Expression, v: Polynomial) -> Polynomial:
+    def replace(self, x: Expression, v: FiniteFieldPolynomial | int) -> FiniteFieldPolynomial:
         """Replace the variable `x` with a polynomial `v`.
 
         Examples

@@ -753,10 +753,12 @@ impl<E: PositiveExponent> Factorize
     fn factor(&self) -> Vec<(Self, usize)> {
         let sf = self.square_free_factorization();
 
+        let mut constant = self.ring.one();
         let mut full_factors = vec![];
         for (f, p) in &sf {
             if f.is_constant() {
-                full_factors.push((f.clone(), *p));
+                self.ring
+                    .mul_assign(&mut constant, &self.ring.pow(&f.get_constant(), *p as u64));
                 continue;
             }
 
@@ -765,7 +767,8 @@ impl<E: PositiveExponent> Factorize
             let factors = n.factor();
 
             if factors.len() == 1 {
-                return vec![(f.clone(), 1)];
+                full_factors.push((f.clone(), *p));
+                continue;
             }
 
             let mut g_f = g.to_number_field(&self.ring);
@@ -783,9 +786,19 @@ impl<E: PositiveExponent> Factorize
                 g_f = g_f / &gcd;
 
                 let g = MultivariatePolynomial::from_number_field(&gcd)
-                    .replace_with_poly(v, &alpha_poly);
-                full_factors.push((g.to_number_field(&self.ring), b * p));
+                    .replace_with_poly(v, &alpha_poly)
+                    .to_number_field(&self.ring);
+
+                let lc = g.lcoeff();
+                self.ring
+                    .mul_assign(&mut constant, &self.ring.pow(&lc, (b * p) as u64));
+
+                full_factors.push((g.mul_coeff(self.ring.inv(&lc)), b * p));
             }
+        }
+
+        if !self.ring.is_one(&constant) {
+            full_factors.push((self.constant(constant), 1));
         }
 
         full_factors

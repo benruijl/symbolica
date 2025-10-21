@@ -9082,8 +9082,15 @@ impl PythonPolynomial {
     /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
-    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+    pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
         let var: Variable = x.expr.into();
+
+        let v = match v {
+            PolynomialOrInteger::Polynomial(p) => p,
+            PolynomialOrInteger::Integer(i) => Self {
+                poly: self.poly.constant(i.into()),
+            },
+        };
 
         let x = self
             .poly
@@ -10316,13 +10323,20 @@ impl PythonFiniteFieldPolynomial {
     /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
-    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+    pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
         let id = match x.expr.as_view() {
             AtomView::Var(x) => x.get_symbol(),
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Derivative must be taken wrt a variable",
                 ));
+            }
+        };
+
+        let v = match v {
+            PolynomialOrInteger::Polynomial(p) => p.poly,
+            PolynomialOrInteger::Integer(i) => {
+                self.poly.constant(self.poly.ring.element_from_integer(i))
             }
         };
 
@@ -10339,13 +10353,13 @@ impl PythonFiniteFieldPolynomial {
                 x.__str__()?
             )))?;
 
-        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+        if self.poly.get_vars_ref() == v.get_vars_ref() {
             Ok(Self {
-                poly: self.poly.replace_with_poly(x, &v.poly),
+                poly: self.poly.replace_with_poly(x, &v),
             })
         } else {
             let mut new_self = self.poly.clone();
-            let mut new_rhs = v.poly.clone();
+            let mut new_rhs = v.clone();
             new_self.unify_variables(&mut new_rhs);
             Ok(Self {
                 poly: new_self.replace_with_poly(x, &new_rhs),
@@ -11287,13 +11301,20 @@ impl PythonPrimeTwoPolynomial {
     /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
-    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+    pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
         let id = match x.expr.as_view() {
             AtomView::Var(x) => x.get_symbol(),
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Derivative must be taken wrt a variable",
                 ));
+            }
+        };
+
+        let v = match v {
+            PolynomialOrInteger::Polynomial(p) => p.poly,
+            PolynomialOrInteger::Integer(i) => {
+                self.poly.constant(self.poly.ring.element_from_integer(i))
             }
         };
 
@@ -11310,13 +11331,13 @@ impl PythonPrimeTwoPolynomial {
                 x.__str__()?
             )))?;
 
-        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+        if self.poly.get_vars_ref() == v.get_vars_ref() {
             Ok(Self {
-                poly: self.poly.replace_with_poly(x, &v.poly),
+                poly: self.poly.replace_with_poly(x, &v),
             })
         } else {
             let mut new_self = self.poly.clone();
-            let mut new_rhs = v.poly.clone();
+            let mut new_rhs = v;
             new_self.unify_variables(&mut new_rhs);
             Ok(Self {
                 poly: new_self.replace_with_poly(x, &new_rhs),
@@ -12194,13 +12215,20 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
-    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+    pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
         let id = match x.expr.as_view() {
             AtomView::Var(x) => x.get_symbol(),
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Derivative must be taken wrt a variable",
                 ));
+            }
+        };
+
+        let v = match v {
+            PolynomialOrInteger::Polynomial(p) => p.poly,
+            PolynomialOrInteger::Integer(i) => {
+                self.poly.constant(self.poly.ring.element_from_integer(i))
             }
         };
 
@@ -12217,13 +12245,13 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 x.__str__()?
             )))?;
 
-        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+        if self.poly.get_vars_ref() == v.get_vars_ref() {
             Ok(Self {
-                poly: self.poly.replace_with_poly(x, &v.poly),
+                poly: self.poly.replace_with_poly(x, &v),
             })
         } else {
             let mut new_self = self.poly.clone();
-            let mut new_rhs = v.poly.clone();
+            let mut new_rhs = v;
             new_self.unify_variables(&mut new_rhs);
             Ok(Self {
                 poly: new_self.replace_with_poly(x, &new_rhs),
@@ -13080,13 +13108,20 @@ impl PythonGaloisFieldPolynomial {
     /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
-    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+    pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
         let id = match x.expr.as_view() {
             AtomView::Var(x) => x.get_symbol(),
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Derivative must be taken wrt a variable",
                 ));
+            }
+        };
+
+        let v = match v {
+            PolynomialOrInteger::Polynomial(p) => p.poly,
+            PolynomialOrInteger::Integer(i) => {
+                self.poly.constant(self.poly.ring.element_from_integer(i))
             }
         };
 
@@ -13103,13 +13138,13 @@ impl PythonGaloisFieldPolynomial {
                 x.__str__()?
             )))?;
 
-        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+        if self.poly.get_vars_ref() == v.get_vars_ref() {
             Ok(Self {
-                poly: self.poly.replace_with_poly(x, &v.poly),
+                poly: self.poly.replace_with_poly(x, &v),
             })
         } else {
             let mut new_self = self.poly.clone();
-            let mut new_rhs = v.poly.clone();
+            let mut new_rhs = v;
             new_self.unify_variables(&mut new_rhs);
             Ok(Self {
                 poly: new_self.replace_with_poly(x, &new_rhs),
@@ -13952,13 +13987,20 @@ impl PythonNumberFieldPolynomial {
     /// >>> p = E('x*y+2*x+x^2').to_polynomial()
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
-    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+    pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
         let id = match x.expr.as_view() {
             AtomView::Var(x) => x.get_symbol(),
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Derivative must be taken wrt a variable",
                 ));
+            }
+        };
+
+        let v = match v {
+            PolynomialOrInteger::Polynomial(p) => p.poly,
+            PolynomialOrInteger::Integer(i) => {
+                self.poly.constant(self.poly.ring.element_from_integer(i))
             }
         };
 
@@ -13975,13 +14017,13 @@ impl PythonNumberFieldPolynomial {
                 x.__str__()?
             )))?;
 
-        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+        if self.poly.get_vars_ref() == v.get_vars_ref() {
             Ok(Self {
-                poly: self.poly.replace_with_poly(x, &v.poly),
+                poly: self.poly.replace_with_poly(x, &v),
             })
         } else {
             let mut new_self = self.poly.clone();
-            let mut new_rhs = v.poly.clone();
+            let mut new_rhs = v;
             new_self.unify_variables(&mut new_rhs);
             Ok(Self {
                 poly: new_self.replace_with_poly(x, &new_rhs),

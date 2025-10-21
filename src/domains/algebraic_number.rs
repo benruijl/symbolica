@@ -543,7 +543,7 @@ impl<R: Ring> AlgebraicExtension<R> {
     /// use symbolica::{parse, atom::AtomCore, domains::{algebraic_number::AlgebraicExtension, rational::Q}, poly::factor::Factorize};
     /// let Q_i = AlgebraicExtension::new_complex(Q);
     /// let poly = parse!("(-1+6𝑖)*x+(4+2𝑖)*x^2+3𝑖").to_polynomial::<_, u8>(&Q_i, None);
-    /// assert_eq!(poly.factor().len(), 2);
+    /// assert_eq!(poly.factor().len(), 3);
     /// ```
     pub fn new_complex(ring: R) -> Self {
         let poly = MultivariatePolynomial::new(

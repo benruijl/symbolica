@@ -808,6 +808,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
         mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, std::fmt::Error> {
+        let print_ring = opts.print_ring && !self.ring.has_independent_elements();
+
         if self.is_constant() {
             if self.is_zero() {
                 if state.in_sum {
@@ -815,12 +817,10 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
                 }
                 f.write_char('0')?;
                 return Ok(false);
-            } else if !opts.print_ring || state.level > 0 {
+            } else if !print_ring || state.level > 0 {
                 return self.ring.format(&self.coefficients[0], opts, state, f);
             }
         }
-
-        let print_ring = opts.print_ring && !self.ring.has_independent_elements();
 
         let add_paren = (self.nterms() > 1 || print_ring) && state.in_product
             || ((state.in_exp || state.in_exp_base)
@@ -862,7 +862,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
             let has_var = monomial.exponents.iter().any(|e| !e.is_zero());
             state.in_product = in_product || has_var;
             state.suppress_one = has_var; // any products before should not be considered
-            state.in_exp |= opts.print_ring; // make sure to add parentheses
+            state.in_exp |= print_ring; // make sure to add parentheses
 
             let mut suppressed_one = self.ring.format(monomial.coefficient, opts, state, f)?;
 

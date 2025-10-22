@@ -454,6 +454,7 @@ pub trait Real: NumericalFloatLike {
     /// The imaginary unit, if it exists.
     fn i(&self) -> Option<Self>;
 
+    fn conj(&self) -> Self;
     fn norm(&self) -> Self;
     fn sqrt(&self) -> Self;
     fn log(&self) -> Self;
@@ -628,6 +629,11 @@ impl Real for f64 {
     #[inline(always)]
     fn i(&self) -> Option<Self> {
         None
+    }
+
+    #[inline(always)]
+    fn conj(&self) -> Self {
+        *self
     }
 
     #[inline(always)]
@@ -1029,6 +1035,11 @@ impl Real for F64 {
     #[inline(always)]
     fn i(&self) -> Option<Self> {
         None
+    }
+
+    #[inline(always)]
+    fn conj(&self) -> Self {
+        *self
     }
 
     #[inline(always)]
@@ -1958,6 +1969,11 @@ impl Real for Float {
     }
 
     #[inline(always)]
+    fn conj(&self) -> Self {
+        self.clone()
+    }
+
+    #[inline(always)]
     fn norm(&self) -> Self {
         self.0.clone().abs().into()
     }
@@ -2654,6 +2670,13 @@ impl<T: Real + RealNumberLike> Real for ErrorPropagatingFloat<T> {
         })
     }
 
+    fn conj(&self) -> Self {
+        ErrorPropagatingFloat {
+            abs_err: self.abs_err,
+            value: self.value.conj(),
+        }
+    }
+
     fn norm(&self) -> Self {
         ErrorPropagatingFloat {
             abs_err: self.abs_err,
@@ -2926,6 +2949,11 @@ macro_rules! simd_impl {
             #[inline(always)]
             fn i(&self) -> Option<Self> {
                 None
+            }
+
+            #[inline(always)]
+            fn conj(&self) -> Self {
+                (*self)
             }
 
             #[inline(always)]
@@ -3905,6 +3933,11 @@ impl<T: Real> Real for Complex<T> {
     #[inline(always)]
     fn i(&self) -> Option<Self> {
         Some(self.i())
+    }
+
+    #[inline(always)]
+    fn conj(&self) -> Self {
+        Complex::new(self.re.clone(), -self.im.clone())
     }
 
     #[inline]

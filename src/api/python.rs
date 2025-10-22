@@ -2692,6 +2692,10 @@ impl PythonTransformer {
 ///     The built-in exponential function.
 /// LOG: Expression
 ///     The built-in logarithm function.
+/// SQRT: Expression
+///     The built-in square root function.
+/// CONJ: Expression
+///     The built-in complex conjugate function.
 #[cfg_attr(
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
@@ -3831,6 +3835,13 @@ impl PythonExpression {
         Atom::var(Symbol::SQRT).into()
     }
 
+    /// The built-in complex conjugate function.
+    #[classattr]
+    #[pyo3(name = "CONJ")]
+    pub fn conj_attr() -> PythonExpression {
+        Atom::var(Symbol::CONJ).into()
+    }
+
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
     pub fn get_all_symbol_names(_cls: &Bound<'_, PyType>) -> PyResult<Vec<String>> {
@@ -4442,24 +4453,34 @@ impl PythonExpression {
         }
     }
 
+    /// Compute the cosine of the expression.
     pub fn cos(&self) -> PythonExpression {
         self.expr.cos().into()
     }
 
+    /// Compute the sine of the expression.
     pub fn sin(&self) -> PythonExpression {
         self.expr.sin().into()
     }
 
+    /// Compute the exponential of the expression.
     pub fn exp(&self) -> PythonExpression {
         self.expr.exp().into()
     }
 
+    /// Compute the natural logarithm of the expression.
     pub fn log(&self) -> PythonExpression {
         self.expr.log().into()
     }
 
+    /// Compute the square root of the expression.
     pub fn sqrt(&self) -> PythonExpression {
         self.expr.sqrt().into()
+    }
+
+    /// Compute the complex conjugate of the expression.
+    pub fn conj(&self) -> PythonExpression {
+        self.expr.conj().into()
     }
 
     /// Create a held expression that delays the execution of the transformer `t` until the

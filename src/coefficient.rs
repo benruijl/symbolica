@@ -128,6 +128,21 @@ impl Coefficient {
             Coefficient::Infinity(Some(&dir / &dir.re.abs()))
         }
     }
+
+    /// Compute the complex conjugate of the coefficient.
+    pub fn conjugate(&self) -> Self {
+        match self {
+            Coefficient::Indeterminate => Coefficient::Indeterminate,
+            Coefficient::Infinity(phase) => match phase {
+                Some(p) => Coefficient::Infinity(Some(p.conj())),
+                None => Coefficient::Infinity(None),
+            },
+            Coefficient::Complex(r) => Coefficient::Complex(r.conj()),
+            Coefficient::Float(f) => Coefficient::Float(f.conj()),
+            Coefficient::FiniteField(n, i) => Coefficient::FiniteField(n.clone(), *i),
+            Coefficient::RationalPolynomial(p) => Coefficient::RationalPolynomial(p.clone()),
+        }
+    }
 }
 
 impl std::fmt::Display for Coefficient {

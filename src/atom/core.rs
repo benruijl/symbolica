@@ -1358,16 +1358,23 @@ pub trait AtomCore {
             .finish()
     }
 
-    ///  Take the cosine the atom.
+    /// Take the cosine the atom.
     fn cos(&self) -> Atom {
         FunctionBuilder::new(Symbol::COS)
             .add_arg(self.as_atom_view())
             .finish()
     }
 
-    ///  Take the square root of the atom.
+    /// Take the square root of the atom.
     fn sqrt(&self) -> Atom {
         FunctionBuilder::new(Symbol::SQRT)
+            .add_arg(self.as_atom_view())
+            .finish()
+    }
+
+    /// Take the complex conjugate of the atom.
+    fn conj(&self) -> Atom {
+        FunctionBuilder::new(Symbol::CONJ)
             .add_arg(self.as_atom_view())
             .finish()
     }

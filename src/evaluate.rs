@@ -978,6 +978,7 @@ impl<T: Real> ExpressionEvaluator<T> {
                     Symbol::SIN => self.stack[*r] = self.stack[*arg].sin(),
                     Symbol::COS => self.stack[*r] = self.stack[*arg].cos(),
                     Symbol::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Symbol::CONJ => self.stack[*r] = self.stack[*arg].conj(),
                     _ => unreachable!(),
                 },
                 Instr::ExternalFun(_, s, _) => {
@@ -1908,6 +1909,8 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += &"#include <stdio.h>\n";
             if number_class == NumberClass::ComplexF64 {
                 res += &"#include <cuda/std/complex>\n";
+            } else {
+                res += "template<typename T> T conj(T a) { return a; }\n";
             }
         };
 
@@ -2101,6 +2104,8 @@ extern "C" {{
             res += "#include <iostream>\n#include <cmath>\n\n";
             if number_class == NumberClass::ComplexF64 {
                 res += "#include <complex>\n";
+            } else {
+                res += "template<typename T> T conj(T a) { return a; }\n";
             }
         };
 
@@ -2224,6 +2229,10 @@ extern "C" {{
                     Symbol::SQRT => {
                         let arg = get_input!(*a);
                         *out += format!("\t{} = sqrt({arg});\n", get_output!(o)).as_str();
+                    }
+                    Symbol::CONJ => {
+                        let arg = get_input!(*a);
+                        *out += format!("\t{} = conj({arg});\n", get_output!(o)).as_str();
                     }
                     _ => unreachable!(),
                 },
@@ -3260,6 +3269,9 @@ extern "C" {{
                         Symbol::SQRT => {
                             *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
+                        Symbol::CONJ => {
+                            *out += format!("\tZ[{o}] = {arg};\n").as_str();
+                        }
                         _ => unreachable!(),
                     }
                 }
@@ -3794,6 +3806,9 @@ extern "C" {{
                         Symbol::SQRT => {
                             *out += format!("\tZ[{o}] = sqrt({arg});\n").as_str();
                         }
+                        Symbol::CONJ => {
+                            *out += format!("\tZ[{o}] = conj({arg});\n").as_str();
+                        }
                         _ => unreachable!(),
                     }
                 }
@@ -3977,6 +3992,7 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
                     Symbol::SIN => self.stack[*r] = self.stack[*arg].sin(),
                     Symbol::COS => self.stack[*r] = self.stack[*arg].cos(),
                     Symbol::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Symbol::CONJ => self.stack[*r] = self.stack[*arg].conj(),
                     _ => unreachable!(),
                 },
                 Instr::ExternalFun(r, s, args) => {
@@ -5543,6 +5559,7 @@ impl<T: Real> EvalTree<T> {
                     Symbol::SIN => arg.sin(),
                     Symbol::COS => arg.cos(),
                     Symbol::SQRT => arg.sqrt(),
+                    Symbol::CONJ => arg.conj(),
                     _ => unreachable!(),
                 }
             }
@@ -7649,6 +7666,12 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                     r.push(')');
                     r
                 }
+                Symbol::CONJ => {
+                    let mut r = "conj(".to_string();
+                    r += &self.export_cpp_impl(a, args);
+                    r.push(')');
+                    r
+                }
                 _ => unreachable!(),
             },
             Expression::SubExpression(id) => {
@@ -7779,6 +7802,7 @@ impl<'a> AtomView<'a> {
                     Symbol::SIN,
                     Symbol::COS,
                     Symbol::SQRT,
+                    Symbol::CONJ,
                 ]
                 .contains(&name)
                 {
@@ -7990,6 +8014,7 @@ impl<'a> AtomView<'a> {
                     Symbol::SIN,
                     Symbol::COS,
                     Symbol::SQRT,
+                    Symbol::CONJ,
                 ]
                 .contains(&name)
                 {
@@ -8003,6 +8028,7 @@ impl<'a> AtomView<'a> {
                         Symbol::SIN => arg_eval.sin(),
                         Symbol::COS => arg_eval.cos(),
                         Symbol::SQRT => arg_eval.sqrt(),
+                        Symbol::CONJ => arg_eval.conj(),
                         _ => unreachable!(),
                     });
                 }

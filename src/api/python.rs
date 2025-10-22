@@ -17159,6 +17159,13 @@ impl PythonNumericalIntegrator {
         PythonRandomNumberGenerator::new(seed, stream_id)
     }
 
+    /// Copy the grid without any unprocessed samples.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            grid: self.grid.clone_without_samples(),
+        }
+    }
+
     /// Sample `num_samples` points from the grid using the random number generator
     /// `rng`. See `rng()` for how to create a random number generator.
     pub fn sample(
@@ -17213,9 +17220,12 @@ impl PythonNumericalIntegrator {
     /// Export the grid, so that it can be sent to another thread or machine.
     /// Use `import_grid` to load the grid.
     fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
-        bincode::encode_to_vec(&self.grid, bincode::config::standard())
-            .map(|a| PyBytes::new(py, &a))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+        bincode::encode_to_vec(
+            &self.grid.clone_without_samples(),
+            bincode::config::standard(),
+        )
+        .map(|a| PyBytes::new(py, &a))
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 
     /// Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples

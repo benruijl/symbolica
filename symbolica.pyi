@@ -5096,6 +5096,9 @@ class CompiledCudaComplexEvaluator:
 class NumericalIntegrator:
     """A numerical integrator for high-dimensional integrals."""
 
+    def __copy__(self) -> NumericalIntegrator:
+        """Copy the grid without any unprocessed samples."""
+
     @classmethod
     def continuous(
         _cls,

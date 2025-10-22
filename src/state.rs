@@ -114,20 +114,22 @@ impl State {
         Symbol::raw_fn(5, 0, false, false, false, false, false, false, false, false);
     pub(crate) const SQRT: Symbol =
         Symbol::raw_fn(6, 0, false, false, false, false, false, false, false, false);
-    pub(crate) const DERIVATIVE: Symbol =
+    pub(crate) const CONJ: Symbol =
         Symbol::raw_fn(7, 0, false, false, false, false, false, false, false, false);
+    pub(crate) const DERIVATIVE: Symbol =
+        Symbol::raw_fn(8, 0, false, false, false, false, false, false, false, false);
     pub(crate) const E: Symbol =
-        Symbol::raw_fn(8, 0, false, false, false, false, true, true, false, true);
-    pub(crate) const PI: Symbol =
         Symbol::raw_fn(9, 0, false, false, false, false, true, true, false, true);
+    pub(crate) const PI: Symbol =
+        Symbol::raw_fn(10, 0, false, false, false, false, true, true, false, true);
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 10] = [
-        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝜋",
+    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 11] = [
+        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "conj", "der", "𝑒", "𝜋",
     ];
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOLS: [Symbol; 10] = [
+    pub const BUILTIN_SYMBOLS: [Symbol; 11] = [
         Self::ARG,
         Self::COEFF,
         Self::EXP,
@@ -135,6 +137,7 @@ impl State {
         Self::SIN,
         Self::COS,
         Self::SQRT,
+        Self::CONJ,
         Self::DERIVATIVE,
         Self::E,
         Self::PI,

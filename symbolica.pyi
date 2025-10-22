@@ -432,6 +432,9 @@ class Expression:
     SQRT: Expression
     """The built-in square root function."""
 
+    CONJ: Expression
+    """The built-in complex conjugate function."""
+
     @overload
     @classmethod
     def symbol(_cls,
@@ -995,6 +998,11 @@ class Expression:
     def sqrt(self) -> Expression:
         """
         Take the square root of this expression, returning the result.
+        """
+
+    def conj(self) -> Expression:
+        """
+        Take the complex conjugate of this expression, returning the result.
         """
 
     def hold(self, t: Transformer) -> HeldExpression:

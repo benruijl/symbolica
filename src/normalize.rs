@@ -973,6 +973,89 @@ impl AtomView<'_> {
                     }
                 }
 
+                if id == Symbol::CONJ && out_f.to_fun_view().get_nargs() == 1 {
+                    let arg = out_f.to_fun_view().iter().next().unwrap();
+
+                    match arg {
+                        AtomView::Num(n) => {
+                            let conj_coeff = n.get_coeff_view().to_owned().conjugate();
+                            out.to_num(conj_coeff);
+                        }
+                        AtomView::Var(v) => {
+                            let s = v.get_symbol();
+                            if s.is_real() {
+                                out.to_var(s);
+                            }
+                        }
+                        AtomView::Fun(ff) => {
+                            let s = ff.get_symbol();
+                            if s == Symbol::CONJ {
+                                // conj(conj(a)) = a
+                                let inner_arg = ff.iter().next().unwrap();
+                                let mut inner = workspace.new_atom();
+                                inner.set_from_view(&inner_arg);
+                                out.set_from_view(&inner.as_view());
+                            } else if s.is_real() {
+                                let mut inner = workspace.new_atom();
+                                inner.set_from_view(&arg);
+                                out.set_from_view(&inner.as_view());
+                            } else if s == Symbol::EXP && ff.get_nargs() == 1 {
+                                // conj(exp(a)) = exp(conj(a))
+                                let exp_arg = ff.iter().next().unwrap();
+                                let mut conj_fun = workspace.new_atom();
+                                conj_fun.to_fun(Symbol::CONJ).add_arg(exp_arg);
+
+                                let mut new_exp = workspace.new_atom();
+                                new_exp.to_fun(Symbol::EXP).add_arg(conj_fun.as_view());
+                                new_exp.as_view().normalize(workspace, out);
+                            }
+                        }
+                        AtomView::Pow(p) => {
+                            if self.is_real() {
+                                let mut inner = workspace.new_atom();
+                                inner.set_from_view(&arg);
+                                out.set_from_view(&inner.as_view());
+                            } else {
+                                let (b, e) = p.get_base_exp();
+                                if b.is_positive() {
+                                    let mut new_exp = workspace.new_atom();
+                                    let ne = new_exp.to_fun(Symbol::CONJ);
+                                    ne.add_arg(e);
+                                    let mut new_pow = workspace.new_atom();
+                                    new_pow.to_pow(b, new_exp.as_view());
+                                    new_pow.as_view().normalize(workspace, out);
+                                }
+                            }
+                        }
+                        AtomView::Mul(m) => {
+                            let mut new_mul = workspace.new_atom();
+                            let nm = new_mul.to_mul();
+
+                            let mut conj_a = workspace.new_atom();
+                            for aa in m {
+                                conj_a.to_fun(Symbol::CONJ).add_arg(aa);
+                                nm.extend(conj_a.as_view());
+                            }
+
+                            new_mul.as_view().normalize(workspace, out);
+                        }
+                        AtomView::Add(a) => {
+                            let mut new_add = workspace.new_atom();
+                            let na = new_add.to_add();
+
+                            let mut conj_a = workspace.new_atom();
+                            for aa in a {
+                                conj_a.to_fun(Symbol::CONJ).add_arg(aa);
+                                na.extend(conj_a.as_view());
+                            }
+
+                            new_add.as_view().normalize(workspace, out);
+                        }
+                    }
+
+                    return;
+                }
+
                 // simplify log(exp(real)) = real
                 if id == Symbol::LOG && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();

@@ -523,6 +523,8 @@ impl Symbol {
     pub const COS: Symbol = State::COS;
     /// The square root function.
     pub const SQRT: Symbol = State::SQRT;
+    /// The complex conjugate function.
+    pub const CONJ: Symbol = State::CONJ;
     /// The built-in function that represents an abstract derivative.
     pub const DERIVATIVE: Symbol = State::DERIVATIVE;
     /// The constant e, the base of the natural logarithm.
@@ -2420,7 +2422,7 @@ mod test {
         let x = parse!("v1+f1(v2)");
         assert_eq!(
             format!("{x:#?}"),
-            "AddView { data: [5, 17, 2, 13, 2, 1, 11, 3, 5, 0, 0, 0, 1, 41, 2, 1, 12] }"
+            "AddView { data: [5, 17, 2, 13, 2, 1, 12, 3, 5, 0, 0, 0, 1, 42, 2, 1, 13] }"
         );
         assert_eq!(
             x.get_all_symbols(true),

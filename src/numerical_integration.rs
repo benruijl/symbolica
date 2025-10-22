@@ -171,12 +171,15 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
     /// accumulator. The non-processed samples are removed from `other`.
     pub fn merge_samples(&mut self, other: &mut StatisticsAccumulator<T>) {
         self.merge_samples_no_reset(other);
+        other.clear_samples();
+    }
 
-        // reset the other
-        other.sum = T::new_zero();
-        other.sum_sq = T::new_zero();
-        other.new_samples = 0;
-        other.new_zero_evaluations = 0;
+    /// Clear all non-processed samples from this accumulator.
+    pub fn clear_samples(&mut self) {
+        self.sum = T::new_zero();
+        self.sum_sq = T::new_zero();
+        self.new_samples = 0;
+        self.new_zero_evaluations = 0;
     }
 
     /// Add the non-processed samples of `other` to non-processed samples of this
@@ -436,6 +439,9 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
 /// It supports discrete and continuous dimensions. The discrete dimensions
 /// can have a nested grid.
 ///
+/// Use [Grid::clone_without_samples] to create a copy of the grid that can
+/// accumulate samples independently, and can later be merged into the current grid.
+///
 /// # Examples
 ///
 ///  ```
@@ -536,6 +542,16 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match self {
             Grid::Continuous(g) => &g.accumulator,
             Grid::Discrete(g) => &g.accumulator,
+        }
+    }
+
+    /// Clone the grid and remove any samples that have not been processed in an update.
+    /// The new grid can accumulate samples independently, and can later be merged into
+    /// the current grid.
+    pub fn clone_without_samples(&self) -> Grid<T> {
+        match self {
+            Grid::Continuous(c) => Grid::Continuous(c.clone_without_samples()),
+            Grid::Discrete(d) => Grid::Discrete(d.clone_without_samples()),
         }
     }
 }
@@ -658,11 +674,11 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Discrete
         }
 
         if discrete_learning_rate.is_zero()
-            || self.bins.iter().all(|x| {
+            || self.bins.iter().all(|bin| {
                 if self.train_on_avg {
-                    x.accumulator.avg == T::new_zero()
+                    bin.accumulator.avg == T::new_zero()
                 } else {
-                    x.accumulator.err == T::new_zero() || x.accumulator.processed_samples < 2
+                    bin.accumulator.err == T::new_zero() || bin.accumulator.processed_samples < 2
                 }
             })
         {
@@ -790,6 +806,20 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Discrete
         }
 
         self.accumulator.merge_samples_no_reset(&other.accumulator);
+    }
+
+    /// Clone the grid and remove any samples that have not been processed in an update.
+    pub fn clone_without_samples(&self) -> DiscreteGrid<T> {
+        let mut d = self.clone();
+
+        for bin in &mut d.bins {
+            bin.accumulator.clear_samples();
+
+            bin.sub_grid.as_ref().map(|g| g.clone_without_samples());
+        }
+
+        d.accumulator.clear_samples();
+        d
     }
 }
 
@@ -927,6 +957,20 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
             c.merge(o);
         }
     }
+
+    /// Clone the grid and remove any samples that have not been processed in an update.
+    pub fn clone_without_samples(&self) -> ContinuousGrid<T> {
+        let mut c = self.clone();
+
+        for dim in &mut c.continuous_dimensions {
+            for bin in &mut dim.bin_accumulator {
+                bin.clear_samples();
+            }
+        }
+
+        c.accumulator.clear_samples();
+        c
+    }
 }
 
 /// A dimension in a continuous grid that contains a partitioning.
@@ -1026,8 +1070,9 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
             }
         }
 
-        for (c, acc) in self.counter.iter_mut().zip(&self.bin_accumulator) {
+        for (c, acc) in self.counter.iter_mut().zip(&mut self.bin_accumulator) {
             *c += acc.new_samples;
+            acc.clear_samples();
         }
 
         if self.counter.iter().sum::<usize>() < self.min_samples_for_update {
@@ -1157,6 +1202,23 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
         for (bi, obi) in self.bin_accumulator.iter_mut().zip(&other.bin_accumulator) {
             bi.merge_samples_no_reset(obi);
         }
+    }
+
+    /// Clone the dimension and remove any samples that have not been processed in an update.
+    pub fn clone_without_samples(&self) -> ContinuousDimension<T> {
+        let mut d = self.clone();
+
+        for bi in &mut d.bin_importance {
+            *bi = T::new_zero();
+        }
+        for c in &mut d.counter {
+            *c = 0;
+        }
+
+        for bin in &mut d.bin_accumulator {
+            bin.clear_samples();
+        }
+        d
     }
 }
 

@@ -224,7 +224,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
         self.sum_sq /= n;
         let mut w = self.sum_sq.sqrt();
 
-        w = ((w + self.sum) * (w - self.sum)) / (n - T::new_one());
+        w = ((w + self.sum) * (w - self.sum)) / (n - T::new_one()); // compute variance
         if w == T::new_zero() {
             // all sampled points are the same
             // set the weight to a large number
@@ -236,23 +236,29 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
         self.weight_sum += w;
         self.avg_sum += w * self.sum;
 
+        let sigma_sq = self.weight_sum.inv();
+        let weighted_avg = sigma_sq * self.avg_sum;
+
         if weighted_average {
-            let sigma_sq = self.weight_sum.inv();
-            self.avg = sigma_sq * self.avg_sum;
+            self.avg = weighted_avg;
             self.err = sigma_sq.sqrt();
         } else {
-            let n = T::new_from_usize(self.processed_samples);
-            self.avg = self.total_sum / n;
-            self.err = ((self.total_sum_sq / n - self.avg * self.avg) / (n - T::new_one())).sqrt();
+            let n_tot = T::new_from_usize(self.processed_samples);
+            self.avg = self.total_sum / n_tot;
+            let mut var = (self.total_sum_sq / n_tot).sqrt();
+            var = ((var + self.avg) * (var - self.avg)) / (n_tot - T::new_one());
+            self.err = var.sqrt();
         }
 
         if self.cur_iter == 0 {
             self.guess = self.sum;
         }
+        // compute chi-squared wrt the first iteration average
+        // TODO: use rolling average instead?
         w *= self.sum - self.guess;
         self.chi_sum += w;
         self.chi_sq_sum += w * self.sum;
-        self.chi_sq = self.chi_sq_sum - self.avg * self.chi_sum;
+        self.chi_sq = self.chi_sq_sum - weighted_avg * self.chi_sum;
 
         // reset
         self.sum = T::new_zero();
@@ -1307,6 +1313,6 @@ mod test {
         }
 
         assert_eq!(grid.accumulator.avg, 0.9718412953459551);
-        assert_eq!(grid.accumulator.err, 0.0009349254838085983)
+        assert_eq!(grid.accumulator.err, 0.000934925483808598)
     }
 }

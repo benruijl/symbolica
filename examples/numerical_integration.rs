@@ -39,8 +39,11 @@ fn main() {
         grid.update(1.5, 1.5);
 
         println!(
-            "Integral at iteration {:2}: {:.6} ± {:.6}",
-            iteration, grid.accumulator.avg, grid.accumulator.err
+            "Integral at iteration {:2}: {:.6} ± {:.6} (χ² = {:.3})",
+            iteration,
+            grid.accumulator.avg,
+            grid.accumulator.err,
+            grid.accumulator.chi_sq / grid.accumulator.cur_iter as f64
         );
     }
 }

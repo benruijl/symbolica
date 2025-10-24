@@ -1274,7 +1274,15 @@ impl<T: Default> ExpressionEvaluator<T> {
     }
 
     fn remove_common_pairs(&mut self) -> usize {
-        let mut pairs: HashMap<_, Vec<usize>> = HashMap::default();
+        #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        enum CommonInstruction {
+            Add(usize, usize),
+            Mul(usize, usize),
+            BuiltinFun(Symbol, usize),
+            ExternalFun(usize, Vec<usize>),
+        }
+
+        let mut common_ops: HashMap<_, Vec<usize>> = HashMap::default();
 
         let mut affected_lines = vec![false; self.instructions.len()];
 
@@ -1288,9 +1296,31 @@ impl<T: Default> ExpressionEvaluator<T> {
                     let is_add = matches!(i, Instr::Add(_, _));
                     for (li, l) in a.iter().enumerate() {
                         for r in &a[li + 1..] {
-                            pairs.entry((is_add, *l, *r)).or_default().push(p);
+                            if is_add {
+                                common_ops
+                                    .entry(CommonInstruction::Add(*l, *r))
+                                    .or_default()
+                                    .push(p);
+                            } else {
+                                common_ops
+                                    .entry(CommonInstruction::Mul(*l, *r))
+                                    .or_default()
+                                    .push(p);
+                            }
                         }
                     }
+                }
+                Instr::BuiltinFun(_, f, a) => {
+                    common_ops
+                        .entry(CommonInstruction::BuiltinFun(f.0, *a))
+                        .or_default()
+                        .push(p);
+                }
+                Instr::ExternalFun(_, f, args) => {
+                    common_ops
+                        .entry(CommonInstruction::ExternalFun(*f, args.clone()))
+                        .or_default()
+                        .push(p);
                 }
                 Instr::IfElse(_, _) => {
                     current_zone_depth += 1;
@@ -1300,15 +1330,15 @@ impl<T: Default> ExpressionEvaluator<T> {
                     current_zone += 1 * 3_usize.pow(current_zone_depth);
                 }
                 Instr::Join(..) => {
-                    current_zone_depth -= 1;
                     current_zone %= 3_usize.pow(current_zone_depth);
+                    current_zone_depth -= 1;
                 }
                 _ => {}
             }
             line_usage_zone[p] = current_zone;
         }
 
-        let mut to_remove: Vec<_> = pairs.clone().into_iter().collect();
+        let mut to_remove: Vec<_> = common_ops.clone().into_iter().collect();
         to_remove.retain_mut(|(_, v)| {
             let keep = v.len() > 1;
             v.dedup();
@@ -1324,143 +1354,197 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         let mut new_symb_usage_zone = vec![];
 
-        while let Some(((is_add, l, r), lines)) = to_remove.pop() {
-            println!("Processing pair {:?} in lines {:?}", (is_add, l, r), lines);
+        while let Some((common, lines)) = to_remove.pop() {
+            match common {
+                CommonInstruction::Add(l, r) | CommonInstruction::Mul(l, r) => {
+                    let is_add = matches!(common, CommonInstruction::Add(_, _));
 
-            if lines.iter().any(|x| affected_lines[*x]) {
-                continue;
-            }
-
-            let new_idx = self.stack.len();
-            let new_op = if is_add {
-                Instr::Add(new_idx, vec![l, r])
-            } else {
-                Instr::Mul(new_idx, vec![l, r])
-            };
-
-            self.stack.push(T::default());
-            self.instructions.push(new_op);
-
-            let mut usage_zone = line_usage_zone[lines[0]];
-            for &line in &lines {
-                affected_lines[line] = true;
-
-                let lu = line_usage_zone[line];
-                for pow in 1..32 {
-                    if lu % 3usize.pow(pow) != usage_zone % 3usize.pow(pow) {
-                        usage_zone = usage_zone % 3usize.pow(pow - 1);
-                        break;
-                    }
-                }
-
-                let is_add = matches!(self.instructions[line], Instr::Add(_, _));
-
-                if let Instr::Add(_, a) | Instr::Mul(_, a) = &mut self.instructions[line] {
-                    for (li, l) in a.iter().enumerate() {
-                        for r in &a[li + 1..] {
-                            let pp = pairs.entry((is_add, *l, *r)).or_default();
-                            pp.retain(|x| *x != line);
-                        }
+                    if lines.iter().any(|x| affected_lines[*x]) {
+                        continue;
                     }
 
-                    if l == r {
-                        let count = a.iter().filter(|x| **x == l).count();
-                        let pairs = count / 2;
-                        if pairs > 0 {
-                            a.retain(|x| *x != l);
-
-                            if count % 2 == 1 {
-                                a.push(l);
-                            }
-
-                            a.extend(std::iter::repeat_n(new_idx, pairs));
-                            a.sort();
-                        }
+                    let new_idx = self.stack.len();
+                    let new_op = if is_add {
+                        Instr::Add(new_idx, vec![l, r])
                     } else {
-                        let mut idx1_count = 0;
-                        let mut idx2_count = 0;
-                        for v in &*a {
-                            if *v == l {
-                                idx1_count += 1;
-                            }
-                            if *v == r {
-                                idx2_count += 1;
+                        Instr::Mul(new_idx, vec![l, r])
+                    };
+
+                    self.stack.push(T::default());
+                    self.instructions.push(new_op);
+
+                    let mut usage_zone = line_usage_zone[lines[0]];
+                    for &line in &lines {
+                        affected_lines[line] = true;
+
+                        let lu = line_usage_zone[line];
+                        for pow in 1..32 {
+                            if lu % 3usize.pow(pow) != usage_zone % 3usize.pow(pow) {
+                                usage_zone = usage_zone % 3usize.pow(pow - 1);
+                                break;
                             }
                         }
 
-                        let pair_count = idx1_count.min(idx2_count);
+                        let is_add = matches!(self.instructions[line], Instr::Add(_, _));
 
-                        if pair_count > 0 {
-                            a.retain(|x| *x != l && *x != r);
-
-                            // add back removed indices in cases such as idx1*idx2*idx2
-                            if idx1_count > pair_count {
-                                a.extend(std::iter::repeat_n(l, idx1_count - pair_count));
+                        if let Instr::Add(_, a) | Instr::Mul(_, a) = &mut self.instructions[line] {
+                            for (li, l) in a.iter().enumerate() {
+                                for r in &a[li + 1..] {
+                                    let pp = common_ops
+                                        .entry(if is_add {
+                                            CommonInstruction::Add(*l, *r)
+                                        } else {
+                                            CommonInstruction::Mul(*l, *r)
+                                        })
+                                        .or_default();
+                                    pp.retain(|x| *x != line);
+                                }
                             }
-                            if idx2_count > pair_count {
-                                a.extend(std::iter::repeat_n(r, idx2_count - pair_count));
+
+                            if l == r {
+                                let count = a.iter().filter(|x| **x == l).count();
+                                let pairs = count / 2;
+                                if pairs > 0 {
+                                    a.retain(|x| *x != l);
+
+                                    if count % 2 == 1 {
+                                        a.push(l);
+                                    }
+
+                                    a.extend(std::iter::repeat_n(new_idx, pairs));
+                                    a.sort();
+                                }
+                            } else {
+                                let mut idx1_count = 0;
+                                let mut idx2_count = 0;
+                                for v in &*a {
+                                    if *v == l {
+                                        idx1_count += 1;
+                                    }
+                                    if *v == r {
+                                        idx2_count += 1;
+                                    }
+                                }
+
+                                let pair_count = idx1_count.min(idx2_count);
+
+                                if pair_count > 0 {
+                                    a.retain(|x| *x != l && *x != r);
+
+                                    // add back removed indices in cases such as idx1*idx2*idx2
+                                    if idx1_count > pair_count {
+                                        a.extend(std::iter::repeat_n(l, idx1_count - pair_count));
+                                    }
+                                    if idx2_count > pair_count {
+                                        a.extend(std::iter::repeat_n(r, idx2_count - pair_count));
+                                    }
+
+                                    a.extend(std::iter::repeat_n(new_idx, pair_count));
+                                    a.sort();
+                                }
                             }
 
-                            a.extend(std::iter::repeat_n(new_idx, pair_count));
-                            a.sort();
+                            // update the pairs for this line
+                            for (li, l) in a.iter().enumerate() {
+                                for r in &a[li + 1..] {
+                                    common_ops
+                                        .entry(if is_add {
+                                            CommonInstruction::Add(*l, *r)
+                                        } else {
+                                            CommonInstruction::Mul(*l, *r)
+                                        })
+                                        .or_default()
+                                        .push(line);
+                                }
+                            }
                         }
                     }
 
-                    // update the pairs for this line
-                    for (li, l) in a.iter().enumerate() {
-                        for r in &a[li + 1..] {
-                            pairs.entry((is_add, *l, *r)).or_default().push(line);
+                    new_symb_usage_zone.push((lines[0], usage_zone));
+                }
+                CommonInstruction::BuiltinFun(_, _) | CommonInstruction::ExternalFun(_, _) => {
+                    if lines.iter().any(|x| affected_lines[*x]) {
+                        continue;
+                    }
+
+                    let new_idx = self.stack.len();
+                    let new_op = match common {
+                        CommonInstruction::BuiltinFun(s, a) => {
+                            Instr::BuiltinFun(new_idx, BuiltinSymbol(s), a)
+                        }
+                        CommonInstruction::ExternalFun(s, a) => Instr::ExternalFun(new_idx, s, a),
+                        _ => unreachable!(),
+                    };
+
+                    self.stack.push(T::default());
+                    self.instructions.push(new_op);
+
+                    let mut usage_zone = line_usage_zone[lines[0]];
+                    for &line in &lines {
+                        affected_lines[line] = true;
+
+                        let lu = line_usage_zone[line];
+                        for pow in 1..32 {
+                            if lu % 3usize.pow(pow) != usage_zone % 3usize.pow(pow) {
+                                usage_zone = usage_zone % 3usize.pow(pow - 1);
+                                break;
+                            }
+                        }
+
+                        if let Instr::BuiltinFun(r, _, _) = &self.instructions[line] {
+                            self.instructions[line] = Instr::Add(*r, vec![new_idx]);
+                        } else {
+                            panic!("Expected BuiltinFun instruction");
                         }
                     }
+
+                    new_symb_usage_zone.push((lines[0], usage_zone));
                 }
             }
-
-            new_symb_usage_zone.push((lines[0], usage_zone));
         }
 
         println!("LINE ZONE {:?}", line_usage_zone);
         println!("SYMB ZONE {:?}", new_symb_usage_zone);
 
-        // move the new instructions to the earliest point where all the dependencies are available
-        // this means that similar instructions computed between if and else branches are moved to
-        // the common point before the if
-        // TODO: moving all the way up is suboptimal for caching? move to earliest common point instead?
-        // going up to latest common point is also better to not compute things too early that are not needed
-        // for example, a repeated computation that occurs only in one branch should not be moved before the if
-        let mut first_use = vec![];
+        // detect the earliest point and latest point for an instruction placement
+        // earliest point: after last dependency
+        // latest point: before first usage in the correct usage zone
+        let mut placement_bounds = vec![];
         for (i, (first_usage, zone)) in self.instructions.drain(old_len..).zip(new_symb_usage_zone)
         {
-            if let Instr::Add(_, a) | Instr::Mul(_, a) = &i {
-                let mut last_dep = a[0];
-                for v in a {
-                    last_dep = last_dep.max(*v);
-                }
+            let deps = match &i {
+                Instr::BuiltinFun(_, _, a) => std::slice::from_ref(a),
+                Instr::Add(_, a) | Instr::Mul(_, a) | Instr::ExternalFun(_, _, a) => a.as_slice(),
+                _ => unreachable!(),
+            };
 
-                let ins = if last_dep < self.reserved_indices {
-                    0
-                } else {
-                    last_dep + 1 - self.reserved_indices
-                };
-
-                // find last usage option: right before the first occurrence
-                // and in the correct usage block
-                let mut last_use = first_usage;
-                for j in ins..first_usage + 1 {
-                    if line_usage_zone[j] != zone {
-                        last_use = j;
-                        break;
-                    }
-                }
-
-                first_use.push((ins, last_use, i));
-            } else {
-                unreachable!()
+            let mut last_dep = deps[0];
+            for v in deps {
+                last_dep = last_dep.max(*v);
             }
+
+            let ins = if last_dep < self.reserved_indices {
+                0
+            } else {
+                last_dep + 1 - self.reserved_indices
+            };
+
+            // find last usage option: right before the first occurrence
+            // and in the correct usage block
+            let mut last_use = first_usage;
+            for j in ins..first_usage + 1 {
+                if line_usage_zone[j] != zone {
+                    last_use = j;
+                    break;
+                }
+            }
+
+            placement_bounds.push((ins, last_use, i));
         }
 
-        first_use.sort_by_key(|x| x.1);
+        placement_bounds.sort_by_key(|x| x.1);
 
-        println!("FIRST USE {:?}", first_use);
+        println!("FIRST USE {:?}", placement_bounds);
 
         let mut new_instr = vec![];
         let mut i = 0;
@@ -1482,22 +1566,32 @@ impl<T: Default> ExpressionEvaluator<T> {
         while i < self.instructions.len() {
             let new_pos = new_instr.len() + self.reserved_indices;
 
-            if j < first_use.len() && i == first_use[j].1 {
-                let (o, a) = match &first_use[j].2 {
-                    Instr::Add(o, a) => (*o, a),
-                    Instr::Mul(o, a) => (*o, a),
+            if j < placement_bounds.len() && i == placement_bounds[j].1 {
+                let (o, a) = match &placement_bounds[j].2 {
+                    Instr::Add(o, a) => (*o, a.as_slice()),
+                    Instr::Mul(o, a) => (*o, a.as_slice()),
+                    Instr::BuiltinFun(o, _, a) => (*o, std::slice::from_ref(a)),
+                    Instr::ExternalFun(o, _, a) => (*o, a.as_slice()),
                     _ => unreachable!(),
                 };
-
-                let is_add = matches!(&first_use[j].2, Instr::Add(_, _));
 
                 let mut new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
                 new_a.sort();
 
-                if is_add {
-                    new_instr.push(Instr::Add(new_pos, new_a));
-                } else {
-                    new_instr.push(Instr::Mul(new_pos, new_a));
+                match placement_bounds[j].2 {
+                    Instr::Add(_, _) => {
+                        new_instr.push(Instr::Add(new_pos, new_a));
+                    }
+                    Instr::Mul(_, _) => {
+                        new_instr.push(Instr::Mul(new_pos, new_a));
+                    }
+                    Instr::BuiltinFun(_, b, _) => {
+                        new_instr.push(Instr::BuiltinFun(new_pos, b, new_a[0]));
+                    }
+                    Instr::ExternalFun(_, fi, _) => {
+                        new_instr.push(Instr::ExternalFun(new_pos, fi, new_a));
+                    }
+                    _ => unreachable!(),
                 }
 
                 sub_rename.insert(o, new_pos);
@@ -1574,145 +1668,9 @@ impl<T: Default> ExpressionEvaluator<T> {
             *x = rename!(*x);
         }
 
-        assert!(j == first_use.len());
+        assert!(j == placement_bounds.len());
 
         self.instructions = new_instr;
-
-        // TODO: adapt above logic to remove common function calls
-        // this means the placement will be correct
-        total_remove //+ self.remove_common_function_calls()
-    }
-
-    fn remove_common_function_calls(&mut self) -> usize {
-        let mut calls: HashMap<_, Vec<_>> = HashMap::default();
-
-        for (p, i) in self.instructions.iter().enumerate() {
-            if let Instr::BuiltinFun(r, f, a) = i {
-                calls
-                    .entry((Some(*f), None, vec![*a]))
-                    .or_default()
-                    .push((p, *r));
-            } else if let Instr::ExternalFun(r, f, a) = i {
-                calls
-                    .entry((None, Some(*f), a.clone()))
-                    .or_default()
-                    .push((p, *r));
-            }
-        }
-
-        // rewrite every occurrence to the first
-        let mut removed_lines = vec![];
-        let mut total_remove = 0;
-        for x in calls.values() {
-            for (p, l) in &x[1..] {
-                for i in self.instructions.iter_mut() {
-                    match i {
-                        Instr::Add(_, a) | Instr::Mul(_, a) => {
-                            for v in a {
-                                if *v == *l {
-                                    *v = x[0].1;
-                                }
-                            }
-                        }
-                        Instr::Pow(_, b, _) => {
-                            if *b == *l {
-                                *b = x[0].1;
-                            }
-                        }
-
-                        Instr::Powf(_, b, e) => {
-                            if *b == *l {
-                                *b = x[0].1;
-                            }
-                            if *e == *l {
-                                *e = x[0].1;
-                            }
-                        }
-                        Instr::BuiltinFun(_, _, arg) => {
-                            if *arg == *l {
-                                *arg = x[0].1;
-                            }
-                        }
-                        Instr::ExternalFun(_, _, args) => {
-                            for v in args {
-                                if *v == *l {
-                                    *v = x[0].1;
-                                }
-                            }
-                        }
-                        Instr::IfElse(v, _) => {
-                            if *v == *l {
-                                *v = x[0].1;
-                            }
-                        }
-                        Instr::Join(_, c, t, f) => {
-                            if *c == *l {
-                                *c = x[0].1;
-                            }
-                            if *t == *l {
-                                *t = x[0].1;
-                            }
-                            if *f == *l {
-                                *f = x[0].1;
-                            }
-                        }
-                        Instr::Goto(..) | Instr::Label(..) => {}
-                    }
-                }
-
-                for r in &mut self.result_indices {
-                    if *r == *l {
-                        *r = x[0].1;
-                    }
-                }
-
-                removed_lines.push((*p, *l));
-                total_remove += 1;
-            }
-        }
-
-        removed_lines.sort_unstable();
-
-        while let Some(l) = removed_lines.pop() {
-            self.instructions.remove(l.0);
-
-            for x in &mut self.instructions[l.0..] {
-                match x {
-                    Instr::Add(r, a) | Instr::Mul(r, a) | Instr::ExternalFun(r, _, a) => {
-                        *r -= 1;
-                        for aa in a {
-                            if *aa >= l.1 {
-                                *aa -= 1;
-                            }
-                        }
-                    }
-                    Instr::Pow(r, b, _) | Instr::BuiltinFun(r, _, b) => {
-                        *r -= 1;
-                        if *b >= l.1 {
-                            *b -= 1;
-                        }
-                    }
-                    Instr::Powf(r, b, e) => {
-                        *r -= 1;
-                        if *b >= l.1 {
-                            *b -= 1;
-                        }
-                        if *e >= l.1 {
-                            *e -= 1;
-                        }
-                    }
-                    Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {}
-                }
-            }
-
-            for x in &mut self.result_indices {
-                if *x >= l.1 {
-                    *x -= 1;
-                }
-            }
-        }
-
-        self.stack.truncate(self.stack.len() - total_remove);
 
         total_remove
     }

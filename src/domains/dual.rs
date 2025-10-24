@@ -668,6 +668,11 @@ macro_rules! create_hyperdual_from_components {
                 res.values[0] = self.values[0].sample_unit(rng);
                 res
             }
+
+            #[inline(always)]
+            fn is_fully_zero(&self) -> bool {
+                self.values.iter().all(|v| v.is_fully_zero())
+            }
         }
 
         impl<T: $crate::domains::float::SingleFloat> $crate::domains::float::SingleFloat for $t<T> {

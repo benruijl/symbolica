@@ -2009,6 +2009,7 @@ class Expression:
         verbose: bool = False,
         external_functions: Optional[dict[Tuple[Expression, str], Callable[[
             Sequence[float | complex]], float | complex]]] = None,
+        conditionals: Optional[Sequence[Expression]] = None,
     ) -> Evaluator:
         """Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
         All constants and functions should be provided as dictionaries, where the function
@@ -2042,6 +2043,10 @@ class Expression:
         >>> E("f(x)").evaluator({}, {}, [S("x")], 
                     external_functions={(S("f"), "F"): lambda args: args[0]**2 + 1})
 
+        Define an conditional function which yields `x+1` when `y != 0` and `x+2` when `y == 0`:
+
+        >>> E("if(y, x + 1, x + 2)").evaluator({}, {}, [S("x"), S("y")], conditional=[S("if")])
+
         Parameters
         ----------
         constants: dict[Expression, Expression]
@@ -2061,6 +2066,9 @@ class Expression:
             A dictionary of external functions that can be called during evaluation.
             The key is the function name and the value is a callable that takes a list of arguments and returns a float.
             This is useful for functions that are not defined in Symbolica but are available in Python.
+        conditionals: Optional[Sequence[Expression]], optional
+            A list of conditional functions. These functions should take three argument: a condition that is tested for
+            inequality with 0, the true branch and the false branch.
         """
 
     @classmethod
@@ -4658,6 +4666,11 @@ class Evaluator:
         - `('pow', ('out', 0), ('param', 0), -1)` which means `out[0] = param[0]^-1`.
         - `('powf', ('out', 0), ('param', 0), ('param', 1))` which means `out[0] = param[0]^param[1]`.
         - `('fun', ('temp', 1), cos, ('param', 0))` which means `temp[1] = cos(param[0])`.
+        - `('external_fun', ('temp', 1), f, [('param', 0)])` which means `temp[1] = f(param[0])`.
+        - `('if_else', ('temp', 0), 5)` which means `if temp[0] != 0 goto label 5`.
+        - `('goto', 10)` which means `goto label 10`.
+        - `('label', 3)` which means `label 3`.
+        - `('join', ('out', 0), ('temp', 0), 3, 7)` which means `out[0] = (temp[0] != 0) ? label 3 : label 7`.
 
         Examples
         --------

@@ -413,6 +413,9 @@ pub trait NumericalFloatLike:
 
     /// Sample a point on the interval [0, 1].
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self;
+
+    /// Return true if the number is exactly equal to zero (in all components).
+    fn is_fully_zero(&self) -> bool;
 }
 
 /// A number that behaves like a single number.
@@ -539,6 +542,11 @@ impl NumericalFloatLike for f64 {
 
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         rng.random()
+    }
+
+    #[inline(always)]
+    fn is_fully_zero(&self) -> bool {
+        *self == 0.
     }
 }
 
@@ -812,6 +820,11 @@ impl NumericalFloatLike for F64 {
     #[inline(always)]
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         self.0.sample_unit(rng).into()
+    }
+
+    #[inline(always)]
+    fn is_fully_zero(&self) -> bool {
+        self.0 == 0.
     }
 }
 
@@ -1899,6 +1912,10 @@ impl NumericalFloatLike for Float {
         let f: f64 = rng.random();
         Float::with_val(self.prec(), f)
     }
+
+    fn is_fully_zero(&self) -> bool {
+        self.0.is_zero()
+    }
 }
 
 impl SingleFloat for Float {
@@ -2585,6 +2602,10 @@ impl<T: RealNumberLike> NumericalFloatLike for ErrorPropagatingFloat<T> {
             value: v,
         }
     }
+
+    fn is_fully_zero(&self) -> bool {
+        self.value.is_fully_zero()
+    }
 }
 
 impl<T: RealNumberLike> SingleFloat for ErrorPropagatingFloat<T> {
@@ -2924,6 +2945,10 @@ macro_rules! simd_impl {
             fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
                 Self::from(rng.random::<f64>())
             }
+
+            fn is_fully_zero(&self) -> bool {
+                (*self).eq(&Self::ZERO)
+            }
         }
 
         impl Real for $t {
@@ -3128,6 +3153,10 @@ impl NumericalFloatLike for Rational {
         } else {
             (rng1, rng2).into()
         }
+    }
+
+    fn is_fully_zero(&self) -> bool {
+        self.is_zero()
     }
 }
 
@@ -3906,6 +3935,11 @@ impl<T: NumericalFloatLike> NumericalFloatLike for Complex<T> {
             re: self.re.sample_unit(rng),
             im: self.im.zero(),
         }
+    }
+
+    #[inline(always)]
+    fn is_fully_zero(&self) -> bool {
+        self.re.is_fully_zero() && self.im.is_fully_zero()
     }
 }
 

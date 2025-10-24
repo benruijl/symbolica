@@ -196,6 +196,29 @@ impl<T> FunctionMap<T> {
         Ok(())
     }
 
+    pub fn add_condition(&mut self, name: Symbol) -> Result<(), String> {
+        if self.external_fn.contains_key(&name) {
+            return Err(format!(
+                "Cannot add function {}, as it is also an external function",
+                name.get_name()
+            ));
+        }
+
+        if let Some(t) = self.tag.insert(name, 0) {
+            if t != 0 {
+                return Err(format!(
+                    "Cannot add the same function {} with a different number of parameters",
+                    name.get_name()
+                ));
+            }
+        }
+
+        self.tagged_fn_map
+            .insert((name, vec![]), ConstOrExpr::Condition);
+
+        Ok(())
+    }
+
     fn get_tag_len(&self, symbol: &Symbol) -> usize {
         self.tag.get(symbol).cloned().unwrap_or(0)
     }
@@ -242,6 +265,7 @@ enum ConstOrExpr<T> {
     Const(T),
     Expr(Expr),
     External(usize, String),
+    Condition,
 }
 
 #[cfg_attr(
@@ -370,6 +394,7 @@ pub enum Expression<T> {
     ReadArg(usize), // read nth function argument
     BuiltinFun(BuiltinSymbol, Box<Expression<T>>),
     ExternalFun(usize, Vec<Expression<T>>),
+    IfElse(Box<(Expression<T>, Expression<T>, Expression<T>)>),
     SubExpression(usize),
 }
 
@@ -398,6 +423,7 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
             (Expression::ExternalFun(a, arg1), Expression::ExternalFun(b, arg2)) => {
                 a.cmp(b).then_with(|| arg1.cmp(arg2))
             }
+            (Expression::IfElse(a), Expression::IfElse(b)) => a.cmp(b),
             (Expression::SubExpression(a), Expression::SubExpression(b)) => a.cmp(b),
             (Expression::Const(_), _) => std::cmp::Ordering::Less,
             (_, Expression::Const(_)) => std::cmp::Ordering::Greater,
@@ -419,6 +445,8 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
             (_, Expression::BuiltinFun(_, _)) => std::cmp::Ordering::Greater,
             (Expression::ExternalFun(_, _), _) => std::cmp::Ordering::Less,
             (_, Expression::ExternalFun(_, _)) => std::cmp::Ordering::Greater,
+            (Expression::IfElse(_), _) => std::cmp::Ordering::Less,
+            (_, Expression::IfElse(_)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -440,6 +468,14 @@ pub enum HashedExpression<T> {
     ReadArg(ExpressionHash, usize), // read nth function argument
     BuiltinFun(ExpressionHash, BuiltinSymbol, Box<HashedExpression<T>>),
     ExternalFun(ExpressionHash, usize, Vec<HashedExpression<T>>),
+    IfElse(
+        ExpressionHash,
+        Box<(
+            HashedExpression<T>,
+            HashedExpression<T>,
+            HashedExpression<T>,
+        )>,
+    ),
     SubExpression(ExpressionHash, usize),
 }
 
@@ -457,6 +493,7 @@ impl<T> HashedExpression<T> {
             HashedExpression::BuiltinFun(h, _, _) => *h,
             HashedExpression::SubExpression(h, _) => *h,
             HashedExpression::ExternalFun(h, _, _) => *h,
+            HashedExpression::IfElse(h, _) => *h,
         }
     }
 }
@@ -487,6 +524,11 @@ impl<T: Clone> HashedExpression<T> {
             HashedExpression::ExternalFun(_, s, a) => {
                 Expression::ExternalFun(*s, a.iter().map(|x| x.to_expression()).collect())
             }
+            HashedExpression::IfElse(_, b) => Expression::IfElse(Box::new((
+                b.0.to_expression(),
+                b.1.to_expression(),
+                b.2.to_expression(),
+            ))),
         }
     }
 }
@@ -519,6 +561,7 @@ impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
             (HashedExpression::ExternalFun(_, a, b), HashedExpression::ExternalFun(_, c, d)) => {
                 a.cmp(c).then_with(|| b.cmp(d))
             }
+            (HashedExpression::IfElse(_, a), HashedExpression::IfElse(_, b)) => a.cmp(b),
             (HashedExpression::Const(_, _), _) => std::cmp::Ordering::Less,
             (_, HashedExpression::Const(_, _)) => std::cmp::Ordering::Greater,
             (HashedExpression::Parameter(_, _), _) => std::cmp::Ordering::Less,
@@ -539,6 +582,8 @@ impl<T: Eq + InternalOrdering> Ord for HashedExpression<T> {
             (_, HashedExpression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
             (HashedExpression::ExternalFun(_, _, _), _) => std::cmp::Ordering::Less,
             (_, HashedExpression::ExternalFun(_, _, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::IfElse(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::IfElse(_, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -594,6 +639,12 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
             HashedExpression::BuiltinFun(_, _, _) => {}
             HashedExpression::SubExpression(_, _) => {}
             HashedExpression::ExternalFun(_, _, _) => {}
+            HashedExpression::IfElse(_, b) => {
+                // TODO: support subexpression extraction and correct replacement
+                // of common subexpressions between if-else branches before the if
+                // for now, we let the common pair elimination take place to remove these
+                // common subexpressions
+            }
         }
 
         false
@@ -635,6 +686,9 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
             HashedExpression::BuiltinFun(_, _, _) => {}
             HashedExpression::SubExpression(_, _) => {}
             HashedExpression::ExternalFun(_, _, _) => {}
+            HashedExpression::IfElse(_, _) => {
+                // TODO: replace
+            }
         }
     }
 
@@ -715,6 +769,12 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                     mul += m;
                 }
                 (add + a.len() - 1, mul)
+            }
+            HashedExpression::IfElse(_, b) => {
+                let (a1, m1) = b.0.count_operations_with_subexpression(sub_expr);
+                let (a2, m2) = b.1.count_operations_with_subexpression(sub_expr);
+                let (a3, m3) = b.2.count_operations_with_subexpression(sub_expr);
+                (a1 + a2 + a3, m1 + m2 + m3)
             }
         }
     }
@@ -837,6 +897,18 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
                 let h = hasher.finish();
                 (h, HashedExpression::ExternalFun(h, *s, args))
             }
+            Expression::IfElse(b) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(11);
+                let (h1, v1) = b.0.to_hashed_expression();
+                let (h2, v2) = b.1.to_hashed_expression();
+                let (h3, v3) = b.2.to_hashed_expression();
+                hasher.write_u64(h1);
+                hasher.write_u64(h2);
+                hasher.write_u64(h3);
+                let h = hasher.finish();
+                (h, HashedExpression::IfElse(h, Box::new((v1, v2, v3))))
+            }
         }
     }
 }
@@ -944,8 +1016,10 @@ impl<T: Real> ExpressionEvaluator<T> {
         }
 
         let mut tmp;
-        for i in &self.instructions {
-            match i {
+        let mut i = 0;
+        while i < self.instructions.len() {
+            let instr = unsafe { &self.instructions.get_unchecked(i) };
+            match instr {
                 Instr::Add(r, v) => {
                     tmp = self.stack[v[0]].clone();
                     for x in &v[1..] {
@@ -987,13 +1061,179 @@ impl<T: Real> ExpressionEvaluator<T> {
                         self.external_fns[*s]
                     );
                 }
+                Instr::IfElse(n, label) => {
+                    // jump to else block
+                    if self.stack[*n].is_fully_zero() {
+                        i = label.0;
+                        continue;
+                    }
+                }
+                Instr::Goto(label) => {
+                    i = label.0;
+                    continue;
+                }
+                Instr::Label(_) => {}
+                Instr::Join(r, c, a, b) => {
+                    if !self.stack[*c].is_fully_zero() {
+                        self.stack[*r] = self.stack[*a].clone();
+                    } else {
+                        self.stack[*r] = self.stack[*b].clone();
+                    }
+                }
             }
+
+            i += 1;
         }
 
         for (o, i) in out.iter_mut().zip(&self.result_indices) {
             *o = self.stack[*i].clone();
         }
     }
+}
+
+#[cfg(test)]
+mod test2 {
+    use crate::{
+        atom::AtomCore,
+        evaluate::{CompileOptions, ExportSettings, FunctionMap, InlineASM},
+        parse, symbol,
+    };
+
+    #[test]
+    fn branching2() {
+        let mut f = FunctionMap::new();
+        f.add_condition(symbol!("if")).unwrap();
+        let mut eval = parse!("if(y, x*x + z*z + x*z*z, x * x + 3)")
+            .evaluator(
+                &f,
+                &vec![crate::parse!("x"), crate::parse!("y"), crate::parse!("z")],
+                Default::default(),
+            )
+            .unwrap()
+            .map_coeff(&|x| x.re.to_f64());
+
+        for i in &eval.instructions {
+            println!("I {:?}", i);
+        }
+
+        let r = eval.evaluate_single(&[3., 1., 2.]);
+        println!("{}", r);
+
+        let mut r = eval
+            .export_cpp::<f64>(
+                "test_branch.cpp",
+                "test",
+                ExportSettings {
+                    inline_asm: InlineASM::None,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .compile("branch.so", CompileOptions::default())
+            .unwrap()
+            .load()
+            .unwrap();
+        let mut res = vec![0.];
+        r.evaluate(&[3., 1., 2.], &mut res);
+        println!("{}", res[0]);
+    }
+}
+
+#[test]
+fn branching() {
+    // remove common pair that is introduced before the if
+    let mut e = ExpressionEvaluator {
+        stack: vec![0.; 12], // must be reserved + instructions.len
+        param_count: 2,
+        reserved_indices: 2,
+        instructions: vec![
+            Instr::Add(2, vec![0, 0]),  // x + x
+            Instr::IfElse(1, Label(6)), // if y == 0 goto label 6
+            Instr::Mul(4, vec![0, 0]),
+            Instr::Add(5, vec![0, 0]),
+            Instr::Add(6, vec![4, 5]), // is renamed, because of branching, the lower add 5 feels like an overwrite!
+            Instr::Goto(Label(8)),
+            Instr::Label(Label(6)),
+            Instr::Add(9, vec![0, 0]),
+            Instr::Label(Label(8)), // remove: always jump to join?
+            Instr::Join(11, 1, 6, 9),
+        ],
+        result_indices: vec![11],
+        external_fns: vec![],
+    };
+
+    // remove common pair that is only between the branches
+    let mut e = ExpressionEvaluator {
+        stack: vec![0.; 11], // must be reserved + instructions.len
+        param_count: 2,
+        reserved_indices: 2,
+        instructions: vec![
+            Instr::IfElse(1, Label(5)), // if y == 0 goto label 6
+            Instr::Mul(3, vec![0, 0]),
+            Instr::Add(4, vec![0, 0]),
+            Instr::Add(5, vec![3, 4]), // is renamed, because of branching, the lower add 5 feels like an overwrite!
+            Instr::Goto(Label(7)),
+            Instr::Label(Label(5)),
+            Instr::Add(8, vec![0, 0]),
+            Instr::Label(Label(7)), // remove: always jump to join?
+            Instr::Join(10, 1, 5, 8),
+        ],
+        result_indices: vec![10],
+        external_fns: vec![],
+    };
+
+    // remove common pair inside one branch
+    let mut e = ExpressionEvaluator {
+        stack: vec![0.; 11], // must be reserved + instructions.len
+        param_count: 2,
+        reserved_indices: 2,
+        instructions: vec![
+            Instr::IfElse(1, Label(5)), // if y == 0 goto label 6
+            Instr::Add(3, vec![0, 0]),
+            Instr::Add(4, vec![0, 0]),
+            Instr::Add(5, vec![3, 4]), // is renamed, because of branching, the lower add 5 feels like an overwrite!
+            Instr::Goto(Label(7)),
+            Instr::Label(Label(5)),
+            Instr::Mul(8, vec![0, 0]),
+            Instr::Label(Label(7)), // remove: always jump to join?
+            Instr::Join(10, 1, 5, 8),
+        ],
+        result_indices: vec![10],
+        external_fns: vec![],
+    };
+
+    e.remove_common_pairs();
+
+    e.optimize_stack();
+
+    for i in &e.instructions {
+        println!("I {:?}", i);
+    }
+    println!("{:?}", e.result_indices);
+
+    //println!("stack {:?}", e.stack);
+
+    println!("{}", e.evaluate_single(&[3., 1.]));
+
+    println!("stack {:?}", e.stack);
+
+    let mut r = e
+        .export_cpp::<f64>(
+            "test_branch.cpp",
+            "test",
+            ExportSettings {
+                inline_asm: InlineASM::None,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .compile("branch.so", CompileOptions::default())
+        .unwrap()
+        .load()
+        .unwrap();
+    let mut res = vec![0.];
+    r.evaluate(&[3., 1.], &mut res);
+    println!("{}", res[0]);
 }
 
 impl<T: Default> ExpressionEvaluator<T> {
@@ -1038,6 +1278,10 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         let mut affected_lines = vec![false; self.instructions.len()];
 
+        let mut line_usage_zone = vec![0; self.instructions.len()];
+
+        let mut current_zone = 0;
+        let mut current_zone_depth = 0;
         for (p, i) in self.instructions.iter().enumerate() {
             match i {
                 Instr::Add(_, a) | Instr::Mul(_, a) => {
@@ -1048,8 +1292,20 @@ impl<T: Default> ExpressionEvaluator<T> {
                         }
                     }
                 }
+                Instr::IfElse(_, _) => {
+                    current_zone_depth += 1;
+                    current_zone += 1 * 3_usize.pow(current_zone_depth);
+                }
+                Instr::Goto(_) => {
+                    current_zone += 1 * 3_usize.pow(current_zone_depth);
+                }
+                Instr::Join(..) => {
+                    current_zone_depth -= 1;
+                    current_zone %= 3_usize.pow(current_zone_depth);
+                }
                 _ => {}
             }
+            line_usage_zone[p] = current_zone;
         }
 
         let mut to_remove: Vec<_> = pairs.clone().into_iter().collect();
@@ -1066,7 +1322,11 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         let old_len = self.instructions.len();
 
+        let mut new_symb_usage_zone = vec![];
+
         while let Some(((is_add, l, r), lines)) = to_remove.pop() {
+            println!("Processing pair {:?} in lines {:?}", (is_add, l, r), lines);
+
             if lines.iter().any(|x| affected_lines[*x]) {
                 continue;
             }
@@ -1081,8 +1341,18 @@ impl<T: Default> ExpressionEvaluator<T> {
             self.stack.push(T::default());
             self.instructions.push(new_op);
 
-            for line in lines {
+            let mut usage_zone = line_usage_zone[lines[0]];
+            for &line in &lines {
                 affected_lines[line] = true;
+
+                let lu = line_usage_zone[line];
+                for pow in 1..32 {
+                    if lu % 3usize.pow(pow) != usage_zone % 3usize.pow(pow) {
+                        usage_zone = usage_zone % 3usize.pow(pow - 1);
+                        break;
+                    }
+                }
+
                 let is_add = matches!(self.instructions[line], Instr::Add(_, _));
 
                 if let Instr::Add(_, a) | Instr::Mul(_, a) = &mut self.instructions[line] {
@@ -1144,10 +1414,22 @@ impl<T: Default> ExpressionEvaluator<T> {
                     }
                 }
             }
+
+            new_symb_usage_zone.push((lines[0], usage_zone));
         }
 
+        println!("LINE ZONE {:?}", line_usage_zone);
+        println!("SYMB ZONE {:?}", new_symb_usage_zone);
+
+        // move the new instructions to the earliest point where all the dependencies are available
+        // this means that similar instructions computed between if and else branches are moved to
+        // the common point before the if
+        // TODO: moving all the way up is suboptimal for caching? move to earliest common point instead?
+        // going up to latest common point is also better to not compute things too early that are not needed
+        // for example, a repeated computation that occurs only in one branch should not be moved before the if
         let mut first_use = vec![];
-        for i in self.instructions.drain(old_len..) {
+        for (i, (first_usage, zone)) in self.instructions.drain(old_len..).zip(new_symb_usage_zone)
+        {
             if let Instr::Add(_, a) | Instr::Mul(_, a) = &i {
                 let mut last_dep = a[0];
                 for v in a {
@@ -1160,13 +1442,25 @@ impl<T: Default> ExpressionEvaluator<T> {
                     last_dep + 1 - self.reserved_indices
                 };
 
-                first_use.push((ins, i));
+                // find last usage option: right before the first occurrence
+                // and in the correct usage block
+                let mut last_use = first_usage;
+                for j in ins..first_usage + 1 {
+                    if line_usage_zone[j] != zone {
+                        last_use = j;
+                        break;
+                    }
+                }
+
+                first_use.push((ins, last_use, i));
             } else {
                 unreachable!()
             }
         }
 
-        first_use.sort_by_key(|x| x.0);
+        first_use.sort_by_key(|x| x.1);
+
+        println!("FIRST USE {:?}", first_use);
 
         let mut new_instr = vec![];
         let mut i = 0;
@@ -1188,14 +1482,14 @@ impl<T: Default> ExpressionEvaluator<T> {
         while i < self.instructions.len() {
             let new_pos = new_instr.len() + self.reserved_indices;
 
-            if j < first_use.len() && i == first_use[j].0 {
-                let (o, a) = match &first_use[j].1 {
+            if j < first_use.len() && i == first_use[j].1 {
+                let (o, a) = match &first_use[j].2 {
                     Instr::Add(o, a) => (*o, a),
                     Instr::Mul(o, a) => (*o, a),
                     _ => unreachable!(),
                 };
 
-                let is_add = matches!(&first_use[j].1, Instr::Add(_, _));
+                let is_add = matches!(&first_use[j].2, Instr::Add(_, _));
 
                 let mut new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
                 new_a.sort();
@@ -1243,11 +1537,36 @@ impl<T: Default> ExpressionEvaluator<T> {
                             *x = rename!(*x);
                         }
                     }
+                    Instr::Join(p, a, b, c) => {
+                        *a = rename!(*a);
+                        *b = rename!(*b);
+                        *c = rename!(*c);
+                        *p = new_pos;
+                    }
+                    Instr::IfElse(..) | Instr::Goto(_) | Instr::Label(_) => {}
                 }
 
                 new_instr.push(s);
                 rename_map.push(new_pos);
                 i += 1;
+            }
+        }
+
+        // fix labels
+        let mut label_map: HashMap<usize, usize> = HashMap::default();
+        for (i, x) in new_instr.iter_mut().enumerate().rev() {
+            match x {
+                Instr::Label(l) => {
+                    label_map.insert(l.0, i);
+                    l.0 = i;
+                }
+                Instr::Goto(l) => {
+                    l.0 = label_map[&l.0];
+                }
+                Instr::IfElse(_, l) => {
+                    l.0 = label_map[&l.0];
+                }
+                _ => {}
             }
         }
 
@@ -1259,7 +1578,9 @@ impl<T: Default> ExpressionEvaluator<T> {
 
         self.instructions = new_instr;
 
-        total_remove + self.remove_common_function_calls()
+        // TODO: adapt above logic to remove common function calls
+        // this means the placement will be correct
+        total_remove //+ self.remove_common_function_calls()
     }
 
     fn remove_common_function_calls(&mut self) -> usize {
@@ -1319,6 +1640,23 @@ impl<T: Default> ExpressionEvaluator<T> {
                                 }
                             }
                         }
+                        Instr::IfElse(v, _) => {
+                            if *v == *l {
+                                *v = x[0].1;
+                            }
+                        }
+                        Instr::Join(_, c, t, f) => {
+                            if *c == *l {
+                                *c = x[0].1;
+                            }
+                            if *t == *l {
+                                *t = x[0].1;
+                            }
+                            if *f == *l {
+                                *f = x[0].1;
+                            }
+                        }
+                        Instr::Goto(..) | Instr::Label(..) => {}
                     }
                 }
 
@@ -1363,6 +1701,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                             *e -= 1;
                         }
                     }
+                    Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {}
                 }
             }
 
@@ -1440,6 +1779,9 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
                             *e += delta;
                         }
                     }
+                    Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                        unimplemented!()
+                    }
                 }
             }
 
@@ -1483,6 +1825,9 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
                     } else if *e >= other.param_count {
                         *e = self.param_count + constants[&other.stack[*e]];
                     }
+                }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                    unimplemented!()
                 }
             }
         }
@@ -1530,6 +1875,9 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
                     unfold.insert(*r, index + self.reserved_indices);
                     *r = index + self.reserved_indices;
                 }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                    unimplemented!()
+                }
             }
         }
 
@@ -1557,6 +1905,10 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
 
 impl<T> ExpressionEvaluator<T> {
     pub fn optimize_stack(&mut self) {
+        for i in &self.instructions {
+            println!("Before optimize: {:?}", i);
+        }
+
         let mut last_use: Vec<usize> = vec![0; self.stack.len()];
 
         for (i, x) in self.instructions.iter().enumerate() {
@@ -1573,6 +1925,11 @@ impl<T> ExpressionEvaluator<T> {
                     last_use[*a] = i;
                     last_use[*b] = i;
                 }
+                Instr::Join(_, _, a, b) => {
+                    last_use[*a] = i;
+                    last_use[*b] = i;
+                }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) => {}
             };
         }
 
@@ -1597,6 +1954,8 @@ impl<T> ExpressionEvaluator<T> {
                 | Instr::Powf(r, _, _)
                 | Instr::BuiltinFun(r, _, _) => *r,
                 Instr::ExternalFun(r, _, _) => *r,
+                Instr::Join(r, _, _, _) => *r,
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) => continue,
             };
 
             let cur_last_use = last_use[cur_reg];
@@ -1632,6 +1991,14 @@ impl<T> ExpressionEvaluator<T> {
                     *r = new_reg;
                     *a = rename_map[*a];
                     *b = rename_map[*b];
+                }
+                Instr::Join(r, _, a, b) => {
+                    *r = new_reg;
+                    *a = rename_map[*a];
+                    *b = rename_map[*b];
+                }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) => {
+                    continue;
                 }
             };
         }
@@ -2243,6 +2610,26 @@ extern "C" {{
                     *out +=
                         format!("\t{} = {}({});\n", get_output!(o), name, args.join(", ")).as_str();
                 }
+                Instr::IfElse(cond, _label) => {
+                    *out += &format!("\tif (params[{cond}] != 0.) {{\n");
+                }
+                Instr::Goto(..) => {
+                    *out += "\t} else {\n";
+                }
+                Instr::Label(..) => {}
+                Instr::Join(o, cond, a, b) => {
+                    *out += "\t}\n";
+                    let arg_a = get_input!(*a);
+                    let arg_b = get_input!(*b);
+                    *out += format!(
+                        "\t{} = (params[{}] != 0.) ? {} : {};\n",
+                        get_output!(o),
+                        cond,
+                        arg_a,
+                        arg_b
+                    )
+                    .as_str();
+                }
             }
         }
     }
@@ -2507,6 +2894,9 @@ extern "C" {{
                     }
                     stack_to_reg.insert(r, i);
                 }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                    todo!("Inline ASM generation for complex IfElse not implemented yet");
+                }
             }
         }
 
@@ -2551,6 +2941,9 @@ extern "C" {{
                 Instr::Powf(r, b, e) => RegInstr::Powf(*r, *b, *e),
                 Instr::BuiltinFun(r, s, a) => RegInstr::BuiltinFun(*r, *s, *a),
                 Instr::ExternalFun(r, s, a) => RegInstr::ExternalFun(*r, *s, a.clone()),
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                    todo!("Inline ASM generation for complex IfElse not implemented yet");
+                }
             })
             .collect();
 
@@ -3820,6 +4213,9 @@ extern "C" {{
 
                     *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
                 }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                    todo!("Inline ASM generation for complex IfElse not implemented yet");
+                }
             }
         }
 
@@ -4008,6 +4404,9 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
 
                     self.stack[*r] = (f)(&cache[..args.len()]);
                 }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
+                    unimplemented!()
+                }
             }
         }
 
@@ -4175,6 +4574,7 @@ impl<T: Clone> ExpressionEvaluator<T> {
                         a.iter().map(|x| get_slot!(*x)).collect(),
                     ));
                 }
+                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => todo!(),
             }
         }
 
@@ -4190,6 +4590,11 @@ impl<T: Clone> ExpressionEvaluator<T> {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Label(usize);
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, PartialEq)]
 enum Instr {
     Add(usize, Vec<usize>),
@@ -4198,6 +4603,10 @@ enum Instr {
     Powf(usize, usize, usize),
     BuiltinFun(usize, BuiltinSymbol, usize),
     ExternalFun(usize, usize, Vec<usize>),
+    IfElse(usize, Label),
+    Goto(Label),
+    Label(Label),
+    Join(usize, usize, usize, usize),
 }
 
 impl<T: Clone + PartialEq> SplitExpression<T> {
@@ -4240,6 +4649,14 @@ impl<T: Clone + PartialEq> Expression<T> {
                 let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
                 Expression::ExternalFun(*s, new_args)
             }
+            Expression::IfElse(b) => {
+                let (cond, then_expr, else_expr) = &**b;
+                Expression::IfElse(Box::new((
+                    cond.map_coeff(f),
+                    then_expr.map_coeff(f),
+                    else_expr.map_coeff(f),
+                )))
+            }
         }
     }
 
@@ -4280,6 +4697,11 @@ impl<T: Clone + PartialEq> Expression<T> {
                 for arg in a {
                     arg.strip_constants(stack, param_len);
                 }
+            }
+            Expression::IfElse(b) => {
+                b.0.strip_constants(stack, param_len);
+                b.1.strip_constants(stack, param_len);
+                b.2.strip_constants(stack, param_len);
             }
         }
     }
@@ -4347,6 +4769,13 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             result_indices,
             external_fns: self.external_functions.clone(),
         };
+
+        for i in &e.instructions {
+            println!("{:?}", i);
+        }
+        println!("out {:?}", e.result_indices);
+        println!("res {:?}", e.reserved_indices);
+        println!("stack size {:?}", e.stack.len());
 
         for _ in 0..cpe_rounds.unwrap_or(usize::MAX) {
             let r = e.remove_common_pairs();
@@ -4519,6 +4948,36 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
                 let f = Instr::ExternalFun(res, *s, args);
                 instr.push(f);
+
+                res
+            }
+            Expression::IfElse(b) => {
+                let cond =
+                    self.linearize_impl(&b.0, subexpressions, stack, instr, sub_expr_pos, args);
+
+                let label_else = Label(instr.len());
+                stack.push(T::default());
+                instr.push(Instr::IfElse(cond, label_else));
+
+                let then_branch =
+                    self.linearize_impl(&b.1, subexpressions, stack, instr, sub_expr_pos, args);
+
+                let label_end = Label(instr.len());
+                stack.push(T::default());
+                instr.push(Instr::Goto(label_end));
+                stack.push(T::default());
+                instr.push(Instr::Label(label_else));
+
+                let else_branch =
+                    self.linearize_impl(&b.2, subexpressions, stack, instr, sub_expr_pos, args);
+
+                stack.push(T::default());
+                instr.push(Instr::Label(label_end));
+
+                stack.push(T::default());
+                let res = stack.len() - 1;
+
+                instr.push(Instr::Join(res, cond, then_branch, else_branch));
 
                 res
             }
@@ -4899,6 +5358,11 @@ impl Expression<Complex<Rational>> {
                     arg.occurrence_order_horner_scheme();
                 }
             }
+            Expression::IfElse(b) => {
+                b.0.occurrence_order_horner_scheme();
+                b.1.occurrence_order_horner_scheme();
+                b.2.occurrence_order_horner_scheme();
+            }
         }
     }
 
@@ -5155,6 +5619,11 @@ impl Expression<Complex<Rational>> {
                     arg.find_all_variables(vars);
                 }
             }
+            Expression::IfElse(b) => {
+                b.0.find_all_variables(vars);
+                b.1.find_all_variables(vars);
+                b.2.find_all_variables(vars);
+            }
         }
     }
 }
@@ -5294,6 +5763,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                     arg.rename_subexpression(subexp);
                 }
             }
+            Expression::IfElse(_) => {
+                // TODO
+            }
         }
     }
 
@@ -5327,6 +5799,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                 for arg in a {
                     arg.get_dependent_subexpressions(dep);
                 }
+            }
+            Expression::IfElse(_) => {
+                // TODO
             }
         }
     }
@@ -5412,6 +5887,12 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                 }
                 (add, mul)
             }
+            Expression::IfElse(b) => {
+                let (a1, m1) = b.0.count_operations();
+                let (a2, m2) = b.1.count_operations();
+                let (a3, m3) = b.2.count_operations();
+                (a1 + a2 + a3, m1 + m2 + m3)
+            }
         }
     }
 
@@ -5488,6 +5969,12 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                     mul += m;
                 }
                 (add, mul)
+            }
+            Expression::IfElse(b) => {
+                let (a1, m1) = b.0.count_operations_with_subexpression(sub_expr);
+                let (a2, m2) = b.1.count_operations_with_subexpression(sub_expr);
+                let (a3, m3) = b.2.count_operations_with_subexpression(sub_expr);
+                (a1 + a2 + a3, m1 + m2 + m3)
             }
         }
     }
@@ -5572,6 +6059,14 @@ impl<T: Real> EvalTree<T> {
                     "External function calls not implemented for EvalTree: {}",
                     name
                 );
+            }
+            Expression::IfElse(b) => {
+                let cond = self.evaluate_impl(&b.0, subexpressions, params, args);
+                if !cond.is_fully_zero() {
+                    self.evaluate_impl(&b.1, subexpressions, params, args)
+                } else {
+                    self.evaluate_impl(&b.2, subexpressions, params, args)
+                }
             }
         }
     }
@@ -7688,6 +8183,16 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                 r.push(')');
                 r
             }
+            Expression::IfElse(b) => {
+                let mut r = "(".to_string();
+                r += &self.export_cpp_impl(&b.0, args);
+                r.push_str(" ? (");
+                r += &self.export_cpp_impl(&b.1, args);
+                r.push_str(") : (");
+                r += &self.export_cpp_impl(&b.2, args);
+                r.push_str("))");
+                r
+            }
         }
     }
 }
@@ -7866,6 +8371,31 @@ impl<'a> AtomView<'a> {
                             ));
                             Ok(Expression::Eval(funcs.len() - 1, eval_args))
                         }
+                    }
+                    ConstOrExpr::Condition => {
+                        if f.get_nargs() != 3 {
+                            return Err(format!(
+                                "Condition function called with wrong number of arguments: {} vs 3",
+                                f.get_nargs(),
+                            ));
+                        }
+
+                        let mut arg_iter = f.iter();
+
+                        let cond_eval = arg_iter
+                            .next()
+                            .unwrap()
+                            .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                        let t_eval = arg_iter
+                            .next()
+                            .unwrap()
+                            .to_eval_tree_impl(fn_map, params, args, funcs)?;
+                        let f_eval = arg_iter
+                            .next()
+                            .unwrap()
+                            .to_eval_tree_impl(fn_map, params, args, funcs)?;
+
+                        Ok(Expression::IfElse(Box::new((cond_eval, t_eval, f_eval))))
                     }
                 }
             }

@@ -624,7 +624,9 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                     arg.find_subexpression(subexp);
                 }
             }
-            HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
+            HashedExpression::Add(_, a)
+            | HashedExpression::Mul(_, a)
+            | HashedExpression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.find_subexpression(subexp);
                 }
@@ -636,14 +638,14 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 p.0.find_subexpression(subexp);
                 p.1.find_subexpression(subexp);
             }
-            HashedExpression::BuiltinFun(_, _, _) => {}
+            HashedExpression::BuiltinFun(_, _, a) => {
+                a.find_subexpression(subexp);
+            }
             HashedExpression::SubExpression(_, _) => {}
-            HashedExpression::ExternalFun(_, _, _) => {}
             HashedExpression::IfElse(_, b) => {
-                // TODO: support subexpression extraction and correct replacement
-                // of common subexpressions between if-else branches before the if
-                // for now, we let the common pair elimination take place to remove these
-                // common subexpressions
+                b.0.find_subexpression(subexp);
+                b.1.find_subexpression(subexp);
+                b.2.find_subexpression(subexp);
             }
         }
 
@@ -671,7 +673,9 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                     arg.replace_subexpression(subexp, false);
                 }
             }
-            HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
+            HashedExpression::Add(_, a)
+            | HashedExpression::Mul(_, a)
+            | HashedExpression::ExternalFun(_, _, a) => {
                 for arg in a {
                     arg.replace_subexpression(subexp, false);
                 }
@@ -683,11 +687,14 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
                 p.0.replace_subexpression(subexp, false);
                 p.1.replace_subexpression(subexp, false);
             }
-            HashedExpression::BuiltinFun(_, _, _) => {}
+            HashedExpression::BuiltinFun(_, _, a) => {
+                a.replace_subexpression(subexp, false);
+            }
             HashedExpression::SubExpression(_, _) => {}
-            HashedExpression::ExternalFun(_, _, _) => {}
-            HashedExpression::IfElse(_, _) => {
-                // TODO: replace
+            HashedExpression::IfElse(_, b) => {
+                b.0.replace_subexpression(subexp, false);
+                b.1.replace_subexpression(subexp, false);
+                b.2.replace_subexpression(subexp, false);
             }
         }
     }
@@ -1103,7 +1110,9 @@ mod test2 {
     fn branching2() {
         let mut f = FunctionMap::new();
         f.add_condition(symbol!("if")).unwrap();
-        let mut eval = parse!("if(y, x*x + z*z + x*z*z, x * x + 3)")
+        //let input = parse!("if(y, x*x + z*z + x*z*z, x * x + 3)");
+        let input = parse!("if(y, 1+x, (1+x) * z)");
+        let mut eval = input
             .evaluator(
                 &f,
                 &vec![crate::parse!("x"), crate::parse!("y"), crate::parse!("z")],
@@ -1737,9 +1746,24 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
                             *e += delta;
                         }
                     }
-                    Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                        unimplemented!()
+                    Instr::IfElse(c, _) => {
+                        if *c >= self.reserved_indices {
+                            *c += delta;
+                        }
                     }
+                    Instr::Join(r, c, t, f) => {
+                        *r += delta;
+                        if *c >= self.reserved_indices {
+                            *c += delta;
+                        }
+                        if *t >= self.reserved_indices {
+                            *t += delta;
+                        }
+                        if *f >= self.reserved_indices {
+                            *f += delta;
+                        }
+                    }
+                    Instr::Goto(..) | Instr::Label(..) => {}
                 }
             }
 
@@ -1784,8 +1808,35 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
                         *e = self.param_count + constants[&other.stack[*e]];
                     }
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                    unimplemented!()
+                Instr::IfElse(c, l) => {
+                    if *c >= other.reserved_indices {
+                        *c += delta;
+                    } else if *c >= other.param_count {
+                        *c = self.param_count + constants[&other.stack[*c]];
+                    }
+
+                    l.0 += self.instructions.len();
+                }
+                Instr::Join(r, c, t, f) => {
+                    *r += delta;
+                    if *c >= other.reserved_indices {
+                        *c += delta;
+                    } else if *c >= other.param_count {
+                        *c = self.param_count + constants[&other.stack[*c]];
+                    }
+                    if *t >= other.reserved_indices {
+                        *t += delta;
+                    } else if *t >= other.param_count {
+                        *t = self.param_count + constants[&other.stack[*t]];
+                    }
+                    if *f >= other.reserved_indices {
+                        *f += delta;
+                    } else if *f >= other.param_count {
+                        *f = self.param_count + constants[&other.stack[*f]];
+                    }
+                }
+                Instr::Goto(l) | Instr::Label(l) => {
+                    l.0 += self.instructions.len();
                 }
             }
         }
@@ -1833,9 +1884,25 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
                     unfold.insert(*r, index + self.reserved_indices);
                     *r = index + self.reserved_indices;
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                    unimplemented!()
+                Instr::IfElse(r, _) => {
+                    if *r >= self.reserved_indices {
+                        *r = unfold[r];
+                    }
                 }
+                Instr::Join(r, c, t, f) => {
+                    if *c >= self.reserved_indices {
+                        *c = unfold[c];
+                    }
+                    if *t >= self.reserved_indices {
+                        *t = unfold[t];
+                    }
+                    if *f >= self.reserved_indices {
+                        *f = unfold[f];
+                    }
+                    unfold.insert(*r, index + self.reserved_indices);
+                    *r = index + self.reserved_indices;
+                }
+                Instr::Goto(..) | Instr::Label(..) => {}
             }
         }
 
@@ -1883,11 +1950,15 @@ impl<T> ExpressionEvaluator<T> {
                     last_use[*a] = i;
                     last_use[*b] = i;
                 }
-                Instr::Join(_, _, a, b) => {
+                Instr::Join(_, c, a, b) => {
+                    last_use[*c] = i;
                     last_use[*a] = i;
                     last_use[*b] = i;
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) => {}
+                Instr::IfElse(c, _) => {
+                    last_use[*c] = i;
+                }
+                Instr::Goto(..) | Instr::Label(..) => {}
             };
         }
 
@@ -1950,12 +2021,16 @@ impl<T> ExpressionEvaluator<T> {
                     *a = rename_map[*a];
                     *b = rename_map[*b];
                 }
-                Instr::Join(r, _, a, b) => {
+                Instr::Join(r, c, a, b) => {
                     *r = new_reg;
+                    *c = rename_map[*c];
                     *a = rename_map[*a];
                     *b = rename_map[*b];
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) => {
+                Instr::IfElse(c, _) => {
+                    *c = rename_map[*c];
+                }
+                Instr::Goto(..) | Instr::Label(..) => {
                     continue;
                 }
             };
@@ -4312,8 +4387,10 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
         }
 
         let mut tmp;
-        for i in &self.instructions {
-            match i {
+        let mut i = 0;
+        while i < self.instructions.len() {
+            let instr = unsafe { self.instructions.get_unchecked(i) };
+            match instr {
                 Instr::Add(r, v) => {
                     tmp = self.stack[v[0]].clone();
                     for x in &v[1..] {
@@ -4362,10 +4439,28 @@ impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
 
                     self.stack[*r] = (f)(&cache[..args.len()]);
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                    unimplemented!()
+                Instr::IfElse(n, label) => {
+                    // jump to else block
+                    if self.stack[*n].is_fully_zero() {
+                        i = label.0;
+                        continue;
+                    }
+                }
+                Instr::Goto(label) => {
+                    i = label.0;
+                    continue;
+                }
+                Instr::Label(_) => {}
+                Instr::Join(r, c, a, b) => {
+                    if !self.stack[*c].is_fully_zero() {
+                        self.stack[*r] = self.stack[*a].clone();
+                    } else {
+                        self.stack[*r] = self.stack[*b].clone();
+                    }
                 }
             }
+
+            i += 1;
         }
 
         for (o, i) in out.iter_mut().zip(&self.result_indices) {
@@ -4715,6 +4810,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 &mut instructions,
                 &mut sub_expr_pos,
                 &[],
+                false,
             );
             result_indices.push(result_index);
         }
@@ -4782,6 +4878,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
         instr: &mut Vec<Instr>,
         sub_expr_pos: &mut HashMap<usize, usize>,
         args: &[usize],
+        in_branch: bool,
     ) -> usize {
         match tree {
             Expression::Const(t) => {
@@ -4794,7 +4891,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 let new_args: Vec<_> = e_args
                     .iter()
                     .map(|x| {
-                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                        self.linearize_impl(
+                            x,
+                            subexpressions,
+                            stack,
+                            instr,
+                            sub_expr_pos,
+                            args,
+                            in_branch,
+                        )
                     })
                     .collect();
 
@@ -4807,13 +4912,22 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                     instr,
                     &mut sub_expr_pos,
                     &new_args,
+                    in_branch,
                 )
             }
             Expression::Add(a) => {
                 let mut args: Vec<_> = a
                     .iter()
                     .map(|x| {
-                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                        self.linearize_impl(
+                            x,
+                            subexpressions,
+                            stack,
+                            instr,
+                            sub_expr_pos,
+                            args,
+                            in_branch,
+                        )
                     })
                     .collect();
                 args.sort();
@@ -4830,7 +4944,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 let mut args: Vec<_> = m
                     .iter()
                     .map(|x| {
-                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                        self.linearize_impl(
+                            x,
+                            subexpressions,
+                            stack,
+                            instr,
+                            sub_expr_pos,
+                            args,
+                            in_branch,
+                        )
                     })
                     .collect();
                 args.sort();
@@ -4844,7 +4966,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             Expression::Pow(p) => {
-                let b = self.linearize_impl(&p.0, subexpressions, stack, instr, sub_expr_pos, args);
+                let b = self.linearize_impl(
+                    &p.0,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    in_branch,
+                );
                 stack.push(T::default());
                 let mut res = stack.len() - 1;
 
@@ -4861,8 +4991,24 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             Expression::Powf(p) => {
-                let b = self.linearize_impl(&p.0, subexpressions, stack, instr, sub_expr_pos, args);
-                let e = self.linearize_impl(&p.1, subexpressions, stack, instr, sub_expr_pos, args);
+                let b = self.linearize_impl(
+                    &p.0,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    in_branch,
+                );
+                let e = self.linearize_impl(
+                    &p.1,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    in_branch,
+                );
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
@@ -4871,14 +5017,26 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             }
             Expression::ReadArg(a) => args[*a],
             Expression::BuiltinFun(s, v) => {
-                let arg = self.linearize_impl(v, subexpressions, stack, instr, sub_expr_pos, args);
+                let arg = self.linearize_impl(
+                    v,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    in_branch,
+                );
                 stack.push(T::default());
                 let c = Instr::BuiltinFun(stack.len() - 1, *s, arg);
                 instr.push(c);
                 stack.len() - 1
             }
             Expression::SubExpression(id) => {
-                if sub_expr_pos.contains_key(id) {
+                // do not substitute subexpressions in branches, as a subexpression
+                // shared between the if and else branch would be substituted by
+                // a computation in the if branch only and by a reference in the else
+                // branch
+                if !in_branch && sub_expr_pos.contains_key(id) {
                     *sub_expr_pos.get(id).unwrap()
                 } else {
                     let res = self.linearize_impl(
@@ -4888,6 +5046,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                         instr,
                         sub_expr_pos,
                         args,
+                        in_branch,
                     );
                     sub_expr_pos.insert(*id, res);
                     res
@@ -4897,7 +5056,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 let args: Vec<_> = v
                     .iter()
                     .map(|x| {
-                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                        self.linearize_impl(
+                            x,
+                            subexpressions,
+                            stack,
+                            instr,
+                            sub_expr_pos,
+                            args,
+                            in_branch,
+                        )
                     })
                     .collect();
 
@@ -4910,15 +5077,29 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             Expression::IfElse(b) => {
-                let cond =
-                    self.linearize_impl(&b.0, subexpressions, stack, instr, sub_expr_pos, args);
+                let cond = self.linearize_impl(
+                    &b.0,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    in_branch,
+                );
 
                 let label_else = Label(instr.len());
                 stack.push(T::default());
                 instr.push(Instr::IfElse(cond, label_else));
 
-                let then_branch =
-                    self.linearize_impl(&b.1, subexpressions, stack, instr, sub_expr_pos, args);
+                let then_branch = self.linearize_impl(
+                    &b.1,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    true,
+                );
 
                 let label_end = Label(instr.len());
                 stack.push(T::default());
@@ -4926,8 +5107,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 stack.push(T::default());
                 instr.push(Instr::Label(label_else));
 
-                let else_branch =
-                    self.linearize_impl(&b.2, subexpressions, stack, instr, sub_expr_pos, args);
+                let else_branch = self.linearize_impl(
+                    &b.2,
+                    subexpressions,
+                    stack,
+                    instr,
+                    sub_expr_pos,
+                    args,
+                    true,
+                );
 
                 stack.push(T::default());
                 instr.push(Instr::Label(label_end));
@@ -5721,8 +5909,10 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                     arg.rename_subexpression(subexp);
                 }
             }
-            Expression::IfElse(_) => {
-                // TODO
+            Expression::IfElse(b) => {
+                b.0.rename_subexpression(subexp);
+                b.1.rename_subexpression(subexp);
+                b.2.rename_subexpression(subexp);
             }
         }
     }
@@ -5758,8 +5948,10 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + InternalOrder
                     arg.get_dependent_subexpressions(dep);
                 }
             }
-            Expression::IfElse(_) => {
-                // TODO
+            Expression::IfElse(b) => {
+                b.0.get_dependent_subexpressions(dep);
+                b.1.get_dependent_subexpressions(dep);
+                b.2.get_dependent_subexpressions(dep);
             }
         }
     }

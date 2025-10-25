@@ -95,6 +95,7 @@ impl<T> Default for FunctionMap<T> {
 }
 
 impl<T> FunctionMap<T> {
+    /// Create a new, empty function map.
     pub fn new() -> Self {
         FunctionMap {
             map: HashMap::default(),
@@ -104,10 +105,12 @@ impl<T> FunctionMap<T> {
         }
     }
 
+    /// Register a constant.
     pub fn add_constant(&mut self, key: Atom, value: T) {
         self.map.insert(key, ConstOrExpr::Const(value));
     }
 
+    /// Register a function without tags. `rename` is the name used in exported code.
     pub fn add_function(
         &mut self,
         name: Symbol,
@@ -144,6 +147,7 @@ impl<T> FunctionMap<T> {
         Ok(())
     }
 
+    /// Register a function, where the first arguments are `tags` instead of arguments. `rename` is the name used in exported code.
     pub fn add_tagged_function(
         &mut self,
         name: Symbol,
@@ -182,6 +186,7 @@ impl<T> FunctionMap<T> {
         Ok(())
     }
 
+    /// Register an external function that can later be linked with [ExpressionEvaluator::with_external_functions].
     pub fn add_external_function(&mut self, name: Symbol, rename: String) -> Result<(), String> {
         if self.tag.contains_key(&name) || self.external_fn.contains_key(&name) {
             return Err(format!(
@@ -196,6 +201,10 @@ impl<T> FunctionMap<T> {
         Ok(())
     }
 
+    /// Register a condition function that consists of three arguments:
+    /// - the condition that should be non-zero
+    /// - the true branch
+    /// - the false branch
     pub fn add_condition(&mut self, name: Symbol) -> Result<(), String> {
         if self.external_fn.contains_key(&name) {
             return Err(format!(
@@ -1102,6 +1111,7 @@ impl<T: Real> ExpressionEvaluator<T> {
 mod test2 {
     use crate::{
         atom::AtomCore,
+        domains::float::Complex,
         evaluate::{CompileOptions, ExportSettings, FunctionMap, InlineASM},
         parse, symbol,
     };
@@ -1111,7 +1121,8 @@ mod test2 {
         let mut f = FunctionMap::new();
         f.add_condition(symbol!("if")).unwrap();
         //let input = parse!("if(y, x*x + z*z + x*z*z, x * x + 3)");
-        let input = parse!("if(y, 1+x, (1+x) * z)");
+        let input = parse!("if(y, if(y+1, 1+x, 0), (1+x) * z)");
+        //let input = parse!("if(y, if(y+1, x, 0), z)");
         let mut eval = input
             .evaluator(
                 &f,
@@ -1129,11 +1140,29 @@ mod test2 {
         println!("{}", r);
 
         let mut r = eval
-            .export_cpp::<f64>(
+            .export_cpp::<Complex<f64>>(
+                "test_branch_complex.cpp",
+                "test",
+                ExportSettings {
+                    inline_asm: InlineASM::X64,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .compile("branch_complex.so", CompileOptions::default())
+            .unwrap()
+            .load()
+            .unwrap();
+        let mut res = vec![Complex::new(0., 0.)];
+        r.evaluate(&[3f64.into(), 1f64.into(), 2f64.into()], &mut res);
+        println!("{}", res[0]);
+
+        let mut r = eval
+            .export_cpp::<wide::f64x4>(
                 "test_branch.cpp",
                 "test",
                 ExportSettings {
-                    inline_asm: InlineASM::None,
+                    inline_asm: InlineASM::AVX2,
                     ..Default::default()
                 },
             )
@@ -1143,8 +1172,8 @@ mod test2 {
             .load()
             .unwrap();
         let mut res = vec![0.];
-        r.evaluate(&[3., 1., 2.], &mut res);
-        println!("{}", res[0]);
+        //r.evaluate(&[3., 0., 2.], &mut res);
+        //println!("{}", res[0]);
     }
 }
 
@@ -1646,7 +1675,10 @@ impl<T: Default> ExpressionEvaluator<T> {
                         *c = rename!(*c);
                         *p = new_pos;
                     }
-                    Instr::IfElse(..) | Instr::Goto(_) | Instr::Label(_) => {}
+                    Instr::IfElse(c, _) => {
+                        *c = rename!(*c);
+                    }
+                    Instr::Goto(_) | Instr::Label(_) => {}
                 }
 
                 new_instr.push(s);
@@ -1981,10 +2013,14 @@ impl<T> ExpressionEvaluator<T> {
                 | Instr::Mul(r, _)
                 | Instr::Pow(r, _, _)
                 | Instr::Powf(r, _, _)
-                | Instr::BuiltinFun(r, _, _) => *r,
-                Instr::ExternalFun(r, _, _) => *r,
-                Instr::Join(r, _, _, _) => *r,
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) => continue,
+                | Instr::BuiltinFun(r, _, _)
+                | Instr::ExternalFun(r, _, _)
+                | Instr::Join(r, _, _, _) => *r,
+                Instr::IfElse(c, _) => {
+                    *c = rename_map[*c];
+                    continue;
+                }
+                Instr::Goto(..) | Instr::Label(..) => continue,
             };
 
             let cur_last_use = last_use[cur_reg];
@@ -2027,11 +2063,8 @@ impl<T> ExpressionEvaluator<T> {
                     *a = rename_map[*a];
                     *b = rename_map[*b];
                 }
-                Instr::IfElse(c, _) => {
-                    *c = rename_map[*c];
-                }
-                Instr::Goto(..) | Instr::Label(..) => {
-                    continue;
+                Instr::IfElse(_, _) | Instr::Goto(..) | Instr::Label(..) => {
+                    unreachable!()
                 }
             };
         }
@@ -2644,7 +2677,7 @@ extern "C" {{
                         format!("\t{} = {}({});\n", get_output!(o), name, args.join(", ")).as_str();
                 }
                 Instr::IfElse(cond, _label) => {
-                    *out += &format!("\tif (params[{cond}] != 0.) {{\n");
+                    *out += &format!("\tif ({} != 0.) {{\n", get_input!(*cond));
                 }
                 Instr::Goto(..) => {
                     *out += "\t} else {\n";
@@ -2655,9 +2688,9 @@ extern "C" {{
                     let arg_a = get_input!(*a);
                     let arg_b = get_input!(*b);
                     *out += format!(
-                        "\t{} = (params[{}] != 0.) ? {} : {};\n",
+                        "\t{} = ({} != 0.) ? {} : {};\n",
                         get_output!(o),
-                        cond,
+                        get_input!(*cond),
                         arg_a,
                         arg_b
                     )
@@ -2927,9 +2960,24 @@ extern "C" {{
                     }
                     stack_to_reg.insert(r, i);
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                    todo!("Inline ASM generation for complex IfElse not implemented yet");
+                Instr::IfElse(c, _) => {
+                    if c >= &self.reserved_indices {
+                        reg_last_use[stack_to_reg[c]] = i;
+                    }
                 }
+                Instr::Join(r, c, t, f) => {
+                    if c >= &self.reserved_indices {
+                        reg_last_use[stack_to_reg[c]] = i;
+                    }
+                    if t >= &self.reserved_indices {
+                        reg_last_use[stack_to_reg[t]] = i;
+                    }
+                    if f >= &self.reserved_indices {
+                        reg_last_use[stack_to_reg[f]] = i;
+                    }
+                    stack_to_reg.insert(r, i);
+                }
+                Instr::Goto(..) | Instr::Label(..) => {}
             }
         }
 
@@ -2953,6 +3001,10 @@ extern "C" {{
             Powf(usize, usize, usize),
             BuiltinFun(usize, BuiltinSymbol, usize),
             ExternalFun(usize, usize, Vec<usize>),
+            IfElse(usize),
+            Goto,
+            Label,
+            Join(usize, usize, usize, usize),
         }
 
         let mut new_instr: Vec<RegInstr> = instr
@@ -2974,9 +3026,10 @@ extern "C" {{
                 Instr::Powf(r, b, e) => RegInstr::Powf(*r, *b, *e),
                 Instr::BuiltinFun(r, s, a) => RegInstr::BuiltinFun(*r, *s, *a),
                 Instr::ExternalFun(r, s, a) => RegInstr::ExternalFun(*r, *s, a.clone()),
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                    todo!("Inline ASM generation for complex IfElse not implemented yet");
-                }
+                Instr::IfElse(c, _) => RegInstr::IfElse(*c),
+                Instr::Goto(_) => RegInstr::Goto,
+                Instr::Label(_) => RegInstr::Label,
+                Instr::Join(r, c, a, b) => RegInstr::Join(*r, *c, *a, *b),
             })
             .collect();
 
@@ -3065,6 +3118,17 @@ extern "C" {{
                         }
                         RegInstr::ExternalFun(_, _, a) => {
                             if a.contains(&old_reg) {
+                                panic!("use outside of ASM block");
+                            }
+                        }
+                        RegInstr::IfElse(c) => {
+                            if *c == old_reg {
+                                panic!("use outside of ASM block");
+                            }
+                        }
+                        RegInstr::Goto | RegInstr::Label => {}
+                        RegInstr::Join(_, c, a, b) => {
+                            if *c == old_reg || *a == old_reg || *b == old_reg {
                                 panic!("use outside of ASM block");
                             }
                         }
@@ -3709,6 +3773,44 @@ extern "C" {{
 
                     *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
                 }
+                RegInstr::IfElse(cond) => {
+                    end_asm_block!(in_asm_block);
+
+                    if asm_flavour == InlineASM::AVX2 {
+                        *out += &format!("\tif (all({} != 0.)) {{\n", get_input!(*cond));
+                    } else {
+                        *out += &format!("\tif ({} != 0.) {{\n", get_input!(*cond));
+                    }
+                }
+                RegInstr::Goto => {
+                    end_asm_block!(in_asm_block);
+                    *out += "\t} else {\n";
+                }
+                RegInstr::Label => {}
+                RegInstr::Join(o, cond, a, b) => {
+                    end_asm_block!(in_asm_block);
+                    *out += "\t}\n";
+                    let arg_a = get_input!(*a);
+                    let arg_b = get_input!(*b);
+
+                    if asm_flavour == InlineASM::AVX2 {
+                        *out += &format!(
+                            "\tZ[{}] = (all({} != 0.)) ? {} : {};\n",
+                            o,
+                            get_input!(*cond),
+                            arg_a,
+                            arg_b
+                        );
+                    } else {
+                        *out += &format!(
+                            "\tZ[{}] = ({} != 0.) ? {} : {};\n",
+                            o,
+                            get_input!(*cond),
+                            arg_a,
+                            arg_b
+                        );
+                    }
+                }
             }
         }
 
@@ -4246,8 +4348,43 @@ extern "C" {{
 
                     *out += format!("\tZ[{}] = {}({});\n", o, name, args.join(", ")).as_str();
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => {
-                    todo!("Inline ASM generation for complex IfElse not implemented yet");
+                Instr::IfElse(cond, _) => {
+                    end_asm_block!(in_asm_block);
+
+                    if asm_flavour == InlineASM::AVX2 {
+                        *out += &format!("\tif (all({} != 0.)) {{\n", get_input!(*cond));
+                    } else {
+                        *out += &format!("\tif ({} != 0.) {{\n", get_input!(*cond));
+                    }
+                }
+                Instr::Goto(_) => {
+                    end_asm_block!(in_asm_block);
+                    *out += "\t} else {\n";
+                }
+                Instr::Label(_) => {}
+                Instr::Join(o, cond, a, b) => {
+                    end_asm_block!(in_asm_block);
+                    *out += "\t}\n";
+                    let arg_a = get_input!(*a);
+                    let arg_b = get_input!(*b);
+
+                    if asm_flavour == InlineASM::AVX2 {
+                        *out += &format!(
+                            "\tZ[{}] = (all({} != 0.)) ? {} : {};\n",
+                            o,
+                            get_input!(*cond),
+                            arg_a,
+                            arg_b
+                        );
+                    } else {
+                        *out += &format!(
+                            "\tZ[{}] = ({} != 0.) ? {} : {};\n",
+                            o,
+                            get_input!(*cond),
+                            arg_a,
+                            arg_b
+                        );
+                    }
                 }
             }
         }
@@ -4515,6 +4652,14 @@ pub enum Instruction {
     ExternalFun(Slot, String, Vec<Slot>),
     /// `Assign(o, v)` means `o = v`.
     Assign(Slot, Slot),
+    /// `IfElse(cond, label)` means jump to `label` if `cond` is zero.
+    IfElse(Slot, usize),
+    /// Unconditional jump to `label`.
+    Goto(usize),
+    /// A position in the instruction list to jump to.
+    Label(usize),
+    /// `Join(o, cond, a, b)` means `o = cond ? a : b`.
+    Join(Slot, Slot, Slot, Slot),
 }
 
 impl std::fmt::Display for Instruction {
@@ -4565,6 +4710,18 @@ impl std::fmt::Display for Instruction {
             }
             Instruction::Assign(o, v) => {
                 write!(f, "{} = {}", o, v)
+            }
+            Instruction::IfElse(cond, label) => {
+                write!(f, "if {} == 0 goto L{}", cond, label)
+            }
+            Instruction::Goto(label) => {
+                write!(f, "goto L{}", label)
+            }
+            Instruction::Label(label) => {
+                write!(f, "L{}:", label)
+            }
+            Instruction::Join(o, cond, a, b) => {
+                write!(f, "{} = {} ? {} : {}", o, cond, a, b)
             }
         }
     }
@@ -4627,7 +4784,23 @@ impl<T: Clone> ExpressionEvaluator<T> {
                         a.iter().map(|x| get_slot!(*x)).collect(),
                     ));
                 }
-                Instr::IfElse(..) | Instr::Goto(..) | Instr::Label(..) | Instr::Join(..) => todo!(),
+                Instr::IfElse(cond, label) => {
+                    instr.push(Instruction::IfElse(get_slot!(*cond), label.0));
+                }
+                Instr::Goto(label) => {
+                    instr.push(Instruction::Goto(label.0));
+                }
+                Instr::Label(label) => {
+                    instr.push(Instruction::Label(label.0));
+                }
+                Instr::Join(o, cond, a, b) => {
+                    instr.push(Instruction::Join(
+                        get_slot!(*o),
+                        get_slot!(*cond),
+                        get_slot!(*a),
+                        get_slot!(*b),
+                    ));
+                }
             }
         }
 

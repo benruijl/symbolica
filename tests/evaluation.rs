@@ -1129,7 +1129,7 @@ fn gcc_compiled_evaluator_complex() {
             },
         )
         .unwrap()
-        .compile("gcc_compiled_evaluator_real", CompileOptions::default())
+        .compile("gcc_compiled_evaluator_complex", CompileOptions::default())
         .unwrap()
         .load()
         .unwrap();

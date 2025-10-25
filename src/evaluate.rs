@@ -28,6 +28,7 @@ use crate::{
         integer::Integer,
         rational::Rational,
     },
+    error,
     id::ConditionResult,
     info,
     numerical_integration::MonteCarloRng,
@@ -1107,173 +1108,6 @@ impl<T: Real> ExpressionEvaluator<T> {
     }
 }
 
-#[cfg(test)]
-mod test2 {
-    use crate::{
-        atom::AtomCore,
-        domains::float::Complex,
-        evaluate::{CompileOptions, ExportSettings, FunctionMap, InlineASM},
-        parse, symbol,
-    };
-
-    #[test]
-    fn branching2() {
-        let mut f = FunctionMap::new();
-        f.add_conditional(symbol!("if")).unwrap();
-        //let input = parse!("if(y, x*x + z*z + x*z*z, x * x + 3)");
-        let input = parse!("if(y, if(y+1, 1+x, 0), (1+x) * z)");
-        //let input = parse!("if(y, if(y+1, x, 0), z)");
-        let mut eval = input
-            .evaluator(
-                &f,
-                &vec![crate::parse!("x"), crate::parse!("y"), crate::parse!("z")],
-                Default::default(),
-            )
-            .unwrap()
-            .map_coeff(&|x| x.re.to_f64());
-
-        for i in &eval.instructions {
-            println!("I {:?}", i);
-        }
-
-        let r = eval.evaluate_single(&[3., 1., 2.]);
-        println!("{}", r);
-
-        let mut r = eval
-            .export_cpp::<Complex<f64>>(
-                "test_branch_complex.cpp",
-                "test",
-                ExportSettings {
-                    inline_asm: InlineASM::X64,
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-            .compile("branch_complex.so", CompileOptions::default())
-            .unwrap()
-            .load()
-            .unwrap();
-        let mut res = vec![Complex::new(0., 0.)];
-        r.evaluate(&[3f64.into(), 1f64.into(), 2f64.into()], &mut res);
-        println!("{}", res[0]);
-
-        let mut r = eval
-            .export_cpp::<wide::f64x4>(
-                "test_branch.cpp",
-                "test",
-                ExportSettings {
-                    inline_asm: InlineASM::AVX2,
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-            .compile("branch.so", CompileOptions::default())
-            .unwrap()
-            .load()
-            .unwrap();
-        let mut res = vec![0.];
-        //r.evaluate(&[3., 0., 2.], &mut res);
-        //println!("{}", res[0]);
-    }
-}
-
-#[test]
-fn branching() {
-    // remove common pair that is introduced before the if
-    let mut e = ExpressionEvaluator {
-        stack: vec![0.; 12], // must be reserved + instructions.len
-        param_count: 2,
-        reserved_indices: 2,
-        instructions: vec![
-            Instr::Add(2, vec![0, 0]),  // x + x
-            Instr::IfElse(1, Label(6)), // if y == 0 goto label 6
-            Instr::Mul(4, vec![0, 0]),
-            Instr::Add(5, vec![0, 0]),
-            Instr::Add(6, vec![4, 5]), // is renamed, because of branching, the lower add 5 feels like an overwrite!
-            Instr::Goto(Label(8)),
-            Instr::Label(Label(6)),
-            Instr::Add(9, vec![0, 0]),
-            Instr::Label(Label(8)), // remove: always jump to join?
-            Instr::Join(11, 1, 6, 9),
-        ],
-        result_indices: vec![11],
-        external_fns: vec![],
-    };
-
-    // remove common pair that is only between the branches
-    let mut e = ExpressionEvaluator {
-        stack: vec![0.; 11], // must be reserved + instructions.len
-        param_count: 2,
-        reserved_indices: 2,
-        instructions: vec![
-            Instr::IfElse(1, Label(5)), // if y == 0 goto label 6
-            Instr::Mul(3, vec![0, 0]),
-            Instr::Add(4, vec![0, 0]),
-            Instr::Add(5, vec![3, 4]), // is renamed, because of branching, the lower add 5 feels like an overwrite!
-            Instr::Goto(Label(7)),
-            Instr::Label(Label(5)),
-            Instr::Add(8, vec![0, 0]),
-            Instr::Label(Label(7)), // remove: always jump to join?
-            Instr::Join(10, 1, 5, 8),
-        ],
-        result_indices: vec![10],
-        external_fns: vec![],
-    };
-
-    // remove common pair inside one branch
-    let mut e = ExpressionEvaluator {
-        stack: vec![0.; 11], // must be reserved + instructions.len
-        param_count: 2,
-        reserved_indices: 2,
-        instructions: vec![
-            Instr::IfElse(1, Label(5)), // if y == 0 goto label 6
-            Instr::Add(3, vec![0, 0]),
-            Instr::Add(4, vec![0, 0]),
-            Instr::Add(5, vec![3, 4]), // is renamed, because of branching, the lower add 5 feels like an overwrite!
-            Instr::Goto(Label(7)),
-            Instr::Label(Label(5)),
-            Instr::Mul(8, vec![0, 0]),
-            Instr::Label(Label(7)), // remove: always jump to join?
-            Instr::Join(10, 1, 5, 8),
-        ],
-        result_indices: vec![10],
-        external_fns: vec![],
-    };
-
-    e.remove_common_pairs();
-
-    e.optimize_stack();
-
-    for i in &e.instructions {
-        println!("I {:?}", i);
-    }
-    println!("{:?}", e.result_indices);
-
-    //println!("stack {:?}", e.stack);
-
-    println!("{}", e.evaluate_single(&[3., 1.]));
-
-    println!("stack {:?}", e.stack);
-
-    let mut r = e
-        .export_cpp::<f64>(
-            "test_branch.cpp",
-            "test",
-            ExportSettings {
-                inline_asm: InlineASM::None,
-                ..Default::default()
-            },
-        )
-        .unwrap()
-        .compile("branch.so", CompileOptions::default())
-        .unwrap()
-        .load()
-        .unwrap();
-    let mut res = vec![0.];
-    r.evaluate(&[3., 1.], &mut res);
-    println!("{}", res[0]);
-}
-
 impl<T: Default> ExpressionEvaluator<T> {
     /// Map the coefficients to a different type.
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(self, f: &F) -> ExpressionEvaluator<T2> {
@@ -1541,9 +1375,6 @@ impl<T: Default> ExpressionEvaluator<T> {
             }
         }
 
-        println!("LINE ZONE {:?}", line_usage_zone);
-        println!("SYMB ZONE {:?}", new_symb_usage_zone);
-
         // detect the earliest point and latest point for an instruction placement
         // earliest point: after last dependency
         // latest point: before first usage in the correct usage zone
@@ -1567,13 +1398,16 @@ impl<T: Default> ExpressionEvaluator<T> {
                 last_dep + 1 - self.reserved_indices
             };
 
-            // find last usage option: right before the first occurrence
-            // and in the correct usage block
             let mut last_use = first_usage;
-            for j in ins..first_usage + 1 {
+            let mut zone_found = false;
+            for j in (ins..first_usage + 1).rev() {
                 if line_usage_zone[j] != zone {
-                    last_use = j;
-                    break;
+                    if zone_found {
+                        last_use = j;
+                        break;
+                    } else {
+                        zone_found = true;
+                    }
                 }
             }
 
@@ -1581,8 +1415,6 @@ impl<T: Default> ExpressionEvaluator<T> {
         }
 
         placement_bounds.sort_by_key(|x| x.1);
-
-        println!("FIRST USE {:?}", placement_bounds);
 
         let mut new_instr = vec![];
         let mut i = 0;
@@ -1962,10 +1794,6 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
 
 impl<T> ExpressionEvaluator<T> {
     pub fn optimize_stack(&mut self) {
-        for i in &self.instructions {
-            println!("Before optimize: {:?}", i);
-        }
-
         let mut last_use: Vec<usize> = vec![0; self.stack.len()];
 
         for (i, x) in self.instructions.iter().enumerate() {
@@ -4996,13 +4824,6 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             result_indices,
             external_fns: self.external_functions.clone(),
         };
-
-        for i in &e.instructions {
-            println!("{:?}", i);
-        }
-        println!("out {:?}", e.result_indices);
-        println!("res {:?}", e.reserved_indices);
-        println!("stack size {:?}", e.stack.len());
 
         for _ in 0..cpe_rounds.unwrap_or(usize::MAX) {
             let r = e.remove_common_pairs();
@@ -8112,7 +7933,7 @@ impl Drop for CompiledCudaRealEvaluator {
         unsafe {
             let result = (self.library.borrow_dependent().destroy_data)(self.data);
             if result != 0 {
-                eprintln!("Warning: failed to free CUDA memory: {}", result);
+                error!("Warning: failed to free CUDA memory: {}", result);
             }
         }
     }
@@ -8135,7 +7956,7 @@ impl Drop for CompiledCudaComplexEvaluator {
         unsafe {
             let result = (self.library.borrow_dependent().destroy_data)(self.data);
             if result != 0 {
-                eprintln!("Warning: failed to free CUDA memory: {}", result);
+                error!("Warning: failed to free CUDA memory: {}", result);
             }
         }
     }
@@ -9231,5 +9052,33 @@ mod test {
 
         let e = parse!("x + (1+x)^2 + (x+2)*5");
         assert_eq!(e.zero_test(10, f64::EPSILON), ConditionResult::False);
+    }
+
+    #[test]
+    fn branching() {
+        let mut f = FunctionMap::new();
+        f.add_conditional(symbol!("if")).unwrap();
+
+        let tests = vec![
+            ("if(y, x*x + z*z + x*z*z, x * x + 3)", 25., 12.),
+            ("if(y, x*x + z*z + x*z*z, 3)", 25., 3.),
+            ("if(x + z, if(y, 1 + x, 1+x+y), 0)", 4., 4.),
+        ];
+
+        for (input, true_res, false_res) in tests {
+            let mut eval = parse!(input)
+                .evaluator(
+                    &f,
+                    &vec![crate::parse!("x"), crate::parse!("y"), crate::parse!("z")],
+                    Default::default(),
+                )
+                .unwrap()
+                .map_coeff(&|x| x.re.to_f64());
+
+            let res = eval.evaluate_single(&[3., 1., 2.]);
+            assert_eq!(res, true_res);
+            let res = eval.evaluate_single(&[3., 0., 2.]);
+            assert_eq!(res, false_res);
+        }
     }
 }

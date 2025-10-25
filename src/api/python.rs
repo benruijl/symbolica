@@ -6642,6 +6642,11 @@ impl PythonExpression {
     /// body. For example the function `f(x,y)=x^2+y` should be provided as
     /// `{(f, "f", (x, y)): x**2 + y}`. All free parameters should be provided in the `params` list.
     ///
+    /// Additionally, external functions can be registered that will call a Python function.
+    ///
+    /// If `KeyboardInterrupt` is triggered during the optimization, the optimization will stop and will yield the
+    /// current best result.
+    ///
     /// Examples
     /// --------
     /// >>> from symbolica import *
@@ -6656,6 +6661,39 @@ impl PythonExpression {
     /// >>>              {(f, "f", (y, z)): fd, (g, "g", (y, )): gd}, [x])
     /// >>> res = ev.evaluate([[1.], [2.], [3.]])  # evaluate at x=1, x=2, x=3
     /// >>> print(res)
+    ///
+    ///
+    /// Define an external function:
+    ///
+    /// >>> E("f(x)").evaluator({}, {}, [S("x")],
+    ///             external_functions={(S("f"), "F"): lambda args: args[0]**2 + 1})
+    ///
+    /// Define an conditional function which yields `x+1` when `y != 0` and `x+2` when `y == 0`:
+    ///
+    /// >>> E("if(y, x + 1, x + 2)").evaluator({}, {}, [S("x"), S("y")], conditional=[S("if")])
+    ///
+    /// Parameters
+    /// ----------
+    /// constants: dict[Expression, Expression]
+    ///     A map of expressions to constants. The constants should be numerical expressions.
+    /// funs: dict[Tuple[Expression, str, Sequence[Expression]], Expression]
+    ///     A dictionary of functions. The key is a tuple of the function name, printable name and the argument variables.
+    ///     The value is the function body.
+    /// params: Sequence[Expression]
+    ///     A list of free parameters.
+    /// iterations: int, optional
+    ///     The number of optimization iterations to perform.
+    /// n_cores: int, optional
+    ///     The number of cores to use for the optimization.
+    /// verbose: bool, optional
+    ///     Print the progress of the optimization.
+    /// external_functions: Optional[dict[Tuple[Expression, str], Callable[[Sequence[float | complex]], float | complex]]]
+    ///     A dictionary of external functions that can be called during evaluation.
+    ///     The key is the function name and the value is a callable that takes a list of arguments and returns a float.
+    ///     This is useful for functions that are not defined in Symbolica but are available in Python.
+    /// conditionals: Optional[Sequence[Expression]], optional
+    ///     A list of conditional functions. These functions should take three argument: a condition that is tested for
+    ///     inequality with 0, the true branch and the false branch.
     #[pyo3(signature =
         (constants,
         functions,
@@ -6663,7 +6701,8 @@ impl PythonExpression {
         iterations = 100,
         n_cores = 4,
         verbose = false,
-        external_functions = None),
+        external_functions = None,
+        conditionals = None),
         )]
     pub fn evaluator(
         &self,
@@ -6678,6 +6717,7 @@ impl PythonExpression {
             typing.Sequence[float | complex]], float | complex]]]"
         ))]
         external_functions: Option<HashMap<(Variable, String), Py<PyAny>>>,
+        conditionals: Option<Vec<Variable>>,
         py: Python<'_>,
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
@@ -6720,6 +6760,20 @@ impl PythonExpression {
 
                 fn_map
                     .add_external_function(symbol, name.clone())
+                    .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+            }
+        }
+
+        if let Some(ef) = &conditionals {
+            for symbol in ef {
+                let symbol = symbol
+                    .to_id()
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Bad function name {symbol}",
+                    )))?;
+
+                fn_map
+                    .add_conditional(symbol)
                     .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
             }
         }
@@ -14853,7 +14907,12 @@ impl PythonExpressionEvaluator {
     /// - `('pow', ('out', 0), ('param', 0), -1)` which means `out[0] = param[0]^-1`.
     /// - `('powf', ('out', 0), ('param', 0), ('param', 1))` which means `out[0] = param[0]^param[1]`.
     /// - `('fun', ('temp', 1), cos, ('param', 0))` which means `temp[1] = cos(param[0])`.
+    /// - `('external_fun', ('temp', 1), f, [('param', 0)])` which means `temp[1] = f(param[0])`.
     /// - `('assign', ('out', 1), ('const', 2))` which means `out[1] = const[2]`.
+    /// - `('if_else', ('temp', 0), 5)` which means `if temp[0] != 0 goto label 5`.
+    /// - `('goto', 10)` which means `goto label 10`.
+    /// - `('label', 3)` which means `label 3`.
+    /// - `('join', ('out', 0), ('temp', 0), 3, 7)` which means `out[0] = (temp[0] != 0) ? label 3 : label 7`.
     ///
     /// Examples
     /// --------
@@ -14952,7 +15011,7 @@ impl PythonExpressionEvaluator {
                     v.push(PyTuple::new(
                         py,
                         [
-                            "fun".into_pyobject(py)?.as_any(),
+                            "external_fun".into_pyobject(py)?.as_any(),
                             slot_to_object(o).into_pyobject(py)?.as_any(),
                             f.into_pyobject(py)?.as_any(),
                             s.iter()
@@ -14970,6 +15029,46 @@ impl PythonExpressionEvaluator {
                             "assign".into_pyobject(py)?.as_any(),
                             slot_to_object(o).into_pyobject(py)?.as_any(),
                             slot_to_object(r).into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::IfElse(cond, label) => {
+                    v.push(PyTuple::new(
+                        py,
+                        [
+                            "if_else".into_pyobject(py)?.as_any(),
+                            slot_to_object(cond).into_pyobject(py)?.as_any(),
+                            label.into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Join(o, cond, t, f) => {
+                    v.push(PyTuple::new(
+                        py,
+                        [
+                            "join".into_pyobject(py)?.as_any(),
+                            slot_to_object(o).into_pyobject(py)?.as_any(),
+                            slot_to_object(cond).into_pyobject(py)?.as_any(),
+                            slot_to_object(t).into_pyobject(py)?.as_any(),
+                            slot_to_object(f).into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Goto(label) => {
+                    v.push(PyTuple::new(
+                        py,
+                        [
+                            "goto".into_pyobject(py)?.as_any(),
+                            label.into_pyobject(py)?.as_any(),
+                        ],
+                    )?);
+                }
+                Instruction::Label(label) => {
+                    v.push(PyTuple::new(
+                        py,
+                        [
+                            "label".into_pyobject(py)?.as_any(),
+                            label.into_pyobject(py)?.as_any(),
                         ],
                     )?);
                 }

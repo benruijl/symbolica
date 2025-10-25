@@ -201,11 +201,11 @@ impl<T> FunctionMap<T> {
         Ok(())
     }
 
-    /// Register a condition function that consists of three arguments:
+    /// Register a conditional function that consists of three arguments:
     /// - the condition that should be non-zero
     /// - the true branch
     /// - the false branch
-    pub fn add_condition(&mut self, name: Symbol) -> Result<(), String> {
+    pub fn add_conditional(&mut self, name: Symbol) -> Result<(), String> {
         if self.external_fn.contains_key(&name) {
             return Err(format!(
                 "Cannot add function {}, as it is also an external function",
@@ -1119,7 +1119,7 @@ mod test2 {
     #[test]
     fn branching2() {
         let mut f = FunctionMap::new();
-        f.add_condition(symbol!("if")).unwrap();
+        f.add_conditional(symbol!("if")).unwrap();
         //let input = parse!("if(y, x*x + z*z + x*z*z, x * x + 3)");
         let input = parse!("if(y, if(y+1, 1+x, 0), (1+x) * z)");
         //let input = parse!("if(y, if(y+1, x, 0), z)");
@@ -4658,7 +4658,7 @@ pub enum Instruction {
     Goto(usize),
     /// A position in the instruction list to jump to.
     Label(usize),
-    /// `Join(o, cond, a, b)` means `o = cond ? a : b`.
+    /// `Join(o, cond, t, f)` means `o = cond ? t : f`.
     Join(Slot, Slot, Slot, Slot),
 }
 

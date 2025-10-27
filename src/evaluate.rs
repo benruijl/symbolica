@@ -5026,11 +5026,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 stack.len() - 1
             }
             Expression::SubExpression(id) => {
-                // do not substitute subexpressions in branches, as a subexpression
-                // shared between the if and else branch would be substituted by
-                // a computation in the if branch only and by a reference in the else
-                // branch
-                if !in_branch && sub_expr_pos.contains_key(id) {
+                if sub_expr_pos.contains_key(id) {
                     *sub_expr_pos.get(id).unwrap()
                 } else {
                     let res = self.linearize_impl(
@@ -5042,7 +5038,14 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                         args,
                         in_branch,
                     );
-                    sub_expr_pos.insert(*id, res);
+
+                    // only register the subexpression as computed when it is not
+                    // computed in a branch, as the sub expression may not be computed
+                    // in the other branch
+                    if !in_branch {
+                        sub_expr_pos.insert(*id, res);
+                    }
+
                     res
                 }
             }
@@ -9063,6 +9066,7 @@ mod test {
             ("if(y, x*x + z*z + x*z*z, x * x + 3)", 25., 12.),
             ("if(y, x*x + z*z + x*z*z, 3)", 25., 3.),
             ("if(x + z, if(y, 1 + x, 1+x+y), 0)", 4., 4.),
+            ("if(y, x * z, 0) + x * z", 12., 6.),
         ];
 
         for (input, true_res, false_res) in tests {

@@ -17082,10 +17082,15 @@ pub struct PythonSample {
     #[pyo3(get)]
     /// A sample in the continuous layer. Empty if not present.
     c: Vec<f64>,
+    uniform: bool,
 }
 
 impl PythonSample {
     fn into_sample(self) -> Sample<f64> {
+        if self.uniform {
+            return Sample::Uniform(self.weights[0], self.d, self.c);
+        }
+
         assert_eq!(
             self.weights.len(),
             self.d.len() + if self.c.is_empty() { 0 } else { 1 }
@@ -17114,6 +17119,7 @@ impl PythonSample {
         let mut weights = vec![];
         let mut d = vec![];
         let mut c = vec![];
+        let mut uniform = false;
 
         loop {
             match sample {
@@ -17131,10 +17137,22 @@ impl PythonSample {
                         break;
                     }
                 }
+                Sample::Uniform(w, i, cs) => {
+                    weights.push(*w);
+                    d.clone_from(i);
+                    c.clone_from(cs);
+                    uniform = true;
+                    break;
+                }
             }
         }
 
-        PythonSample { weights, d, c }
+        PythonSample {
+            weights,
+            d,
+            c,
+            uniform,
+        }
     }
 }
 
@@ -17215,18 +17233,18 @@ impl PythonNumericalIntegrator {
     ///
     /// Examples
     /// --------
-    /// >>> def integrand(samples: list[Sample]):
+    /// >>> def integrand(samples: typing.Sequence[Sample]) -> list[float]:
     /// >>>     res = []
     /// >>>     for sample in samples:
     /// >>>         if sample.d[0] == 0:
     /// >>>             res.append(sample.c[0]**2)
     /// >>>         else:
-    /// >>>             res.append(sample.c[0]**1/2)
+    /// >>>             res.append(sample.c[0]**3)
     /// >>>     return res
     /// >>>
     /// >>> integrator = NumericalIntegrator.discrete(
     /// >>>     [NumericalIntegrator.continuous(1), NumericalIntegrator.continuous(1)])
-    /// >>> integrator.integrate(integrand, True, 10, 10000)
+    /// >>> integrator.integrate(integrand, min_error=1e-3)
     #[classmethod]
     #[pyo3(signature =
         (bins,
@@ -17243,6 +17261,42 @@ impl PythonNumericalIntegrator {
 
         PythonNumericalIntegrator {
             grid: Grid::Discrete(DiscreteGrid::new(bins, max_prob_ratio, train_on_avg)),
+        }
+    }
+
+    /// Create a new uniform layered grid for the numerical integrator.
+    /// `len(bins)` specifies the number of discrete layers, and each entry in `bins` specifies the number of bins in that layer.
+    /// Each discrete bin has equal probability.
+    ///
+    /// Examples
+    /// --------
+    /// >>> def integrand(samples: typing.Sequence[Sample]) -> list[float]:
+    /// >>>     res = []
+    /// >>>     for sample in samples:
+    /// >>>         if sample.d[0] == 0:
+    /// >>>             res.append(sample.c[0]**2)
+    /// >>>         else:
+    /// >>>             res.append(sample.c[0]**3)
+    /// >>>     return res
+    /// >>>
+    /// >>>
+    /// >>> integrator = NumericalIntegrator.uniform(
+    /// >>>     [2], NumericalIntegrator.continuous(1))
+    /// >>> integrator.integrate(integrand, min_error=1e-3)
+    #[classmethod]
+    pub fn uniform(
+        _cls: &Bound<'_, PyType>,
+        bins: Vec<usize>,
+        continuous_grid: PythonNumericalIntegrator,
+    ) -> PyResult<PythonNumericalIntegrator> {
+        if let Grid::Continuous(g) = continuous_grid.grid {
+            Ok(PythonNumericalIntegrator {
+                grid: Grid::Uniform(bins, g),
+            })
+        } else {
+            return PyResult::Err(pyo3::exceptions::PyAssertionError::new_err(
+                "The specified grid is not a continuous grid",
+            ));
         }
     }
 
@@ -17331,7 +17385,7 @@ impl PythonNumericalIntegrator {
     /// for the current iteration, including the points submitted in the current iteration.
     fn get_live_estimate(&self) -> PyResult<(f64, f64, f64, f64, f64, usize)> {
         match &self.grid {
-            Grid::Continuous(cs) => {
+            Grid::Continuous(cs) | Grid::Uniform(_, cs) => {
                 let mut a = cs.accumulator.shallow_copy();
                 a.update_iter(false);
                 Ok((

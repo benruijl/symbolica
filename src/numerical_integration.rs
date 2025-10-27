@@ -389,12 +389,15 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Statisti
 /// and contains the weight and the list of sample points.
 /// If the sample comes from a [DiscreteGrid], it is the variant [Discrete](Sample::Discrete) and contains
 /// the weight, the bin and the subsample if the bin has a nested grid.
+/// If the sample comes from a [Uniform](Grid::Uniform) grid, it is the variant [Uniform](Sample::Uniform)
+/// and contains the weight, the list of discrete bin indices and the list of continuous sample points.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 pub enum Sample<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     Continuous(T, Vec<T>),
     Discrete(T, usize, Option<Box<Sample<T>>>),
+    Uniform(T, Vec<usize>, Vec<T>),
 }
 
 impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Default for Sample<T> {
@@ -412,13 +415,15 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
     /// Get the weight of the sample.
     pub fn get_weight(&self) -> T {
         match self {
-            Sample::Continuous(w, _) | Sample::Discrete(w, _, _) => *w,
+            Sample::Continuous(w, _) | Sample::Discrete(w, _, _) | Sample::Uniform(w, _, _) => *w,
         }
     }
 
     /// Transform the sample to a discrete grid, used for recycling memory.
     fn to_discrete_grid(&mut self) -> (&mut T, &mut usize, &mut Option<Box<Sample<T>>>) {
         if let Sample::Continuous(..) = self {
+            *self = Sample::Discrete(T::new_zero(), 0, None);
+        } else if let Sample::Uniform(..) = self {
             *self = Sample::Discrete(T::new_zero(), 0, None);
         }
 
@@ -432,11 +437,31 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
     fn to_continuous_grid(&mut self) -> (&mut T, &mut Vec<T>) {
         if let Sample::Continuous(..) = self {
             *self = Sample::Continuous(T::new_zero(), vec![])
+        } else if let Sample::Uniform(_, _, g) = self {
+            *self = Sample::Continuous(T::new_zero(), std::mem::take(g))
         }
 
         match self {
             Sample::Continuous(weight, sub_samples) => (weight, sub_samples),
             _ => unreachable!(),
+        }
+    }
+
+    /// Transform the sample to a continuous one and extract bin indices, used for recycling memory.
+    fn to_continuous_with_uniform(&mut self) -> Vec<usize> {
+        match self {
+            Sample::Uniform(_, bin_indices, g) => {
+                let b = std::mem::take(bin_indices);
+                *self = Sample::Continuous(T::new_zero(), std::mem::take(g));
+                return b;
+            }
+            Self::Continuous(_, _) => {
+                return vec![];
+            }
+            Self::Discrete(_, _, _) => {
+                *self = Sample::Continuous(T::new_zero(), vec![]);
+                return vec![];
+            }
         }
     }
 }
@@ -445,12 +470,15 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
 /// It supports discrete and continuous dimensions. The discrete dimensions
 /// can have a nested grid.
 ///
+/// Use [Grid::Uniform] to create a layered rectangular discrete grid
+/// that is uniformly sampled and has a shared continuous grid across all discrete bins.
+///
 /// Use [Grid::clone_without_samples] to create a copy of the grid that can
 /// accumulate samples independently, and can later be merged into the current grid.
 ///
 /// # Examples
 ///
-///  ```
+/// ```
 /// use symbolica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
 ///
 /// let f = |x: &[f64]| (x[0] * std::f64::consts::PI).sin() + x[1];
@@ -483,8 +511,15 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
 pub enum Grid<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
+    /// A continuous grid.
     Continuous(ContinuousGrid<T>),
+    /// A discrete grid with optional nested grids.
     Discrete(DiscreteGrid<T>),
+    /// A layered rectangular uniform discrete grid `(a, g)` where `a.len()` is the number of
+    /// discrete dimensions, `a[i]` is the number of bins in discrete dimension `i`,
+    /// and `g` is a shared continuous grid across all discrete bins.
+    /// Each discrete bin has equal probability.
+    Uniform(Vec<usize>, ContinuousGrid<T>),
 }
 
 impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> {
@@ -494,6 +529,25 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match self {
             Grid::Continuous(g) => g.sample(rng, sample),
             Grid::Discrete(g) => g.sample(rng, sample),
+            Grid::Uniform(disc, g) => {
+                let mut bin_indices = sample.to_continuous_with_uniform();
+                g.sample(rng, sample);
+
+                bin_indices.clear();
+                for n_bins in disc.iter() {
+                    bin_indices.push(rng.random_range(0..*n_bins));
+                }
+
+                if let Sample::Continuous(w, c) = sample {
+                    for n_bins in disc.iter() {
+                        *w *= w.from_usize(*n_bins);
+                    }
+
+                    *sample = Sample::Uniform(*w, bin_indices, std::mem::take(c));
+                } else {
+                    unreachable!()
+                }
+            }
         }
     }
 
@@ -504,6 +558,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match self {
             Grid::Continuous(g) => g.add_training_sample(sample, eval),
             Grid::Discrete(g) => g.add_training_sample(sample, eval),
+            Grid::Uniform(_, g) => g.add_training_sample(sample, eval),
         }
     }
 
@@ -513,6 +568,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match (self, grid) {
             (Grid::Continuous(c1), Grid::Continuous(c2)) => c1.is_mergeable(c2),
             (Grid::Discrete(d1), Grid::Discrete(d2)) => d1.is_mergeable(d2),
+            (Grid::Uniform(d1, c1), Grid::Uniform(d2, c2)) if d1 == d2 => c1.is_mergeable(c2),
             _ => Err("Cannot merge a discrete and continuous grid".to_owned()),
         }
     }
@@ -531,6 +587,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match (self, grid) {
             (Grid::Continuous(c1), Grid::Continuous(c2)) => c1.merge_unchecked(c2),
             (Grid::Discrete(d1), Grid::Discrete(d2)) => d1.merge_unchecked(d2),
+            (Grid::Uniform(_, c1), Grid::Uniform(_, c2)) => c1.merge_unchecked(c2),
             _ => panic!("Cannot merge grids that have a different shape."),
         }
     }
@@ -540,6 +597,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match self {
             Grid::Continuous(g) => g.update(continuous_learning_rate),
             Grid::Discrete(g) => g.update(discrete_learning_rate, continuous_learning_rate),
+            Grid::Uniform(_, g) => g.update(continuous_learning_rate),
         }
     }
 
@@ -548,6 +606,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match self {
             Grid::Continuous(g) => &g.accumulator,
             Grid::Discrete(g) => &g.accumulator,
+            Grid::Uniform(_, g) => &g.accumulator,
         }
     }
 
@@ -558,6 +617,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> 
         match self {
             Grid::Continuous(c) => Grid::Continuous(c.clone_without_samples()),
             Grid::Discrete(d) => Grid::Discrete(d.clone_without_samples()),
+            Grid::Uniform(bins, c) => Grid::Uniform(bins.clone(), c.clone_without_samples()),
         }
     }
 }
@@ -899,18 +959,19 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
             ));
         }
 
-        if let Sample::Continuous(weight, xs) = sample {
-            self.accumulator.add_sample(eval * weight, Some(sample));
+        match sample {
+            Sample::Continuous(weight, xs) | Sample::Uniform(weight, _, xs) => {
+                self.accumulator.add_sample(eval * weight, Some(sample));
 
-            for (d, x) in self.continuous_dimensions.iter_mut().zip(xs) {
-                d.add_training_sample(*x, *weight, eval)?;
+                for (d, x) in self.continuous_dimensions.iter_mut().zip(xs) {
+                    d.add_training_sample(*x, *weight, eval)?;
+                }
+                Ok(())
             }
-            Ok(())
-        } else {
-            unreachable!(
+            _ => unreachable!(
                 "Sample cannot be converted to continuous sample: {:?}",
                 self
-            );
+            ),
         }
     }
 
@@ -1314,5 +1375,35 @@ mod test {
 
         assert_eq!(grid.accumulator.avg, 0.9718412953459551);
         assert_eq!(grid.accumulator.err, 0.000934925483808598)
+    }
+
+    #[test]
+    fn uniform() {
+        let fs = [|x: f64| (x * PI).sin(), |x: f64| x * x, |x| x];
+
+        let mut grid = Grid::Uniform(vec![3, 10], ContinuousGrid::new(1, 10, 1000, None, false));
+
+        let mut rng = MonteCarloRng::new(0, 0);
+
+        let mut sample = Sample::new();
+
+        grid.sample(&mut rng, &mut sample);
+        for _ in 1..20 {
+            // sample 10_000 times per iteration
+            for _ in 0..10_000 {
+                grid.sample(&mut rng, &mut sample);
+
+                if let Sample::Uniform(_weight, i, cont_sample) = &sample {
+                    grid.add_training_sample(&sample, fs[i[0]](cont_sample[0]) / 10.)
+                        .unwrap();
+                }
+            }
+
+            grid.update(1.5, 1.5);
+        }
+
+        let r = grid.get_statistics();
+        assert_eq!(r.avg, 1.4679742806412577);
+        assert_eq!(r.err, 0.0018395594908128354);
     }
 }

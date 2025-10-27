@@ -5150,6 +5150,33 @@ class NumericalIntegrator:
         """
 
     @classmethod
+    def uniform(
+        _cls,
+        bins: Sequence[int],
+        continuous_subgrid: NumericalIntegrator,
+    ) -> NumericalIntegrator:
+        """Create a new uniform layered grid for the numerical integrator.
+        `len(bins)` specifies the number of discrete layers, and each entry in `bins` specifies the number of bins in that layer.
+        Each discrete bin has equal probability.
+
+        Examples
+        --------
+        >>> def integrand(samples: typing.Sequence[Sample]) -> list[float]:
+        >>>     res = []
+        >>>     for sample in samples:
+        >>>         if sample.d[0] == 0:
+        >>>             res.append(sample.c[0]**2)
+        >>>         else:
+        >>>             res.append(sample.c[0]**3)
+        >>>     return res
+        >>>
+        >>>
+        >>> integrator = NumericalIntegrator.uniform(
+        >>>     [2], NumericalIntegrator.continuous(1))
+        >>> integrator.integrate(integrand, min_error=1e-3)
+        """
+
+    @classmethod
     def rng(
         _cls,
         seed: int,

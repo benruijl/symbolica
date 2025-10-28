@@ -3591,7 +3591,27 @@ where
                 let ag = a.map_coeff(|c| a.ring.upgrade_element(c, &field), field.clone());
                 let bg = b.map_coeff(|c| a.ring.upgrade_element(c, &field), field.clone());
                 let g = PolynomialGCD::gcd(&ag, &bg, vars, bounds);
-                g.map_coeff(|c| a.ring.downgrade_element(c), a.ring.clone())
+
+                // workaround for ICE https://github.com/rust-lang/rust/issues/146965
+                // inline the following call: g.map_coeff(|c| a.ring.downgrade_element(c), a.ring.clone())
+                let mut coefficients = Vec::with_capacity(g.coefficients.len());
+                let mut exponents = Vec::with_capacity(g.exponents.len());
+
+                for m in g.into_iter() {
+                    let nc = a.ring.downgrade_element(m.coefficient);
+                    if !a.ring.is_zero(&nc) {
+                        coefficients.push(nc);
+                        exponents.extend(m.exponents);
+                    }
+                }
+
+                MultivariatePolynomial {
+                    coefficients,
+                    exponents,
+                    ring: a.ring.clone(),
+                    variables: g.variables.clone(),
+                    _phantom: std::marker::PhantomData,
+                }
             }
         }
     }

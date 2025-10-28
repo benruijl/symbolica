@@ -3649,11 +3649,14 @@ class Polynomial:
         Yields `2`.
         """
 
-    def adjoin(self, min_poly: Polynomial) -> tuple[Polynomial, Polynomial, Polynomial]:
+    def adjoin(self, min_poly: Polynomial, new_symbol: Optional[Expression] = None) -> tuple[Polynomial, Polynomial, Polynomial]:
         """Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
         is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
 
         `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+
+        If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+        Otherwise, the variable of the new extension will be the same as that of `b`.
 
         Examples
         --------
@@ -3665,6 +3668,20 @@ class Polynomial:
         >>>
         >>> # convert to number field
         >>> a = P('a^2+b').replace(S('b'), rep23).replace(S('a'), rep2).to_number_field(min_poly)
+        """
+
+    def simplify_algebraic_number(self, min_poly: Polynomial) -> Polynomial:
+        """Find the minimal polynomial for the algebraic number represented by this polynomial
+        expressed in the number field defined by `minimal_poly`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> (min_poly, rep2, rep23) = P('a^2-2').adjoin(P('b^2-3'))
+        >>> rep2.simplify_algebraic_number(min_poly)
+
+        Yields `b^2-2`.
         """
 
 
@@ -4261,11 +4278,20 @@ class FiniteFieldPolynomial:
     def get_minimal_polynomial(self) -> FiniteFieldPolynomial:
         """Get the minimal polynomial of the algebraic extension."""
 
-    def adjoin(self, b: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial]:
+    def adjoin(self, b: FiniteFieldPolynomial, new_symbol: Optional[Expression] = None) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial]:
         """Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
         is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
 
-        `b`  must be irreducible over `R` and `R[a]`; this is not checked."""
+        `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+
+        If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+        Otherwise, the variable of the new extension will be the same as that of `b`.
+        """
+
+    def simplify_algebraic_number(self, min_poly: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Find the minimal polynomial for the algebraic number represented by this polynomial
+        expressed in the number field defined by `minimal_poly`.
+        """
 
 
 class RationalPolynomial:

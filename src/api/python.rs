@@ -9551,6 +9551,9 @@ impl PythonPolynomial {
     ///
     /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
     ///
+    /// If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+    /// Otherwise, the variable of the new extension will be the same as that of `b`.
+    ///
     /// Examples
     /// --------
     ///
@@ -9561,14 +9564,17 @@ impl PythonPolynomial {
     /// >>>
     /// >>> # convert to number field
     /// >>> a = P('a^2+b').replace(S('a'), rep2).replace(S('b'), rep23).to_number_field(min_poly)
+    #[pyo3(signature = (b, new_symbol = None))]
     pub fn adjoin(
         &self,
         b: Self,
+        new_symbol: Option<Variable>,
     ) -> PyResult<(PythonPolynomial, PythonPolynomial, PythonPolynomial)> {
         let a = AlgebraicExtension::new(self.poly.clone());
         let bb = b.poly.to_number_field(&a);
 
-        let (new_field, map1, map2) = AlgebraicExtension::new(self.poly.clone()).adjoin(&bb);
+        let (new_field, map1, map2) =
+            AlgebraicExtension::new(self.poly.clone()).adjoin(&bb, new_symbol);
 
         Ok((
             Self {
@@ -9581,6 +9587,30 @@ impl PythonPolynomial {
                 poly: map2.poly().clone(),
             },
         ))
+    }
+
+    /// Find the minimal polynomial for the algebraic number represented by this polynomial
+    /// expressed in the number field defined by `minimal_poly`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> (min_poly, rep2, rep23) = P('a^2-2').adjoin(P('b^2-3'))
+    /// >>> rep2.simplify_algebraic_number(min_poly)
+    ///
+    /// Yields `b^2-2`.
+    pub fn simplify_algebraic_number(&self, minimal_poly: Self) -> PyResult<Self> {
+        let a = AlgebraicExtension::new(minimal_poly.poly);
+        let m = a.try_to_element(self.poly.clone()).map_err(|e| {
+            exceptions::PyValueError::new_err(format!(
+                "Could not convert polynomial to algebraic number: {}",
+                e
+            ))
+        })?;
+        let poly_nf = a.simplify(&m).poly().clone();
+
+        Ok(Self { poly: poly_nf })
     }
 }
 
@@ -10573,9 +10603,14 @@ impl PythonFiniteFieldPolynomial {
     /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
     ///
     /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+    ///
+    /// If `new_symbol` is provided, the variable of the new extension will be renamed to it.
+    /// Otherwise, the variable of the new extension will be the same as that of `b`.
+    #[pyo3(signature = (b, new_symbol = None))]
     pub fn adjoin(
         &self,
         b: Self,
+        new_symbol: Option<Variable>,
     ) -> PyResult<(
         PythonFiniteFieldPolynomial,
         PythonFiniteFieldPolynomial,
@@ -10590,7 +10625,8 @@ impl PythonFiniteFieldPolynomial {
         let a = AlgebraicExtension::new(self.poly.clone());
         let bb = b.poly.to_number_field(&a);
 
-        let (new_field, map1, map2) = AlgebraicExtension::new(self.poly.clone()).adjoin(&bb);
+        let (new_field, map1, map2) =
+            AlgebraicExtension::new(self.poly.clone()).adjoin(&bb, new_symbol);
 
         Ok((
             Self {
@@ -10603,6 +10639,30 @@ impl PythonFiniteFieldPolynomial {
                 poly: map2.poly().clone(),
             },
         ))
+    }
+
+    /// Find the minimal polynomial for the algebraic number represented by this polynomial
+    /// expressed in the number field defined by `minimal_poly`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> (min_poly, rep2, rep23) = P('a^2-2').adjoin(P('b^2-3'))
+    /// >>> rep2.simplify_algebraic_number(min_poly)
+    ///
+    /// Yields `b^2-2`.
+    pub fn simplify_algebraic_number(&self, minimal_poly: Self) -> PyResult<Self> {
+        let a = AlgebraicExtension::new(minimal_poly.poly);
+        let m = a.try_to_element(self.poly.clone()).map_err(|e| {
+            exceptions::PyValueError::new_err(format!(
+                "Could not convert polynomial to algebraic number: {}",
+                e
+            ))
+        })?;
+        let poly_nf = a.simplify(&m).poly().clone();
+
+        Ok(Self { poly: poly_nf })
     }
 }
 
@@ -17004,7 +17064,7 @@ impl PythonMatrix {
 }
 
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
-/// accessible with `d` (empty when there are not discrete layers), and the final continuous layer `c` if it is present.
+/// accessible with `d` (empty when there are no discrete layers), and the final continuous layer `c` if it is present.
 #[cfg_attr(
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")

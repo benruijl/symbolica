@@ -7178,7 +7178,7 @@ impl Clone for CompiledSimdRealEvaluator {
 #[cfg(feature = "serde")]
 impl serde::Serialize for CompiledSimdRealEvaluator {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.path, &self.fn_names).serialize(serializer)
+        (&self.path, &self.fn_name).serialize(serializer)
     }
 }
 
@@ -7481,7 +7481,7 @@ impl Clone for CompiledSimdComplexEvaluator {
 #[cfg(feature = "serde")]
 impl serde::Serialize for CompiledSimdComplexEvaluator {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.path, &self.fn_names).serialize(serializer)
+        (&self.path, &self.fn_name).serialize(serializer)
     }
 }
 

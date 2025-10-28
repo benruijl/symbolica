@@ -15,8 +15,8 @@ use numpy::{
     ndarray::{ArrayD, Axis},
 };
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyRef, PyResult,
-    PyTypeInfo, Python,
+    Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyRef,
+    PyResult, PyTypeInfo, Python,
     exceptions::{self, PyIndexError},
     pybacked::PyBackedStr,
     pyclass::CompareOp,
@@ -36,7 +36,10 @@ use pyo3_stub_gen::{
     derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pyfunction, gen_stub_pymethods},
     impl_stub_type,
     inventory::submit,
-    type_info::{ArgInfo, MethodInfo, MethodType, PyFunctionInfo, PyMethodsInfo, SignatureArg},
+    type_info::{
+        MethodInfo, MethodType, ParameterDefault, ParameterInfo, ParameterKind, PyFunctionInfo,
+        PyMethodsInfo,
+    },
 };
 #[cfg(not(feature = "python_stubgen"))]
 use pyo3_stub_gen_derive::remove_gen_stub;
@@ -444,56 +447,66 @@ fn symbol_shorthand(
 submit! {
 PyFunctionInfo {
             name: "S",
-            args: &[
-                ArgInfo {
-                    name: "names:str",
-                    signature: Some(SignatureArg::Args),
-                    r#type: || Vec::<&str>::type_input(),
+            parameters: &[
+                ParameterInfo {
+                    name: "names",
+                    kind: ParameterKind::VarPositional,
+                    type_info: || <&str>::type_input(),
+                    default: ParameterDefault::Expr(NONE_ARG),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_symmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_antisymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_cyclesymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_linear",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                                ArgInfo {
+                ParameterInfo {
                     name: "is_scalar",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_real",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_integer",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_positive",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "tags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
             ],
             r#return: || Vec::<PythonExpression>::type_output(),
@@ -526,15 +539,15 @@ f(1,2)
 
 
 Define a linear and symmetric function:
->>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+>>> p1, p2, p3, p4 = S('p1', 'p2', 'p3', 'p4')
 >>> dot = S('dot', is_symmetric=True, is_linear=True)
 >>> e = dot(p2+2*p3,p1+3*p2-p3)
 dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
 
 Parameters
 ----------
-name : str
-    The name of the symbol
+names : str
+    The name(s) of the symbol(s)
 is_symmetric : Optional[bool]
     Set to true if the symbol is symmetric.
 is_antisymmetric : Optional[bool]
@@ -564,76 +577,89 @@ tags: Optional[Sequence[str]]
 submit! {
 PyFunctionInfo {
             name: "S",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_symmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_antisymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_cyclesymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_linear",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_scalar",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_real",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_integer",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_positive",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "tags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_normalization",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<PythonTransformer>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<PythonTransformer>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_print",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[..., typing.Optional[str]]]"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || TypeInfo::unqualified("typing.Optional[typing.Callable[..., typing.Optional[str]]]"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_derivative",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[[Expression, int], Expression]]"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || TypeInfo::unqualified("typing.Optional[typing.Callable[[Expression, int], Expression]]"),
                 },
             ],
             r#return: || PythonExpression::type_output(),
             doc:
-r#"Create new symbols from `names`. Symbols can have attributes,
+r#"Create new symbols from a `name`. Symbols can have attributes,
 such as symmetries. If no attributes
 are specified and the symbol was previously defined, the attributes are inherited.
 Once attributes are defined on a symbol, they cannot be redefined later.
@@ -661,7 +687,7 @@ f(1,2)
 
 
 Define a linear and symmetric function:
->>> p1, p2, p3, p4 = ES('p1', 'p2', 'p3', 'p4')
+>>> p1, p2, p3, p4 = S('p1', 'p2', 'p3', 'p4')
 >>> dot = S('dot', is_symmetric=True, is_linear=True)
 >>> e = dot(p2+2*p3,p1+3*p2-p3)
 dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
@@ -818,21 +844,24 @@ pub fn poly_shorthand(
 submit! {
 PyFunctionInfo {
         name: "P",
-        args: &[
-            ArgInfo {
+        parameters: &[
+            ParameterInfo {
                 name: "poly",
-                signature: None,
-                r#type: || <&str>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::None,
+                type_info: || <&str>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "default_namespace",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || <Option<&str>>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || <Option<&str>>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "vars",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || Option::<Vec<PythonExpression>>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || Option::<Vec<PythonExpression>>::type_input(),
             },
         ],
         r#return: || PythonPolynomial::type_output(),
@@ -850,26 +879,30 @@ All non-polynomial parts will be converted to new, independent variables.",
 submit! {
     PyFunctionInfo {
         name: "P",
-        args: &[
-            ArgInfo {
+        parameters: &[
+            ParameterInfo {
                 name: "poly",
-                signature: None,
-                r#type: || <&str>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::None,
+                type_info: || <&str>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "minimal_poly",
-                signature: None,
-                r#type: || PythonPolynomial::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::None,
+                type_info: || PythonPolynomial::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "default_namespace",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || <Option<&str>>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || <Option<&str>>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "vars",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || Option::<Vec<PythonExpression>>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || Option::<Vec<PythonExpression>>::type_input(),
             },
         ],
         r#return: || PythonNumberFieldPolynomial::type_output(),
@@ -890,36 +923,42 @@ The minimal polynomial must be a monic, irreducible univariate polynomial.",
 submit! {
     PyFunctionInfo {
         name: "P",
-        args: &[
-            ArgInfo {
+        parameters: &[
+            ParameterInfo {
                 name: "poly",
-                signature: None,
-                r#type: || <&str>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::None,
+                type_info: || <&str>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "modulus",
-                signature: None,
-                r#type: || usize::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::None,
+                type_info: || usize::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "power",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || Option::<(usize, PythonExpression)>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || Option::<(usize, PythonExpression)>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "default_namespace",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || <Option<&str>>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || <Option<&str>>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "minimal_poly",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || Option::<PythonPolynomial>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || Option::<PythonPolynomial>::type_input(),
             },
-            ArgInfo {
+            ParameterInfo {
                 name: "vars",
-                signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                r#type: || Option::<Vec<PythonExpression>>::type_input(),
+                kind: ParameterKind::PositionalOrKeyword,
+                default: ParameterDefault::Expr(NONE_ARG),
+                type_info: || Option::<Vec<PythonExpression>>::type_input(),
             },
         ],
         r#return: || PythonFiniteFieldPolynomial::type_output(),
@@ -3038,8 +3077,10 @@ impl TryFrom<Condition<Relation>> for Condition<PatternRestriction> {
 
 pub struct ConvertibleToPatternRestriction(Condition<PatternRestriction>);
 
-impl<'a> FromPyObject<'a> for ConvertibleToPatternRestriction {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for ConvertibleToPatternRestriction {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonPatternRestriction>() {
             Ok(ConvertibleToPatternRestriction(a.condition))
         } else if let Ok(a) = ob.extract::<PythonCondition>() {
@@ -3059,14 +3100,16 @@ impl<'a> FromPyObject<'a> for ConvertibleToPatternRestriction {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(ConvertibleToPatternRestriction = PythonPatternRestriction | PythonCondition);
 
-impl<'a> FromPyObject<'a> for ConvertibleToExpression {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for ConvertibleToExpression {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             Ok(ConvertibleToExpression(a))
         } else if let Ok(num) = ob.extract::<i64>() {
             Ok(ConvertibleToExpression(Atom::num(num).into()))
-        } else if let Ok(num) = ob.downcast::<PyInt>() {
-            let a = format!("{num}");
+        } else if let Ok(num) = ob.cast::<PyInt>() {
+            let a = num.to_string();
             let i = Integer::from(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::num(i).into()))
         } else if ob.extract::<PyBackedStr>().is_ok() {
@@ -3094,8 +3137,10 @@ impl_stub_type!(
         PythonExpression | PyInt | PyBackedStr | pyo3::types::PyFloat | Complex64
 );
 
-impl<'a> FromPyObject<'a> for Symbol {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for Symbol {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             match a.expr.as_view() {
                 AtomView::Var(v) => Ok(v.get_symbol()),
@@ -3112,9 +3157,11 @@ impl<'a> FromPyObject<'a> for Symbol {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(Symbol = PythonExpression);
 
-impl<'a> FromPyObject<'a> for Variable {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
-        Ok(Variable::Symbol(Symbol::extract_bound(ob)?))
+impl<'py> FromPyObject<'_, 'py> for Variable {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
+        Ok(Variable::Symbol(Symbol::extract(ob)?))
     }
 }
 
@@ -3124,12 +3171,14 @@ impl_stub_type!(Variable = PythonExpression);
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(Integer = PyInt);
 
-impl<'a> FromPyObject<'a> for Integer {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for Integer {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(num) = ob.extract::<i64>() {
             Ok(num.into())
-        } else if let Ok(num) = ob.downcast::<PyInt>() {
-            let a = format!("{num}");
+        } else if let Ok(num) = ob.cast::<PyInt>() {
+            let a = num.to_string();
             Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid integer"))
@@ -3155,7 +3204,7 @@ impl<'py> IntoPyObject<'py> for Integer {
                         10,
                     ),
                 )
-                .downcast_into::<PyInt>()
+                .cast_into::<PyInt>()
                 .unwrap())
             },
         }
@@ -3224,8 +3273,10 @@ impl<'py> IntoPyObject<'py> for PythonMultiPrecisionFloat {
     }
 }
 
-impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for PythonMultiPrecisionFloat {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         if ob.is_instance(get_decimal(ob.py()).as_any().bind(ob.py()))? {
             let a = ob
                 .call_method0("__str__")
@@ -3266,8 +3317,10 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
     }
 }
 
-impl<'a> FromPyObject<'a> for Complex<f64> {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for Complex<f64> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         ob.extract::<Complex64>().map(|x| Complex::new(x.re, x.im))
     }
 }
@@ -3275,12 +3328,14 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(Complex<f64> = Complex64);
 
-impl<'a> FromPyObject<'a> for Complex<Float> {
-    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for Complex<Float> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonMultiPrecisionFloat>() {
             let zero = Float::new(a.0.prec());
             Ok(Complex::new(a.0, zero))
-        } else if let Ok(a) = ob.downcast::<PyComplex>() {
+        } else if let Ok(a) = ob.cast::<PyComplex>() {
             Ok(Complex::new(
                 Float::with_val(53, a.real()),
                 Float::with_val(53, a.imag()),
@@ -3726,7 +3781,7 @@ impl PythonExpression {
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
             Ok(Atom::num(num).into())
-        } else if let Ok(num) = num.downcast_bound::<PyInt>(py) {
+        } else if let Ok(num) = num.cast_bound::<PyInt>(py) {
             let a = format!("{num}");
             PythonExpression::parse(_cls, &a, "python")
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
@@ -7202,71 +7257,84 @@ PyMethodsInfo {
         methods: &[
             MethodInfo {
             name: "symbol",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_symmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_antisymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_cyclesymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_linear",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_scalar",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_real",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_integer",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_positive",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "tags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_normalization",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<PythonTransformer>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<PythonTransformer>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_print",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[..., typing.Optional[str]]]"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || TypeInfo::unqualified("typing.Optional[typing.Callable[..., typing.Optional[str]]]"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_derivative",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || TypeInfo::unqualified("typing.Optional[typing.Callable[[Expression, int], Expression]]"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || TypeInfo::unqualified("typing.Optional[typing.Callable[[Expression, int], Expression]]"),
                 },
             ],
             r#type: MethodType::Class,
@@ -7365,56 +7433,66 @@ custom_derivative: Optional[Callable[[Expression, int], Expression]]:
         },
             MethodInfo {
             name: "symbol",
-            args: &[
-                ArgInfo {
-                    name: "names:str",
-                    signature: Some(SignatureArg::Args),
-                    r#type: || <&str>::type_input(),
+            parameters: &[
+                ParameterInfo {
+                    name: "names",
+                    kind: ParameterKind::VarPositional,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_symmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_antisymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_cyclesymmetric",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_linear",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_scalar",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_real",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_integer",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "is_positive",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<bool>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<bool>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "tags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
             ],
             r#type: MethodType::Class,
@@ -7494,11 +7572,12 @@ submit! {
         methods: &[
             MethodInfo {
                 name: "to_polynomial",
-                args: &[
-                    ArgInfo {
+                parameters: &[
+                    ParameterInfo {
                         name: "vars",
-                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || Option::<Vec<PythonExpression>>::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::Expr(NONE_ARG),
+                        type_info: || Option::<Vec<PythonExpression>>::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7512,16 +7591,18 @@ All non-polynomial parts will be converted to new, independent variables.",
             },
             MethodInfo {
                 name: "to_polynomial",
-                args: &[
-                    ArgInfo {
+                parameters: &[
+                    ParameterInfo {
                         name: "minimal_poly",
-                        signature: None,
-                        r#type: || PythonPolynomial::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::None,
+                        type_info: || PythonPolynomial::type_input(),
                     },
-                    ArgInfo {
+                    ParameterInfo {
                         name: "vars",
-                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || Option::<Vec<PythonExpression>>::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::Expr(NONE_ARG),
+                        type_info: || Option::<Vec<PythonExpression>>::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7538,26 +7619,30 @@ The minimal polynomial must be a monic, irreducible univariate polynomial.",
             },
              MethodInfo {
                 name: "to_polynomial",
-                args: &[
-                    ArgInfo {
+                parameters: &[
+                    ParameterInfo {
                         name: "modulus",
-                        signature: None,
-                        r#type: || usize::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::None,
+                        type_info: || usize::type_input(),
                     },
-                    ArgInfo {
+                    ParameterInfo {
                         name: "power",
-                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || Option::<(usize, PythonExpression)>::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::Expr(NONE_ARG),
+                        type_info: || Option::<(usize, PythonExpression)>::type_input(),
                     },
-                    ArgInfo {
+                    ParameterInfo {
                         name: "minimal_poly",
-                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || Option::<PythonPolynomial>::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::Expr(NONE_ARG),
+                        type_info: || Option::<PythonPolynomial>::type_input(),
                     },
-                    ArgInfo {
+                    ParameterInfo {
                         name: "vars",
-                        signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                        r#type: || Option::<Vec<PythonExpression>>::type_input(),
+                        kind: ParameterKind::PositionalOrKeyword,
+                        default: ParameterDefault::Expr(NONE_ARG),
+                        type_info: || Option::<Vec<PythonExpression>>::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7589,11 +7674,12 @@ submit! {
         methods: &[
             MethodInfo {
                 name: "__call__",
-                args: &[
-                    ArgInfo {
-                        name: "*args",
-                        signature: None,
-                        r#type: || ConvertibleToExpression::type_input(),
+                parameters: &[
+                    ParameterInfo {
+                        name: "args",
+                        kind: ParameterKind::VarPositional,
+                        default: ParameterDefault::None,
+                        type_info: || ConvertibleToExpression::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -7613,11 +7699,12 @@ f(3,x)",
             },
             MethodInfo {
                 name: "__call__",
-                args: &[
-                    ArgInfo {
-                        name: "*args",
-                        signature: None,
-                        r#type: || PythonHeldExpression::type_input() | ConvertibleToExpression::type_input(),
+                parameters: &[
+                    ParameterInfo {
+                        name: "args",
+                        kind: ParameterKind::VarPositional,
+                        default: ParameterDefault::None,
+                        type_info: || PythonHeldExpression::type_input() | ConvertibleToExpression::type_input(),
                     },
                 ],
                 r#type: MethodType::Instance,
@@ -15491,51 +15578,60 @@ PyMethodsInfo {
         methods: &[
             MethodInfo {
             name: "compile",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "function_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "filename",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "library_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "number_type",
-                    signature: None,
-                    r#type: || TypeInfo::unqualified("typing.Literal['real']"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || TypeInfo::unqualified("typing.Literal['real']"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "inline_asm",
-                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(DEFAULT),
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "optimization_level",
-                    signature: Some(SignatureArg::Assign{ default: THREE}),
-                    r#type: || Option::<u8>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(THREE),
+                    type_info: || Option::<u8>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_path",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_flags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_header",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
 
             ],
@@ -15572,51 +15668,60 @@ custom_header : Optional[str]
         },
         MethodInfo {
             name: "compile",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "function_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "filename",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "library_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "number_type",
-                    signature: None,
-                    r#type: || TypeInfo::unqualified("typing.Literal['complex']"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || TypeInfo::unqualified("typing.Literal['complex']"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "inline_asm",
-                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(DEFAULT),
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "optimization_level",
-                    signature: Some(SignatureArg::Assign{ default: THREE}),
-                    r#type: || Option::<u8>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(THREE),
+                    type_info: || Option::<u8>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_path",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_flags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_header",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
 
             ],
@@ -15653,51 +15758,60 @@ custom_header : Optional[str]
         },
         MethodInfo {
             name: "compile",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "function_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "filename",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "library_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "number_type",
-                    signature: None,
-                    r#type: || TypeInfo::unqualified("typing.Literal['real_4x']"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || TypeInfo::unqualified("typing.Literal['real_4x']"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "inline_asm",
-                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(DEFAULT),
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "optimization_level",
-                    signature: Some(SignatureArg::Assign{ default: THREE}),
-                    r#type: || Option::<u8>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(THREE),
+                    type_info: || Option::<u8>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_path",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_flags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_header",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
 
             ],
@@ -15734,51 +15848,60 @@ custom_header : Optional[str]
         },
         MethodInfo {
             name: "compile",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "function_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "filename",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "library_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "number_type",
-                    signature: None,
-                    r#type: || TypeInfo::unqualified("typing.Literal['complex_4x']"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || TypeInfo::unqualified("typing.Literal['complex_4x']"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "inline_asm",
-                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(DEFAULT),
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "optimization_level",
-                    signature: Some(SignatureArg::Assign{ default: THREE}),
-                    r#type: || Option::<u8>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(THREE),
+                    type_info: || Option::<u8>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_path",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_flags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_header",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
 
             ],
@@ -15815,61 +15938,72 @@ custom_header : Optional[str]
         },
         MethodInfo {
             name: "compile",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "function_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "filename",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "library_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "number_type",
-                    signature: None,
-                    r#type: || TypeInfo::unqualified("typing.Literal['cuda_real']"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || TypeInfo::unqualified("typing.Literal['cuda_real']"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "inline_asm",
-                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(DEFAULT),
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "optimization_level",
-                    signature: Some(SignatureArg::Assign{ default: THREE}),
-                    r#type: || Option::<u8>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(THREE),
+                    type_info: || Option::<u8>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_path",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_flags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_header",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "cuda_number_of_evaluations",
-                    signature:Some(SignatureArg::Assign{ default: ONE}),
-                    r#type: || Option::<usize>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(ONE),
+                    type_info: || Option::<usize>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "cuda_block_size",
-                    signature:Some(SignatureArg::Assign{ default: CUDA_BLOCK_DEFAULT}),
-                    r#type: || Option::<usize>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(CUDA_BLOCK_DEFAULT),
+                    type_info: || Option::<usize>::type_input(),
                 },
             ],
             r#type: MethodType::Class,
@@ -15913,61 +16047,72 @@ cuda_block_size: Optional[int]
         },
         MethodInfo {
             name: "compile",
-            args: &[
-                ArgInfo {
+            parameters: &[
+                ParameterInfo {
                     name: "function_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "filename",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "library_name",
-                    signature: None,
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "number_type",
-                    signature: None,
-                    r#type: || TypeInfo::unqualified("typing.Literal['cuda_complex']"),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::None,
+                    type_info: || TypeInfo::unqualified("typing.Literal['cuda_complex']"),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "inline_asm",
-                    signature: Some(SignatureArg::Assign{ default: DEFAULT}),
-                    r#type: || <&str>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(DEFAULT),
+                    type_info: || <&str>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "optimization_level",
-                    signature: Some(SignatureArg::Assign{ default: THREE}),
-                    r#type: || Option::<u8>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(THREE),
+                    type_info: || Option::<u8>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_path",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "compiler_flags",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<Vec<String>>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<Vec<String>>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "custom_header",
-                    signature: Some(SignatureArg::Assign{ default: NONE_ARG}),
-                    r#type: || Option::<String>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(NONE_ARG),
+                    type_info: || Option::<String>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "cuda_number_of_evaluations",
-                    signature:Some(SignatureArg::Assign{ default: ONE}),
-                    r#type: || Option::<usize>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(ONE),
+                    type_info: || Option::<usize>::type_input(),
                 },
-                ArgInfo {
+                ParameterInfo {
                     name: "cuda_block_size",
-                    signature:Some(SignatureArg::Assign{ default: CUDA_BLOCK_DEFAULT}),
-                    r#type: || Option::<usize>::type_input(),
+                    kind: ParameterKind::PositionalOrKeyword,
+                    default: ParameterDefault::Expr(CUDA_BLOCK_DEFAULT),
+                    type_info: || Option::<usize>::type_input(),
                 },
             ],
             r#type: MethodType::Class,

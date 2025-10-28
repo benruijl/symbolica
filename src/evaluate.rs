@@ -7062,7 +7062,7 @@ impl BatchEvaluator<f64> for CompiledSimdRealEvaluator {
         }
 
         for (o, i) in out.chunks_mut(4 * n_out).zip(&output_buffer) {
-            o.copy_from_slice(&i.as_array_ref()[..o.len()]);
+            o.copy_from_slice(&i.as_array()[..o.len()]);
         }
 
         self.batch_input_buffer = param_buffer;
@@ -7363,8 +7363,8 @@ impl BatchEvaluator<Complex<f64>> for CompiledSimdComplexEvaluator {
 
         for (o, i) in out.chunks_mut(4 * n_out).zip(&output_buffer) {
             for (j, d) in o.iter_mut().enumerate() {
-                d.re = i.re.as_array_ref()[j];
-                d.im = i.im.as_array_ref()[j];
+                d.re = i.re.as_array()[j];
+                d.im = i.im.as_array()[j];
             }
         }
 

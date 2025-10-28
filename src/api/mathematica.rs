@@ -13,7 +13,7 @@ use crate::parser::Token;
 use crate::poly::Variable;
 use crate::{
     domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
-    state::State,
+    symbol,
 };
 use once_cell::sync::Lazy;
 
@@ -62,7 +62,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
     let mut symbolica = STATE.write().unwrap();
     let symbolica: &mut LocalState = symbolica.borrow_mut();
 
-    let token = Token::parse(&input).unwrap();
+    let token = Token::parse(&input, true).unwrap();
 
     macro_rules! to_rational {
         ($in_field: expr, $exp_size: ty) => {

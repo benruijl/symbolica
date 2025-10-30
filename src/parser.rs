@@ -16,7 +16,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     LicenseManager,
-    atom::{Atom, DefaultNamespace, SymbolAttribute},
+    atom::{Atom, DefaultNamespace, Symbol, SymbolAttribute},
     coefficient::{Coefficient, ConvertToRing},
     domains::{
         Ring,
@@ -450,6 +450,60 @@ impl Token {
         Ok(out)
     }
 
+    /// Parse a symbol with potential attributes.
+    fn parse_symbol(
+        x: &str,
+        namespace: &DefaultNamespace,
+        state: &mut State,
+    ) -> Result<Symbol, String> {
+        if let Some((namespace, attr)) = x.split_once("::{") {
+            if let Some((attrs, symbol)) = attr.split_once("}::") {
+                let mut attributes = vec![];
+                let mut tags = vec![];
+                for x in attrs.split(',') {
+                    match x {
+                        "" => {}
+                        "linear" => attributes.push(SymbolAttribute::Linear),
+                        "symmetric" => attributes.push(SymbolAttribute::Symmetric),
+                        "antisymmetric" => attributes.push(SymbolAttribute::Antisymmetric),
+                        "cyclesymmetric" => attributes.push(SymbolAttribute::Cyclesymmetric),
+                        "scalar" => attributes.push(SymbolAttribute::Scalar),
+                        "real" => attributes.push(SymbolAttribute::Real),
+                        "integer" => attributes.push(SymbolAttribute::Integer),
+                        "positive" => attributes.push(SymbolAttribute::Positive),
+                        x => {
+                            if x.contains("::") {
+                                tags.push(x.to_string());
+                            } else {
+                                Err(format!(
+                                    "Unknown attribute or tag: {x}. Tags must contain a namespace"
+                                ))?;
+                            }
+                        }
+                    }
+                }
+
+                let symbol_whole = format!("{}::{}", namespace, symbol);
+
+                let s = state.get_symbol_with_attributes(
+                    crate::atom::NamespacedSymbol::parse(&symbol_whole),
+                    &attributes,
+                    None,
+                    None,
+                    None,
+                    tags,
+                )?;
+                Ok(s)
+            } else {
+                Err(format!("Malformatted attribute section in {}", x))
+            }
+        } else {
+            state
+                .get_symbol(namespace.attach_namespace(x))
+                .map_err(|e| e.into())
+        }
+    }
+
     /// Parse the token into the atom `out`.
     fn to_atom_with_output_no_norm(
         &self,
@@ -492,52 +546,7 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                if let Some((namespace, attr)) = x.split_once("::{") {
-                    if let Some((attrs, symbol)) = attr.split_once("}::") {
-                        let mut attributes = vec![];
-                        let mut tags = vec![];
-                        for x in attrs.split(',') {
-                            match x {
-                                "" => {}
-                                "linear" => attributes.push(SymbolAttribute::Linear),
-                                "symmetric" => attributes.push(SymbolAttribute::Symmetric),
-                                "antisymmetric" => attributes.push(SymbolAttribute::Antisymmetric),
-                                "cyclesymmetric" => {
-                                    attributes.push(SymbolAttribute::Cyclesymmetric)
-                                }
-                                "scalar" => attributes.push(SymbolAttribute::Scalar),
-                                "real" => attributes.push(SymbolAttribute::Real),
-                                "integer" => attributes.push(SymbolAttribute::Integer),
-                                "positive" => attributes.push(SymbolAttribute::Positive),
-                                x => {
-                                    if x.contains("::") {
-                                        tags.push(x.to_string());
-                                    } else {
-                                        Err(format!(
-                                            "Unknown attribute or tag: {x}. Tags must contain a namespace"
-                                        ))?;
-                                    }
-                                }
-                            }
-                        }
-
-                        let symbol_whole = format!("{}::{}", namespace, symbol);
-
-                        let s = state.get_symbol_with_attributes(
-                            crate::atom::NamespacedSymbol::parse(&symbol_whole),
-                            &attributes,
-                            None,
-                            None,
-                            None,
-                            tags,
-                        )?;
-                        out.to_var(s);
-                    } else {
-                        Err(format!("Malformatted attribute section in {}", x))?;
-                    }
-                } else {
-                    out.to_var(state.get_symbol(namespace.attach_namespace(x))?);
-                }
+                out.to_var(Self::parse_symbol(x, namespace, state)?);
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -602,7 +611,7 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(state.get_symbol(namespace.attach_namespace(name))?);
+                let fun = out.to_fun(Self::parse_symbol(name, namespace, state)?);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
@@ -1522,6 +1531,9 @@ mod test {
             vec![SymbolAttribute::Symmetric, SymbolAttribute::Linear,]
         );
         assert_eq!(s.get_tags(), vec!["test::a"]);
+
+        let input = parse!("symbolica::{}::f1()").get_symbol().unwrap();
+        assert_eq!(input.get_name(), "symbolica::f1");
     }
 
     #[test]
@@ -1600,5 +1612,12 @@ mod test {
             input,
             parse!("5+2748*v1^2*v2").to_polynomial(&Z, var_map.clone())
         );
+    }
+
+    #[test]
+    fn two_way_parse() {
+        let input = parse!("a::{real}::b(c)");
+        let s = input.to_canonical_string();
+        assert_eq!(parse!(s), input);
     }
 }

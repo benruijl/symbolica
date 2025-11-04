@@ -984,6 +984,7 @@ echelonize_impl!(FiniteField<Mersenne64>);
 echelonize_impl!(RationalField);
 echelonize_impl!(Z2);
 echelonize_impl!(AlgebraicExtension<Zp>);
+echelonize_impl!(AlgebraicExtension<Zp64>);
 echelonize_impl!(AlgebraicExtension<Z2>);
 echelonize_impl!(AlgebraicExtension<RationalField>);
 

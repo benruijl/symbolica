@@ -8918,7 +8918,12 @@ impl PythonPolynomial {
             ));
         }
 
-        if self.poly.variables.len() > 1 || self.poly.variables != rhs.poly.variables {
+        if self.poly.variables != rhs.poly.variables
+            || (0..self.poly.nvars())
+                .filter(|i| self.poly.degree(*i) > 0 || rhs.poly.degree(*i) > 0)
+                .count()
+                > 1
+        {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials are not univariate in the same variable".to_string(),
             ));
@@ -10197,7 +10202,12 @@ impl PythonFiniteFieldPolynomial {
             ));
         }
 
-        if self.poly.variables.len() > 1 || self.poly.variables != rhs.poly.variables {
+        if self.poly.variables != rhs.poly.variables
+            || (0..self.poly.nvars())
+                .filter(|i| self.poly.degree(*i) > 0 || rhs.poly.degree(*i) > 0)
+                .count()
+                > 1
+        {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials are not univariate in the same variable".to_string(),
             ));
@@ -12103,7 +12113,12 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             ));
         }
 
-        if self.poly.variables.len() > 1 || self.poly.variables != rhs.poly.variables {
+        if self.poly.variables != rhs.poly.variables
+            || (0..self.poly.nvars())
+                .filter(|i| self.poly.degree(*i) > 0 || rhs.poly.degree(*i) > 0)
+                .count()
+                > 1
+        {
             return Err(exceptions::PyValueError::new_err(
                 "Polynomials are not univariate in the same variable".to_string(),
             ));

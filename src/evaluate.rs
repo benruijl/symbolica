@@ -1146,7 +1146,7 @@ impl<T: Default> ExpressionEvaluator<T> {
     }
 
     fn remove_common_pairs(&mut self) -> usize {
-        #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
         enum CommonInstruction {
             Add(usize, usize),
             Mul(usize, usize),
@@ -1195,8 +1195,10 @@ impl<T: Default> ExpressionEvaluator<T> {
                         .push(p);
                 }
                 Instr::IfElse(_, _) => {
+                    line_usage_zone[p] = current_zone;
                     current_zone_depth += 1;
                     current_zone += 1 * 3_usize.pow(current_zone_depth);
+                    continue;
                 }
                 Instr::Goto(_) => {
                     current_zone += 1 * 3_usize.pow(current_zone_depth);
@@ -1398,20 +1400,15 @@ impl<T: Default> ExpressionEvaluator<T> {
                 last_dep + 1 - self.reserved_indices
             };
 
-            let mut last_use = first_usage;
-            let mut zone_found = false;
+            let mut latest_pos = ins;
             for j in (ins..first_usage + 1).rev() {
-                if line_usage_zone[j] != zone {
-                    if zone_found {
-                        last_use = j;
-                        break;
-                    } else {
-                        zone_found = true;
-                    }
+                if line_usage_zone[j] == zone {
+                    latest_pos = j;
+                    break;
                 }
             }
 
-            placement_bounds.push((ins, last_use, i));
+            placement_bounds.push((ins, latest_pos, i));
         }
 
         placement_bounds.sort_by_key(|x| x.1);
@@ -9064,6 +9061,7 @@ mod test {
 
         let tests = vec![
             ("if(y, x*x + z*z + x*z*z, x * x + 3)", 25., 12.),
+            ("if(y+1, x*x + z*z + x*z*z, x * x + 3)", 12., 25.),
             ("if(y, x*x + z*z + x*z*z, 3)", 25., 3.),
             ("if(x + z, if(y, 1 + x, 1+x+y), 0)", 4., 4.),
             ("if(y, x * z, 0) + x * z", 12., 6.),
@@ -9079,7 +9077,7 @@ mod test {
                 .unwrap()
                 .map_coeff(&|x| x.re.to_f64());
 
-            let res = eval.evaluate_single(&[3., 1., 2.]);
+            let res = eval.evaluate_single(&[3., -1., 2.]);
             assert_eq!(res, true_res);
             let res = eval.evaluate_single(&[3., 0., 2.]);
             assert_eq!(res, false_res);

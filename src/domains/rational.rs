@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::{
+    domains::finite_field::Zp64,
     poly::{Exponent, polynomial::PolynomialRing},
     printer::{PrintOptions, PrintState},
 };
@@ -727,6 +728,15 @@ impl From<rug::Rational> for Rational {
 
 impl ToFiniteField<u32> for Rational {
     fn to_finite_field(&self, field: &Zp) -> <Zp as Ring>::Element {
+        field.div(
+            &self.numerator.to_finite_field(field),
+            &self.denominator.to_finite_field(field),
+        )
+    }
+}
+
+impl ToFiniteField<u64> for Rational {
+    fn to_finite_field(&self, field: &Zp64) -> <Zp64 as Ring>::Element {
         field.div(
             &self.numerator.to_finite_field(field),
             &self.denominator.to_finite_field(field),

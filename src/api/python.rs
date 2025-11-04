@@ -2357,7 +2357,7 @@ impl PythonTransformer {
         self.append_transformer(Transformer::CollectNum)
     }
 
-    /// Complex conjugate all complex numbers in the expression.
+    /// Complex conjugate the expression.
     pub fn conjugate(&self) -> PyResult<PythonTransformer> {
         self.append_transformer(Transformer::Conjugate)
     }
@@ -4533,7 +4533,14 @@ impl PythonExpression {
         self.expr.sqrt().into()
     }
 
-    /// Compute the complex conjugate of the expression.
+    /// Take the complex conjugate of this expression, returning the result.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = E('x+2 + 3^x + (5+2i) * (test::{real}::real) + (-2)^x')
+    /// >>> print(e.conj())
+    ///
+    /// Yields `(5-2𝑖)*real+3^conj(x)+conj(x)+conj((-2)^x)+2`.
     pub fn conj(&self) -> PythonExpression {
         self.expr.conj().into()
     }
@@ -4632,11 +4639,6 @@ impl PythonExpression {
     #[pyo3(signature = (decimal_prec = 16))]
     pub fn to_float(&self, decimal_prec: u32) -> PythonExpression {
         self.expr.to_float(decimal_prec).into()
-    }
-
-    /// Complex conjugate all complex numbers in the expression.
-    pub fn conjugate(&self) -> PythonExpression {
-        self.expr.conjugate().into()
     }
 
     /// Map all floating point and rational coefficients to the best rational approximation

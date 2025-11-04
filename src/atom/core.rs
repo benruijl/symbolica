@@ -811,20 +811,6 @@ pub trait AtomCore {
         self.as_atom_view().to_float_into(decimal_prec, out);
     }
 
-    /// Complex conjugate all numbers in the expression.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use symbolica::{atom::{Atom, AtomCore}, symbol, parse};
-    /// let expr = parse!("1 + 2i") * Atom::var(symbol!("x")).pow(Atom::i());
-    /// let result = expr.conjugate();
-    /// assert_eq!(result, parse!("(1 - 2i)*x^(-1i)"));
-    /// ```
-    fn conjugate(&self) -> Atom {
-        self.as_atom_view().conjugate()
-    }
-
     /// Map all coefficients using a given function.
     ///
     /// # Example
@@ -1373,6 +1359,15 @@ pub trait AtomCore {
     }
 
     /// Take the complex conjugate of the atom.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, parse};
+    /// let expr = parse!("x+2 + 3^x + (5+2i) * (test::{real}::real) + (-2)^x");
+    /// let result = expr.conj();
+    /// assert_eq!(result, parse!("(5-2𝑖)*test::real+3^conj(x)+conj(x)+conj((-2)^x)+2"));
+    /// ```
     fn conj(&self) -> Atom {
         FunctionBuilder::new(Symbol::CONJ)
             .add_arg(self.as_atom_view())

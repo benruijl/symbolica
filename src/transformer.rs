@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomView, Fun, Symbol, representation::FunView},
+    atom::{Atom, AtomCore, AtomView, Fun, Symbol, representation::FunView},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
@@ -693,7 +693,7 @@ impl Transformer {
                     *out = cur_input.collect_num();
                 }
                 Transformer::Conjugate => {
-                    *out = cur_input.conjugate();
+                    *out = cur_input.conj();
                 }
                 Transformer::Series(x, expansion_point, depth, depth_is_absolute) => {
                     if let Ok(s) = cur_input.series(

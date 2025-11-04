@@ -1003,6 +1003,13 @@ class Expression:
     def conj(self) -> Expression:
         """
         Take the complex conjugate of this expression, returning the result.
+
+        Examples
+        --------
+        >>> e = E('x+2 + 3^x + (5+2i) * (test::{real}::real) + (-2)^x')
+        >>> print(e.conj())
+
+        Yields `(5-2𝑖)*real+3^conj(x)+conj(x)+conj((-2)^x)+2`.
         """
 
     def hold(self, t: Transformer) -> HeldExpression:
@@ -1045,9 +1052,6 @@ class Expression:
     def to_float(self, decimal_prec: int = 16) -> Expression:
         """Convert all coefficients and built-in functions to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
-
-    def conjugate(self) -> Expression:
-        """Complex conjugate all complex numbers in the expression."""
 
     def rationalize(self, relative_error: float = 0.01) -> Expression:
         """Map all floating point and rational coefficients to the best rational approximation
@@ -2825,7 +2829,7 @@ class Transformer:
         """
 
     def conjugate(self) -> Transformer:
-        """Complex conjugate all complex numbers in the expression."""
+        """Complex conjugate the expression."""
 
     def coefficient(self, x: Expression) -> Transformer:
         """Create a transformer that collects terms involving the literal occurrence of `x`.
@@ -4127,8 +4131,6 @@ class FiniteFieldPolynomial:
 
     def factor(self) -> list[Tuple[FiniteFieldPolynomial, int]]:
         """Factorize the polynomial.
-
-        The polynomial must be univariate.
 
         Examples
         --------

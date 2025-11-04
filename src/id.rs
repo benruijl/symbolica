@@ -27,7 +27,7 @@ use crate::{
         representation::{InlineVar, ListSlice},
     },
     coefficient::{Coefficient, CoefficientView},
-    domains::{float::Complex, rational::Rational},
+    domains::rational::Rational,
     state::{RecycledAtom, Workspace},
     transformer::{Transformer, TransformerError},
     utils::BorrowedOrOwned,
@@ -1027,32 +1027,6 @@ impl<'a> AtomView<'a> {
                 true
             }
         }
-    }
-
-    /// Complex conjugate all complex numbers in the expression.
-    pub(crate) fn conjugate(&self) -> Atom {
-        self.replace_map(|x, _c, out| match x {
-            AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d, ni, di) => {
-                    out.to_num(
-                        Complex::<Rational>::new((n, d).into(), (ni, di).into())
-                            .conj()
-                            .into(),
-                    );
-                    true
-                }
-                CoefficientView::Large(r, i) => {
-                    out.to_num(Complex::new(r.to_rat(), i.to_rat()).conj().into());
-                    true
-                }
-                CoefficientView::Float(r, i) => {
-                    out.to_num(Complex::new(r.to_float(), i.to_float()).conj().into());
-                    true
-                }
-                _ => false,
-            },
-            _ => false,
-        })
     }
 
     /// Replace part of an expression by calling the map `m` on each subexpression.

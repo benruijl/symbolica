@@ -31,6 +31,7 @@ use crate::{
         polynomial::MultivariatePolynomial, series::Series,
     },
     printer::{AtomPrinter, PrintOptions, PrintState},
+    solve::SolveError,
     state::Workspace,
     tensors::{CanonicalTensor, matrix::Matrix},
     utils::{BorrowedOrOwned, Settable},
@@ -529,6 +530,11 @@ pub trait AtomCore {
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
     ///
+    /// If the system is underdetermined, a partial solution is returned
+    /// where each bound variable is a linear combination of the free
+    /// variables. The free variables are chosen such that they have the
+    /// highest index in the `vars` list.
+    ///
     /// # Example
     ///
     /// ```
@@ -538,13 +544,34 @@ pub trait AtomCore {
     /// let system = &[expr1, expr2];
     /// let vars = &[parse!("x"), parse!("y")];
     /// let solution = Atom::solve_linear_system::<u8, _, _>(system, vars).unwrap();
-    /// assert_eq!(solution[0], Atom::num(2));
-    /// assert_eq!(solution[1], Atom::num(-3));
+    /// assert_eq!(solution, [Atom::num(2), Atom::num(-3)]);
+    /// ```
+    ///
+    /// Underdetermined system example:
+    ///
+    /// ```
+    /// use symbolica::{atom::{Atom, AtomCore}, parse, solve::SolveError, symbol};
+    /// let (v1, v2, v3) = symbol!("v1", "v2", "v3");
+    /// let eqs = ["v1 + v2 - 3", "2*v1 + 2*v2 - 6", "v1 + v3 - 5"];
+    /// let system: Vec<_> = eqs.iter().map(|e| parse!(e)).collect();
+    ///
+    /// let sol = Atom::solve_linear_system::<u8, _, Atom>(
+    ///     &system,
+    ///     &[v1.into(), v2.into(), v3.into()],
+    /// );
+    ///
+    /// assert_eq!(
+    ///     sol,
+    ///     Err(SolveError::Underdetermined {
+    ///         rank: 2,
+    ///         partial_solution: vec![parse!("-v3+5"), parse!("v3-2"), parse!("v3"),],
+    ///     })
+    /// );
     /// ```
     fn solve_linear_system<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
         system: &[T1],
         vars: &[T2],
-    ) -> Result<Vec<Atom>, String> {
+    ) -> Result<Vec<Atom>, SolveError> {
         AtomView::solve_linear_system::<E, T1, T2>(system, vars)
     }
 

@@ -94,12 +94,14 @@ use crate::{
         groebner::GroebnerBasis, polynomial::MultivariatePolynomial, series::Series,
     },
     printer::{AtomPrinter, PrintMode, PrintOptions, PrintState},
+    solve::SolveError,
     state::{RecycledAtom, State, Workspace},
     streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError, TransformerState},
     try_parse,
     utils::Settable,
+    warn,
 };
 
 #[cfg(feature = "python_stubgen")]
@@ -6332,6 +6334,10 @@ impl PythonExpression {
     /// Solve a linear system in the variables `variables`, where each expression
     /// in the system is understood to yield 0.
     ///
+    /// If the system is underdetermined, a partial solution is returned
+    /// where each bound variable is a linear combination of the free
+    /// variables. The free variables are chosen such that they have the highest index in the `vars` list.
+    ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
@@ -6339,32 +6345,34 @@ impl PythonExpression {
     /// >>> f = S('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
+    #[pyo3(signature = (system, variables, warn_if_underdetermined = true))]
     #[classmethod]
     pub fn solve_linear_system(
         _cls: &Bound<'_, PyType>,
         system: Vec<ConvertibleToExpression>,
         variables: Vec<PythonExpression>,
+        warn_if_underdetermined: bool,
     ) -> PyResult<Vec<PythonExpression>> {
-        let system: Vec<_> = system.into_iter().map(|x| x.to_expression()).collect();
-        let system_b: Vec<_> = system.iter().map(|x| x.expr.as_view()).collect();
+        let system: Vec<_> = system.into_iter().map(|x| x.to_expression().expr).collect();
+        let vars: Vec<_> = variables.into_iter().map(|v| v.expr).collect();
 
-        let mut vars = vec![];
-        for v in variables {
-            match v.expr.as_view() {
-                AtomView::Var(v) => vars.push(v.get_symbol().into()),
-                e => {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {e}",
-                    )))?;
+        match AtomView::solve_linear_system::<u16, _, Atom>(&system, &vars) {
+            Ok(res) => Ok(res.into_iter().map(|x| x.into()).collect()),
+            Err(SolveError::Underdetermined {
+                rank,
+                partial_solution,
+            }) => {
+                if warn_if_underdetermined {
+                    warn!(
+                        "The system is underdetermined (rank {rank} < size {})",
+                        vars.len()
+                    );
                 }
+
+                Ok(partial_solution.into_iter().map(|x| x.into()).collect())
             }
+            Err(SolveError::Other(e)) => Err(exceptions::PyValueError::new_err(e)),
         }
-
-        let res = AtomView::solve_linear_system::<u16, _, Atom>(&system_b, &vars).map_err(|e| {
-            exceptions::PyValueError::new_err(format!("Could not solve system: {e}"))
-        })?;
-
-        Ok(res.into_iter().map(|x| x.into()).collect())
     }
 
     /// Find the root of an expression in `x` numerically over the reals using Newton's method.

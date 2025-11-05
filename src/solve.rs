@@ -3,7 +3,7 @@ use std::{ops::Neg, sync::Arc};
 use crate::{
     atom::{Atom, AtomCore, AtomView, Symbol},
     domains::{
-        InternalOrdering,
+        InternalOrdering, SelfRing,
         float::{FloatField, Real, SingleFloat},
         integer::Z,
         rational::Q,
@@ -11,8 +11,22 @@ use crate::{
     },
     evaluate::{FunctionMap, OptimizationSettings},
     poly::{PositiveExponent, Variable},
-    tensors::matrix::Matrix,
+    tensors::matrix::{Matrix, MatrixError},
 };
+
+/// Errors that can occur when solving a system.
+/// Underdetermined systems return a partial solution.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SolveError {
+    /// The system was underdetermined. The partial solution is returned.
+    Underdetermined {
+        /// Rank of the system.
+        rank: u32,
+        /// Partial solution found, that may contain free variables.
+        partial_solution: Vec<Atom>,
+    },
+    Other(String),
+}
 
 impl AtomView<'_> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
@@ -207,7 +221,7 @@ impl AtomView<'_> {
     pub(crate) fn solve_linear_system<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
         system: &[T1],
         vars: &[T2],
-    ) -> Result<Vec<Atom>, String> {
+    ) -> Result<Vec<Atom>, SolveError> {
         let system: Vec<_> = system.iter().map(|v| v.as_atom_view()).collect();
 
         let vars: Vec<_> = vars
@@ -309,22 +323,58 @@ impl AtomView<'_> {
     fn solve_linear_system_impl<E: PositiveExponent>(
         system: &[AtomView],
         vars: &[Variable],
-    ) -> Result<Vec<Atom>, String> {
-        let (m, b) = Self::system_to_matrix_impl::<E>(system, vars)?;
+    ) -> Result<Vec<Atom>, SolveError> {
+        let (m, b) = Self::system_to_matrix_impl::<E>(system, vars)
+            .map_err(|e| SolveError::Other(e.to_string()))?;
 
-        let sol = match m.solve(&b) {
-            Ok(sol) => sol,
-            Err(e) => Err(format!("Could not solve {e:?}"))?,
-        };
+        match m.solve(&b) {
+            Ok(sol) => Ok(sol
+                .into_vec()
+                .into_iter()
+                .map(|s| s.to_expression())
+                .collect()),
+            Err(MatrixError::Underdetermined {
+                rank,
+                row_reduced_augmented_matrix,
+            }) => {
+                let mut sols = Vec::with_capacity(vars.len());
 
-        // replace the temporary variables
-        let mut result = Vec::with_capacity(vars.len());
+                let mut var_index = 0;
+                for r in row_reduced_augmented_matrix.row_iter() {
+                    while var_index < vars.len() as u32 && r[var_index as usize].is_zero() {
+                        sols.push(vars[var_index as usize].to_atom());
+                        var_index += 1;
+                    }
 
-        for s in sol.data {
-            result.push(s.to_expression());
+                    if var_index >= vars.len() as u32 {
+                        break;
+                    }
+
+                    if r[var_index as usize].is_one() {
+                        let mut sol = r.last().unwrap().to_expression();
+
+                        for (var, coeff) in vars.iter().zip(r).skip((var_index + 1) as usize) {
+                            if !coeff.is_zero() {
+                                sol -= coeff.to_expression() * var.to_atom();
+                            }
+                        }
+
+                        sols.push(sol);
+                        var_index += 1;
+                    }
+                }
+
+                for i in var_index as usize..vars.len() {
+                    sols.push(vars[i].to_atom());
+                }
+
+                Err(SolveError::Underdetermined {
+                    rank,
+                    partial_solution: sols,
+                })
+            }
+            Err(e) => Err(SolveError::Other(format!("Could not solve {e:?}"))),
         }
-
-        Ok(result)
     }
 }
 
@@ -342,9 +392,39 @@ mod test {
         },
         parse,
         poly::Variable,
+        solve::SolveError,
         symbol,
         tensors::matrix::Matrix,
     };
+
+    #[test]
+    fn underdetermined() {
+        let v0 = symbol!("v0").into();
+        let v1 = symbol!("v1").into();
+        let v2 = symbol!("v2").into();
+        let v3 = symbol!("v3").into();
+        let v4 = symbol!("v4").into();
+        let eqs = ["v1 + v2 - 3", "2*v1 + 2*v2 - 6", "v1 + v3 - 5"];
+
+        let system: Vec<_> = eqs.iter().map(|e| parse!(e)).collect();
+        let vars = [v0, v1, v2, v3, v4];
+
+        let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &vars);
+
+        assert_eq!(
+            sol,
+            Err(SolveError::Underdetermined {
+                rank: 2,
+                partial_solution: vec![
+                    parse!("v0"),
+                    parse!("-v3+5"),
+                    parse!("v3-2"),
+                    parse!("v3"),
+                    parse!("v4"),
+                ],
+            })
+        );
+    }
 
     #[test]
     fn solve() {

@@ -69,7 +69,7 @@ pub mod numerical_integration;
 pub mod parser;
 pub mod poly;
 pub mod printer;
-mod solve;
+pub mod solve;
 pub mod state;
 pub mod streaming;
 pub mod tensors;

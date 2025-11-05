@@ -317,7 +317,9 @@ fn symbolica(m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// This function must be called before any Symbolica logging events are emitted.
 #[pyfunction()]
 fn use_custom_logger() {
-    crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+    crate::GLOBAL_SETTINGS
+        .initialize_tracing
+        .store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Get the current Symbolica version.

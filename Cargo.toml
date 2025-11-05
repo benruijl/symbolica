@@ -52,7 +52,6 @@ tracing_max_level_info = ["tracing/release_max_level_info"]
 serde = ["dep:serde", "rug/serde"]
 # allow importing/exporting of atoms with a state map using bincode
 bincode = ["dep:bincode", "dep:bincode-trait-derive"]
-experimental_poly_gcd = []
 
 [dependencies.pyo3]
 features = ["abi3", "py-clone", "num-complex"]

@@ -9,6 +9,7 @@ use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument};
 
+use crate::GLOBAL_SETTINGS;
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, GaloisField,
@@ -3401,8 +3402,10 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
         vars: &[usize],
         bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
-        #[cfg(feature = "experimental_poly_gcd")]
-        if vars[0] == 0
+        if GLOBAL_SETTINGS
+            .use_hu_monagan_poly_gcd
+            .load(std::sync::atomic::Ordering::Relaxed)
+            && vars[0] == 0
             && bounds[0] > E::zero()
             && bounds.iter().filter(|x| **x > E::zero()).count() > 2
         {

@@ -33,7 +33,7 @@ use crate::{
     printer::{AtomPrinter, PrintOptions, PrintState},
     state::Workspace,
     tensors::{CanonicalTensor, matrix::Matrix},
-    utils::BorrowedOrOwned,
+    utils::{BorrowedOrOwned, Settable},
 };
 use std::sync::Arc;
 
@@ -1524,15 +1524,12 @@ pub trait AtomCore {
     /// let expr = Atom::var(x) + y;
     /// let result = expr.replace_map(|term, _ctx, out| {
     ///     if term.get_symbol() == Some(x) {
-    ///         *out = z.into();
-    ///         true
-    ///     } else {
-    ///         false
+    ///         **out = Atom::from(z);
     ///     }
     /// });
     /// assert_eq!(result, Atom::var(y) + z);
     /// ```
-    fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(&self, m: F) -> Atom {
+    fn replace_map<F: FnMut(AtomView, &Context, &mut Settable<'_, Atom>)>(&self, m: F) -> Atom {
         self.as_atom_view().replace_map(m)
     }
 

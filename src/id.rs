@@ -30,7 +30,7 @@ use crate::{
     domains::rational::Rational,
     state::{RecycledAtom, Workspace},
     transformer::{Transformer, TransformerError},
-    utils::BorrowedOrOwned,
+    utils::{BorrowedOrOwned, Settable},
 };
 
 /// A general expression that can contain pattern-matching wildcards
@@ -1032,41 +1032,36 @@ impl<'a> AtomView<'a> {
     /// Replace part of an expression by calling the map `m` on each subexpression.
     /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub(crate) fn replace_map<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(
+    pub(crate) fn replace_map<F: FnMut(AtomView, &Context, &mut Settable<'_, Atom>)>(
         &self,
         mut m: F,
     ) -> Atom {
         let mut out = Atom::new();
-        self.replace_map_into(&mut m, &mut out);
-        out
-    }
 
-    /// Replace part of an expression by calling the map `m` on each subexpression.
-    /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
-    /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub(crate) fn replace_map_into<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(
-        &self,
-        mut m: F,
-        out: &mut Atom,
-    ) {
         let context = Context {
             function_level: 0,
             parent_type: None,
             index: 0,
         };
+
         Workspace::get_local().with(|ws| {
-            self.replace_map_impl(ws, &mut m, context, out);
+            self.replace_map_impl(ws, &mut m, context, &mut out);
         });
+
+        out
     }
 
-    fn replace_map_impl<F: FnMut(AtomView, &Context, &mut Atom) -> bool>(
+    fn replace_map_impl<F: FnMut(AtomView, &Context, &mut Settable<'_, Atom>)>(
         &self,
         ws: &Workspace,
         m: &mut F,
         mut context: Context,
         out: &mut Atom,
     ) -> bool {
-        if m(*self, &context, out) {
+        let mut settable = Settable::from(&mut *out);
+        m(*self, &context, &mut settable);
+
+        if settable.is_set() {
             return true;
         }
 
@@ -1964,7 +1959,7 @@ impl Pattern {
                     out.to_var(*name);
                 } else {
                     Err(TransformerError::ValueError(format!(
-                        "Unsubstituted wildcard {name}"
+                        "Unsubstituted wildcard {name:?}",
                     )))?;
                 }
             }
@@ -1990,7 +1985,7 @@ impl Pattern {
                         }
                     } else if !allow_new_wildcards_on_rhs {
                         Err(TransformerError::ValueError(format!(
-                            "Unsubstituted wildcard {name}"
+                            "Unsubstituted wildcard {name:?}",
                         )))?;
                     }
                 }
@@ -2023,7 +2018,7 @@ impl Pattern {
                             func.add_arg(workspace.new_var(*w).as_view())
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {w}"
+                                "Unsubstituted wildcard {w:?}",
                             )))?;
                         }
 
@@ -2066,7 +2061,7 @@ impl Pattern {
                             out.set_from_view(&workspace.new_var(*w).as_view());
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {w}"
+                                "Unsubstituted wildcard {w:?}",
                             )))?;
                         }
 
@@ -2115,7 +2110,7 @@ impl Pattern {
                             mul.extend(workspace.new_var(*w).as_view());
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {w}"
+                                "Unsubstituted wildcard {w:?}"
                             )))?;
                         }
 
@@ -2161,7 +2156,7 @@ impl Pattern {
                             add.extend(workspace.new_var(*w).as_view());
                         } else {
                             Err(TransformerError::ValueError(format!(
-                                "Unsubstituted wildcard {w}"
+                                "Unsubstituted wildcard {w:?}"
                             )))?;
                         }
 
@@ -4581,11 +4576,12 @@ mod test {
     fn replace_map() {
         let a = parse!("v1 + f1(1,2, f1((1+v1)^2), (v1+v2)^2)");
 
-        let r = a.replace_map(|arg, context, out| {
+        let mut tmp = Atom::new();
+        let r = a.replace_map(move |arg, context, out| {
             if context.function_level > 0 {
-                arg.expand_into(None, out)
-            } else {
-                false
+                if arg.expand_into(None, &mut tmp) {
+                    out.set_from_view(&tmp.as_view());
+                }
             }
         });
 

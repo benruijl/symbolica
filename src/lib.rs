@@ -84,14 +84,25 @@ static LICENSE_KEY: OnceCell<String> = OnceCell::new();
 static LICENSE_MANAGER: OnceCell<LicenseManager> = OnceCell::new();
 static LICENSED: AtomicBool = LicenseManager::init();
 
-/// Set whether a default tracing subscriber is initialized upon the first call to a logging macro.
-pub static INITIALIZE_TRACING: AtomicBool = AtomicBool::new(true);
+/// Global settings for Symbolica.
+pub struct GlobalSettings {
+    /// Set whether a default tracing subscriber is initialized upon the first call to a logging macro.
+    pub initialize_tracing: AtomicBool,
+    /// Use an experimental implementation of the Hu-Monagan polynomial GCD algorithm.
+    pub use_hu_monagan_poly_gcd: AtomicBool,
+}
+
+/// Global settings for Symbolica.
+pub static GLOBAL_SETTINGS: GlobalSettings = GlobalSettings {
+    initialize_tracing: AtomicBool::new(true),
+    use_hu_monagan_poly_gcd: AtomicBool::new(false),
+};
 
 /// Write an error messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+        if $crate::GLOBAL_SETTINGS.initialize_tracing.load(std::sync::atomic::Ordering::Relaxed) {
             let _ = tracing_subscriber::fmt()
                     .with_env_filter(
                         tracing_subscriber::EnvFilter::builder()
@@ -99,7 +110,7 @@ macro_rules! error {
                             .from_env_lossy(),
                     )
                     .try_init();
-            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+            $crate::GLOBAL_SETTINGS.initialize_tracing.store(false, std::sync::atomic::Ordering::Relaxed);
         }
 
         tracing::error!($($arg)*);
@@ -110,7 +121,7 @@ macro_rules! error {
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+        if $crate::GLOBAL_SETTINGS.initialize_tracing.load(std::sync::atomic::Ordering::Relaxed) {
             let _ = tracing_subscriber::fmt()
                     .with_env_filter(
                         tracing_subscriber::EnvFilter::builder()
@@ -118,7 +129,7 @@ macro_rules! warn {
                             .from_env_lossy(),
                     )
                     .try_init();
-            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+            $crate::GLOBAL_SETTINGS.initialize_tracing.store(false, std::sync::atomic::Ordering::Relaxed);
         }
         tracing::warn!($($arg)*);
     };
@@ -128,7 +139,7 @@ macro_rules! warn {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        if $crate::INITIALIZE_TRACING.load(std::sync::atomic::Ordering::Relaxed) {
+        if $crate::GLOBAL_SETTINGS.initialize_tracing.load(std::sync::atomic::Ordering::Relaxed) {
             let _ = tracing_subscriber::fmt()
                     .with_env_filter(
                         tracing_subscriber::EnvFilter::builder()
@@ -136,7 +147,7 @@ macro_rules! info {
                             .from_env_lossy(),
                     )
                     .try_init();
-            $crate::INITIALIZE_TRACING.store(false, std::sync::atomic::Ordering::Relaxed);
+            $crate::GLOBAL_SETTINGS.initialize_tracing.store(false, std::sync::atomic::Ordering::Relaxed);
         }
         tracing::info!($($arg)*);
     };

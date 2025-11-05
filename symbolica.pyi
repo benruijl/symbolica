@@ -689,6 +689,17 @@ class Expression:
         implementation details.
         """
 
+    def to_int(self) -> int:
+        """
+        Convert the expression to an integer if possible.
+        Raises a `ValueError` if the expression is not an integer.
+
+        Examples
+        --------
+        >>> e = E('7')
+        >>> n = e.to_int()
+        """
+
     @classmethod
     def load(_cls, filename: str, conflict_fn: Optional[Callable[[str], str]] = None) -> Expression:
         """Load an expression and its state from a file. The state will be merged
@@ -3509,10 +3520,24 @@ class Polynomial:
         Examples
         --------
         >>> from symbolica import Expression as E
-        >>> p = E('3x^2+6x+9').to_polynomial()
+        >>> p = E('6x^2+3x+9').to_polynomial()
         >>> print(p.primitive())
 
-        Yields `x^2+2*x+3`.
+        Yields `2*x^2+x+3`.
+        """
+
+    def monic(self) -> Polynomial:
+        """
+        Get the monic part of the polynomial, i.e., the polynomial
+        divided by its leading coefficient.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('6x^2+3x+9').to_polynomial()
+        >>> print(p.monic())
+
+        Yields `x^2+1/2*x+2/3`.
         """
 
     def lcoeff(self) -> Polynomial:
@@ -3890,6 +3915,20 @@ class NumberFieldPolynomial:
         Yields `x^2+2*x+3`.
         """
 
+    def monic(self) -> NumberFieldPolynomial:
+        """
+        Get the monic part of the polynomial, i.e., the polynomial
+        divided by its leading coefficient.
+
+        Examples
+        --------
+        >>> from symbolica import Expression as E
+        >>> p = E('6x^2+3x+9').to_polynomial()
+        >>> print(p.monic())
+
+        Yields `x^2+1/2*x+2/3`.
+        """
+
     def lcoeff(self) -> NumberFieldPolynomial:
         """
         Get the leading coefficient.
@@ -4166,18 +4205,18 @@ class FiniteFieldPolynomial:
         >>> print(p.integrate(x))
         """
 
-    def primitive(self) -> FiniteFieldPolynomial:
+    def monic(self) -> FiniteFieldPolynomial:
         """
-        Get the primitive part of the polynomial, i.e., the polynomial
-        with a leading coefficient of 1.
+        Get the monic part of the polynomial, i.e., the polynomial
+        divided by its leading coefficient.
 
         Examples
         --------
         >>> from symbolica import Expression as E
-        >>> p = E('3x^2+6x+9').to_polynomial()
-        >>> print(p.primitive())
+        >>> p = E('6x^2+3x+9').to_polynomial()
+        >>> print(p.monic())
 
-        Yields `x^2+2*x+3`.
+        Yields `x^2+1/2*x+3/2`.
         """
 
     def lcoeff(self) -> FiniteFieldPolynomial:
@@ -4279,6 +4318,9 @@ class FiniteFieldPolynomial:
 
     def get_minimal_polynomial(self) -> FiniteFieldPolynomial:
         """Get the minimal polynomial of the algebraic extension."""
+
+    def get_modulus(self) -> int:
+        """Get the modulus of the finite field."""
 
     def adjoin(self, b: FiniteFieldPolynomial, new_symbol: Optional[Expression] = None) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial, FiniteFieldPolynomial]:
         """Adjoin the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
@@ -4480,6 +4522,9 @@ class FiniteFieldRationalPolynomial:
 
     def gcd(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+    def get_modulus(self) -> int:
+        """Get the modulus of the finite field."""
 
     def derivative(self, x: Expression) -> RationalPolynomial:
         """Take a derivative in `x`.

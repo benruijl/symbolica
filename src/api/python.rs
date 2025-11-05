@@ -62,7 +62,9 @@ use crate::{
         Ring, SelfRing,
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
-        finite_field::{GaloisField, PrimeIteratorU64, ToFiniteField, Z2, Zp, is_prime_u64},
+        finite_field::{
+            FiniteFieldCore, GaloisField, PrimeIteratorU64, ToFiniteField, Z2, Zp64, is_prime_u64,
+        },
         float::{Complex, F64, Float, RealNumberLike},
         integer::{FromFiniteField, Integer, IntegerRelationError, IntegerRing, Z},
         rational::{Q, Rational, RationalField},
@@ -835,7 +837,7 @@ fn transformer_shorthand() -> PythonTransformer {
 pub fn poly_shorthand(
     expr: &str,
     default_namespace: &str,
-    modulus: Option<u32>,
+    modulus: Option<u64>,
     power: Option<(u16, Symbol)>,
     minimal_poly: Option<PythonPolynomial>,
     vars: Option<Vec<PythonExpression>>,
@@ -2180,14 +2182,7 @@ impl PythonTransformer {
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonTransformer> {
         let mut var_map = vec![];
         for v in vars {
-            match v.expr.as_view() {
-                AtomView::Var(v) => var_map.push(v.get_symbol().into()),
-                e => {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {e}",
-                    )))?;
-                }
-            }
+            var_map.push(v.expr.into());
         }
 
         let a = Arc::new(var_map);
@@ -4115,6 +4110,19 @@ impl PythonExpression {
         Ok(format!("{}", self.expr.printer(PrintOptions::sympy())))
     }
 
+    /// Convert the expression into an integer if possible.
+    /// Raises a `ValueError` if the expression cannot be converted to an integer.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = E('7').to_int()
+    pub fn to_int(&self) -> PyResult<Integer> {
+        self.expr
+            .clone()
+            .try_into()
+            .map_err(|e| exceptions::PyValueError::new_err(format!("Cannot convert to int: {e}")))
+    }
+
     /// Hash the expression.
     pub fn __hash__(&self) -> u64 {
         let mut hasher = ahash::AHasher::default();
@@ -5821,7 +5829,7 @@ impl PythonExpression {
     #[pyo3(signature = (modulus = None, power = None, minimal_poly = None, vars = None))]
     pub fn to_polynomial(
         &self,
-        modulus: Option<u32>,
+        modulus: Option<u64>,
         mut power: Option<(u16, Symbol)>,
         minimal_poly: Option<PythonPolynomial>,
         vars: Option<Vec<PythonExpression>>,
@@ -5902,7 +5910,7 @@ impl PythonExpression {
                         }
                         .into_py_any(py)
                     } else {
-                        let f = Zp::new(m);
+                        let f = Zp64::new(m);
                         let p = p.map_coeff(|c| c.to_finite_field(&f), f.clone());
                         if !p.is_irreducible() || !f.is_one(&p.lcoeff()) || e != p.degree(0) {
                             return Err(exceptions::PyValueError::new_err(
@@ -5923,8 +5931,8 @@ impl PythonExpression {
                     }
                     .into_py_any(py)
                 } else {
-                    let f = Zp::new(m);
-                    let g = AlgebraicExtension::galois_field(Zp::new(m), e as usize, name.into());
+                    let f = Zp64::new(m);
+                    let g = AlgebraicExtension::galois_field(Zp64::new(m), e as usize, name.into());
                     PythonGaloisFieldPolynomial {
                         poly: self.expr.to_polynomial(&f, var_map).to_number_field(&g),
                     }
@@ -5937,7 +5945,7 @@ impl PythonExpression {
                 .into_py_any(py)
             } else {
                 PythonFiniteFieldPolynomial {
-                    poly: self.expr.to_polynomial(&Zp::new(m), var_map),
+                    poly: self.expr.to_polynomial(&Zp64::new(m), var_map),
                 }
                 .into_py_any(py)
             }
@@ -5988,14 +5996,7 @@ impl PythonExpression {
         let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
-                match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_symbol().into()),
-                    e => {
-                        Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {e}",
-                        )))?;
-                    }
-                }
+                var_map.push(v.expr.into());
             }
         }
 
@@ -9063,13 +9064,28 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> p = E('6x^2+3x+9').to_polynomial().primitive()
     /// >>> print(p)
     ///
-    /// Yields `x^2+2*x+3`.
+    /// Yields `2*x^2+x+3`.
     pub fn primitive(&self) -> PyResult<Self> {
         Ok(Self {
             poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Make the polynomial monic, i.e., divide by the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('6x^2+3x+9').to_polynomial().monic()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+1/2*x+3/2`.
+    pub fn monic(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.clone().make_monic(),
         })
     }
 
@@ -9428,8 +9444,8 @@ impl PythonPolynomial {
     }
 
     /// Convert the coefficients of the polynomial to a finite field with prime `prime`.
-    pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldPolynomial {
-        let f = Zp::new(prime);
+    pub fn to_finite_field(&self, prime: u64) -> PythonFiniteFieldPolynomial {
+        let f = Zp64::new(prime);
         PythonFiniteFieldPolynomial {
             poly: self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone()),
         }
@@ -9721,7 +9737,7 @@ impl PythonPolynomial {
 #[pyclass(name = "FiniteFieldPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
-    pub poly: MultivariatePolynomial<Zp, u16>,
+    pub poly: MultivariatePolynomial<Zp64, u16>,
 }
 
 #[cfg(feature = "python_stubgen")]
@@ -10099,7 +10115,8 @@ impl PythonFiniteFieldPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        let vars: Vec<_> = order.into_iter().map(|x| x.expr.into()).collect();
+
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -10340,20 +10357,24 @@ impl PythonFiniteFieldPolynomial {
         })
     }
 
-    /// Get the primitive part of the polynomial, i.e., the polynomial
+    pub fn get_modulus(&self) -> u64 {
+        self.poly.ring.get_prime()
+    }
+
+    /// Make the polynomial monic, i.e., the polynomial
     /// with a leading coefficient of 1.
     ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> p = E('3x^2+6x+9').to_polynomial().monic()
     /// >>> print(p)
     ///
     /// Yields `x^2+2*x+3`.
-    pub fn primitive(&self) -> PyResult<Self> {
+    pub fn monic(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.clone().make_primitive(),
+            poly: self.poly.clone().make_monic(),
         })
     }
 
@@ -10653,7 +10674,7 @@ impl PythonFiniteFieldPolynomial {
         _cls: &Bound<'_, PyType>,
         arg: &str,
         vars: Vec<PyBackedStr>,
-        prime: u32,
+        prime: u64,
         default_namespace: &str,
     ) -> PyResult<Self> {
         let mut var_map = vec![];
@@ -10674,7 +10695,7 @@ impl PythonFiniteFieldPolynomial {
 
         let e = Token::parse(arg, true)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(&Zp::new(prime), &Arc::new(var_map), &var_name_map)
+            .to_polynomial(&Zp64::new(prime), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: e })
@@ -11150,7 +11171,7 @@ impl PythonPrimeTwoPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        let vars: Vec<_> = order.into_iter().map(|x| x.expr.into()).collect();
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -11318,20 +11339,18 @@ impl PythonPrimeTwoPolynomial {
         })
     }
 
-    /// Get the primitive part of the polynomial, i.e., the polynomial
-    /// with a leading coefficient of 1.
+    /// Make the polynomial monic, i.e., divide by the leading coefficient.
     ///
     /// Examples
     /// --------
-    ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> p = E('6x^2+3x+9').to_polynomial().monic()
     /// >>> print(p)
     ///
-    /// Yields `x^2+2*x+3`.
-    pub fn primitive(&self) -> PyResult<Self> {
+    /// Yields `x^2+1/2*x+3/2`.
+    pub fn monic(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.clone().make_primitive(),
+            poly: self.poly.clone().make_monic(),
         })
     }
 
@@ -12241,20 +12260,18 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         })
     }
 
-    /// Get the primitive part of the polynomial, i.e., the polynomial
-    /// with a leading coefficient of 1.
+    /// Make the polynomial monic, i.e., divide by the leading coefficient.
     ///
     /// Examples
     /// --------
-    ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> p = E('6x^2+3x+9').to_polynomial().monic()
     /// >>> print(p)
     ///
-    /// Yields `x^2+2*x+3`.
-    pub fn primitive(&self) -> PyResult<Self> {
+    /// Yields `x^2+1/2*x+3/2`.
+    pub fn monic(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.clone().make_primitive(),
+            poly: self.poly.clone().make_monic(),
         })
     }
 
@@ -12586,7 +12603,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
 #[pyclass(name = "GaloisFieldPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPolynomial {
-    pub poly: MultivariatePolynomial<AlgebraicExtension<Zp>, u16>,
+    pub poly: MultivariatePolynomial<AlgebraicExtension<Zp64>, u16>,
 }
 
 #[cfg(feature = "python_stubgen")]
@@ -13134,20 +13151,18 @@ impl PythonGaloisFieldPolynomial {
         })
     }
 
-    /// Get the primitive part of the polynomial, i.e., the polynomial
-    /// with a leading coefficient of 1.
+    /// Make the polynomial monic, i.e., divide by the leading coefficient.
     ///
     /// Examples
     /// --------
-    ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> p = E('6x^2+3x+9').to_polynomial().monic()
     /// >>> print(p)
     ///
-    /// Yields `x^2+2*x+3`.
-    pub fn primitive(&self) -> PyResult<Self> {
+    /// Yields `x^2+1/2*x+3/2`.
+    pub fn monic(&self) -> PyResult<Self> {
         Ok(Self {
-            poly: self.poly.clone().make_primitive(),
+            poly: self.poly.clone().make_monic(),
         })
     }
 
@@ -13469,6 +13484,11 @@ impl PythonGaloisFieldPolynomial {
         PythonFiniteFieldPolynomial {
             poly: self.poly.ring.poly().clone(),
         }
+    }
+
+    /// Get the modulus of the base finite field.
+    pub fn get_modulus(&self) -> u64 {
+        self.poly.ring.poly().ring.get_prime()
     }
 }
 
@@ -14042,20 +14062,35 @@ impl PythonNumberFieldPolynomial {
         })
     }
 
-    /// Get the primitive part of the polynomial, i.e., the polynomial
-    /// with the content removed.
+    /// Get the primitive part of the polynomial, i.e., the polynomial divided
+    /// by its content.
     ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> p = E('3x^2+6x+9').to_polynomial().primitive()
+    /// >>> p = E('6x^2+3x+9').to_polynomial().primitive()
     /// >>> print(p)
     ///
-    /// Yields `x^2+2*x+3`.
+    /// Yields `2*x^2+x+3`.
     pub fn primitive(&self) -> PyResult<Self> {
         Ok(Self {
             poly: self.poly.clone().make_primitive(),
+        })
+    }
+
+    /// Make the polynomial monic, i.e., divide by the leading coefficient.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> p = E('6x^2+3x+9').to_polynomial().monic()
+    /// >>> print(p)
+    ///
+    /// Yields `x^2+1/2*x+3/2`.
+    pub fn monic(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.clone().make_monic(),
         })
     }
 
@@ -14628,9 +14663,9 @@ impl PythonRationalPolynomial {
     }
 
     /// Convert the coefficients to finite fields with prime `prime`.
-    pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldRationalPolynomial {
+    pub fn to_finite_field(&self, prime: u64) -> PythonFiniteFieldRationalPolynomial {
         PythonFiniteFieldRationalPolynomial {
-            poly: self.poly.to_finite_field(&Zp::new(prime)),
+            poly: self.poly.to_finite_field(&Zp64::new(prime)),
         }
     }
 
@@ -14720,7 +14755,7 @@ impl PythonRationalPolynomial {
 )]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
-    pub poly: RationalPolynomial<Zp, u16>,
+    pub poly: RationalPolynomial<Zp64, u16>,
 }
 
 #[cfg_attr(feature = "python_stubgen", gen_stub_pymethods)]
@@ -14907,6 +14942,11 @@ impl PythonFiniteFieldRationalPolynomial {
         }
     }
 
+    /// Get the modulus of the finite field.
+    pub fn get_modulus(&self) -> u64 {
+        self.poly.numerator.ring.get_prime()
+    }
+
     /// Take a derivative in `x`.
     ///
     /// Examples
@@ -14998,7 +15038,7 @@ impl PythonFiniteFieldRationalPolynomial {
         _cls: &Bound<'_, PyType>,
         arg: &str,
         vars: Vec<PyBackedStr>,
-        prime: u32,
+        prime: u64,
         default_namespace: &str,
     ) -> PyResult<Self> {
         let mut var_map = vec![];
@@ -15017,7 +15057,7 @@ impl PythonFiniteFieldRationalPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let field = Zp::new(prime);
+        let field = Zp64::new(prime);
         let e = Token::parse(arg, true)
             .map_err(exceptions::PyValueError::new_err)?
             .to_rational_polynomial(&field, &field, &Arc::new(var_map), &var_name_map)

@@ -133,8 +133,6 @@ macro_rules! wrap_symbol {
             s.line = line!() as usize;
             s
         } else {
-
-
             let ns = if $crate::state::State::BUILTIN_SYMBOL_NAMES.contains(&$e) {
                 "symbolica"
             } else {
@@ -489,6 +487,13 @@ impl SymbolBuilder {
     /// This function will return an error when an existing symbol is redefined
     /// with different attributes.
     pub fn build(self) -> Result<Symbol, SmartString<LazyCompact>> {
+        self.build_with_state(&mut State::get_state_mut())
+    }
+
+    pub(crate) fn build_with_state(
+        self,
+        state: &mut State,
+    ) -> Result<Symbol, SmartString<LazyCompact>> {
         let (namespace, partial_symbol) =
             self.symbol.symbol.rsplit_once("::").ok_or_else(|| {
                 SmartString::from(format!(
@@ -503,7 +508,7 @@ impl SymbolBuilder {
             }
         }
 
-        Token::check_symbol_name(namespace)?;
+        Token::check_symbol_namespace(namespace)?;
         Token::check_symbol_name(partial_symbol)?;
 
         if self.attributes.is_none()
@@ -512,9 +517,9 @@ impl SymbolBuilder {
             && self.derivative_function.is_none()
             && self.tags.is_empty()
         {
-            State::get_state_mut().get_symbol(self.symbol)
+            state.get_symbol(self.symbol)
         } else {
-            State::get_state_mut().get_symbol_with_attributes(
+            state.get_symbol_with_attributes(
                 self.symbol,
                 self.attributes.as_ref().map(|x| x.as_ref()).unwrap_or(&[]),
                 self.normalization_function,
@@ -557,6 +562,13 @@ impl Symbol {
     /// Use the [symbol!](crate::symbol) macro instead to define symbols in the current namespace.
     pub fn new(name: NamespacedSymbol) -> SymbolBuilder {
         SymbolBuilder::new(name)
+    }
+
+    /// Parse a symbol from a string with optional namespace and attributes.
+    ///
+    /// Use the [symbol!](crate::symbol) macro instead to define symbols in the current namespace.
+    pub fn parse(name: DefaultNamespace) -> Result<Self, String> {
+        Token::parse_symbol(&name.data, &name, &mut State::get_state_mut())
     }
 
     /// Create a new variable from the symbol.

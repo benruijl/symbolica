@@ -16,7 +16,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     LicenseManager,
-    atom::{Atom, DefaultNamespace, Symbol, SymbolAttribute},
+    atom::{Atom, DefaultNamespace, Symbol, SymbolAttribute, SymbolBuilder},
     coefficient::{Coefficient, ConvertToRing},
     domains::{
         Ring,
@@ -185,7 +185,7 @@ pub enum Token {
 impl Token {
     const OPS: [char; 11] = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
     const WHITESPACE: [char; 5] = [' ', '\t', '\n', '\r', '\\'];
-    const FORBIDDEN: [char; 9] = [';', '&', '!', '%', '.', '"', '¿', '⧞', '∞'];
+    const FORBIDDEN: [char; 11] = [';', '&', '!', '%', '.', '"', '¿', '⧞', '∞', '{', '}'];
 }
 
 impl std::fmt::Display for Token {
@@ -262,12 +262,21 @@ impl std::fmt::Display for Token {
 impl Token {
     /// Check the validity of a symbol name.
     pub fn check_symbol_name(symbol: &str) -> Result<(), String> {
+        if symbol.contains(':') {
+            return Err(format!("Symbol name {} cannot contain ':'", symbol));
+        }
+
+        Token::check_symbol_namespace(symbol)
+    }
+
+    /// Check the validity of a symbol namespace.
+    pub fn check_symbol_namespace(symbol: &str) -> Result<(), String> {
         if symbol.len() == 0 {
-            return Err("Empty symbol name".to_string());
+            return Err("Empty symbol namespace".to_string());
         }
 
         if symbol.starts_with(|c: char| c.is_numeric()) {
-            return Err(format!("Symbol name '{symbol}' starts with a number"));
+            return Err(format!("Symbol namespace '{symbol}' starts with a number"));
         }
 
         for c in symbol.chars() {
@@ -275,7 +284,9 @@ impl Token {
                 || Token::WHITESPACE.contains(&c)
                 || Token::FORBIDDEN.contains(&c)
             {
-                return Err(format!("Invalid character '{c}' in symbol name '{symbol}'"));
+                return Err(format!(
+                    "Invalid character '{c}' in symbol namespace '{symbol}'"
+                ));
             }
         }
 
@@ -451,7 +462,7 @@ impl Token {
     }
 
     /// Parse a symbol with potential attributes.
-    fn parse_symbol(
+    pub(crate) fn parse_symbol(
         x: &str,
         namespace: &DefaultNamespace,
         state: &mut State,
@@ -485,21 +496,17 @@ impl Token {
 
                 let symbol_whole = format!("{}::{}", namespace, symbol);
 
-                let s = state.get_symbol_with_attributes(
-                    crate::atom::NamespacedSymbol::parse(&symbol_whole),
-                    &attributes,
-                    None,
-                    None,
-                    None,
-                    tags,
-                )?;
-                Ok(s)
+                SymbolBuilder::new(crate::atom::NamespacedSymbol::parse(&symbol_whole))
+                    .with_attributes(attributes)
+                    .with_tags(tags)
+                    .build_with_state(state)
+                    .map_err(|e| e.into())
             } else {
                 Err(format!("Malformatted attribute section in {}", x))
             }
         } else {
-            state
-                .get_symbol(namespace.attach_namespace(x))
+            SymbolBuilder::new(namespace.attach_namespace(x))
+                .build_with_state(state)
                 .map_err(|e| e.into())
         }
     }
@@ -842,28 +849,28 @@ impl Token {
 
                         stack.push(Token::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
-                    } else if !Token::FORBIDDEN.contains(&c) {
-                        if c == '{' {
-                            while c != '}' && c != '\0' {
-                                id_buffer.push(c);
-                                c = char_iter.next().unwrap_or('\0');
-                                column_counter += 1;
-                            }
-
-                            if c == '\0' {
-                                Err(format!(
-                                    "Missing }} of bracket started at line {line_counter} and column {column_counter}"
-                                ))?;
-                            }
-
-                            if Token::OPS.contains(&c) || Token::WHITESPACE.contains(&c) {
-                                state = ParseState::Any;
-
-                                stack.push(Token::ID(id_buffer.as_str().into()));
-                                id_buffer.clear();
-                            }
+                    } else if c == '{' {
+                        while c != '}' && c != '\0' {
+                            id_buffer.push(c);
+                            c = char_iter.next().unwrap_or('\0');
+                            column_counter += 1;
                         }
 
+                        if c == '\0' {
+                            Err(format!(
+                                "Missing }} of bracket started at line {line_counter} and column {column_counter}"
+                            ))?;
+                        }
+
+                        if Token::OPS.contains(&c) || Token::WHITESPACE.contains(&c) {
+                            state = ParseState::Any;
+
+                            stack.push(Token::ID(id_buffer.as_str().into()));
+                            id_buffer.clear();
+                        }
+
+                        id_buffer.push(c);
+                    } else if !Token::FORBIDDEN.contains(&c) {
                         id_buffer.push(c);
                     } else {
                         // check for some symbols that could be the result of copy-paste errors

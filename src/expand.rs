@@ -105,7 +105,7 @@ impl AtomView<'_> {
     /// that fits the largest exponent in the expanded expression. Often,
     /// `u8` or `u16` is sufficient.
     pub(crate) fn expand_via_poly<E: Exponent>(&self, var: Option<AtomView>) -> Atom {
-        let var_map = var.map(|v| Arc::new(vec![v.to_owned().into()]));
+        let var_map = var.map(|v| Arc::new(vec![v.to_owned().try_into().unwrap()]));
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {

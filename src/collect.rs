@@ -109,7 +109,7 @@ impl<'a> AtomView<'a> {
     pub(crate) fn coefficient_list<E: Exponent, T: AtomCore>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
         let vars = xs
             .iter()
-            .map(|x| x.as_atom_view().to_owned().into())
+            .map(|x| x.as_atom_view().to_owned().try_into().unwrap())
             .collect::<Vec<_>>();
 
         let p = self.to_polynomial_in_vars::<E>(&Arc::new(vars));

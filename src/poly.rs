@@ -644,7 +644,7 @@ impl MonomialOrder for LexOrder {
 
 /// A polynomial variable. It is either a (global) symbol
 /// a temporary variable (for internal use), an array entry,
-/// a function or any other non-polynomial part.
+/// a function or any non-polynomial power.
 ///
 /// Variables should be constructed using `From` or `Into` on
 /// symbols and atoms. Variables can be
@@ -658,10 +658,14 @@ impl MonomialOrder for LexOrder {
     trait_decode(trait = crate::state::HasStateMap)
 )]
 pub enum Variable {
+    /// A symbol, for example x, y, z, etc.
     Symbol(Symbol),
-    Temporary(usize), // a temporary variable, for internal use
+    /// A temporary variable, for internal use
+    Temporary(usize),
+    /// A function, for example f(x), sin(x), etc.
     Function(Symbol, Arc<Atom>),
-    Other(Arc<Atom>), // any other non-polynomial part, for example x^-1, x^y, etc.
+    /// A non-polynomial power, for example x^-1, x^y, etc.
+    Power(Arc<Atom>),
 }
 
 impl std::fmt::Display for Variable {
@@ -669,7 +673,7 @@ impl std::fmt::Display for Variable {
         match self {
             Variable::Symbol(v) => f.write_str(v.get_stripped_name()),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
-            Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
+            Variable::Function(_, a) | Variable::Power(a) => std::fmt::Display::fmt(a, f),
         }
     }
 }
@@ -680,18 +684,44 @@ impl From<Symbol> for Variable {
     }
 }
 
-impl From<Atom> for Variable {
-    fn from(i: Atom) -> Variable {
-        match i {
-            Atom::Var(v) => Variable::Symbol(v.get_symbol()),
-            Atom::Fun(f) => Variable::Function(f.get_symbol(), Arc::new(Atom::Fun(f))),
-            _ => Variable::Other(Arc::new(i)),
+impl TryFrom<Atom> for Variable {
+    type Error = String;
+
+    fn try_from(a: Atom) -> Result<Variable, Self::Error> {
+        match a {
+            Atom::Var(v) => Ok(Variable::Symbol(v.get_symbol())),
+            Atom::Fun(f) => Ok(Variable::Function(f.get_symbol(), Arc::new(Atom::Fun(f)))),
+            Atom::Pow(p) => {
+                let (_, exp) = p.to_pow_view().get_base_exp();
+                if exp.is_positive() {
+                    Err(format!(
+                        "Cannot convert {} to a variable as it can be decomposed into a polynomial part",
+                        Atom::Pow(p)
+                    ))
+                } else {
+                    Ok(Variable::Power(Arc::new(Atom::Pow(p))))
+                }
+            }
+            _ => Err(format!(
+                "Cannot convert {a} to a variable as it can be decomposed into a polynomial part"
+            )),
+        }
+    }
+}
+
+impl Into<Atom> for Variable {
+    fn into(self) -> Atom {
+        match self {
+            Variable::Symbol(s) => Atom::var(s),
+            Variable::Function(_, a) | Variable::Power(a) => a.as_ref().clone(),
+            Variable::Temporary(x) => panic!("Cannot convert a temporary variable {x} to an atom"),
         }
     }
 }
 
 impl Variable {
-    pub fn to_id(&self) -> Option<Symbol> {
+    /// Get the symbol if this variable is a symbol.
+    pub fn get_id(&self) -> Option<Symbol> {
         match self {
             Variable::Symbol(s) => Some(*s),
             _ => None,
@@ -702,14 +732,14 @@ impl Variable {
         match self {
             Variable::Symbol(v) => v.get_stripped_name().to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
-            Variable::Function(_, a) | Variable::Other(a) => a.format_string(opts, state),
+            Variable::Function(_, a) | Variable::Power(a) => a.format_string(opts, state),
         }
     }
 
     pub fn to_atom(&self) -> Atom {
         match self {
             Variable::Symbol(s) => Atom::var(*s),
-            Variable::Function(_, a) | Variable::Other(a) => a.as_ref().clone(),
+            Variable::Function(_, a) | Variable::Power(a) => a.as_ref().clone(),
             Variable::Temporary(_) => panic!("Cannot convert a temporary variable to an atom"),
         }
     }
@@ -729,7 +759,7 @@ impl Variable {
                         seen = true;
                     }
                 }
-                Variable::Function(_, f) | Variable::Other(f) => {
+                Variable::Function(_, f) | Variable::Power(f) => {
                     if f.contains_symbol(symbol) {
                         if seen {
                             return false;
@@ -1028,7 +1058,7 @@ impl AtomView<'_> {
 
                 // check if we have seen this variable before
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Other(vv) => vv.as_view() == *self,
+                    Variable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1037,7 +1067,7 @@ impl AtomView<'_> {
                         .monomial(field.one(), exp)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Other(Arc::new(self.to_owned())));
+                    var_map.push(Variable::Power(Arc::new(self.to_owned())));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1152,7 +1182,7 @@ impl AtomView<'_> {
                 }
 
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Other(vv) => vv.as_view() == *self,
+                    Variable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1263,7 +1293,7 @@ impl AtomView<'_> {
 
                 // non-integer exponent, convert to new variable
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Other(vv) => vv.as_view() == *self,
+                    Variable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1274,7 +1304,7 @@ impl AtomView<'_> {
                     RationalPolynomial::from_num_den(r, den, out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Other(Arc::new(self.to_owned())));
+                    var_map.push(Variable::Power(Arc::new(self.to_owned())));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1409,7 +1439,7 @@ impl AtomView<'_> {
 
                 // non-integer exponent, convert to new variable
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Other(vv) => vv.as_view() == *self,
+                    Variable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1419,7 +1449,7 @@ impl AtomView<'_> {
                     FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Other(Arc::new(self.to_owned())));
+                    var_map.push(Variable::Power(Arc::new(self.to_owned())));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1505,7 +1535,7 @@ impl<E: Exponent, O: MonomialOrder> MultivariatePolynomial<AtomField, E, O> {
         let mut num_h = ws.new_atom();
         let mut pow_h = ws.new_atom();
 
-        let vars: Vec<_> = self.variables.iter().map(|v| v.to_atom()).collect();
+        let vars: Vec<Atom> = self.variables.iter().map(|v| v.clone().into()).collect();
 
         let mut sorted_vars = (0..vars.len()).collect::<Vec<_>>();
         sorted_vars.sort_by_key(|&i| vars[i].clone());
@@ -1594,7 +1624,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                     let a = map.get(v).expect("Variable missing from map");
                     a.to_owned()
                 } else {
-                    v.to_atom()
+                    v.clone().into()
                 }
             })
             .collect();
@@ -1675,7 +1705,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                         Variable::Temporary(_) => {
                             unreachable!("Temporary variables not supported");
                         }
-                        Variable::Function(_, a) | Variable::Other(a) => {
+                        Variable::Function(_, a) | Variable::Power(a) => {
                             var_h.set_from_view(&a.as_view());
                         }
                     }

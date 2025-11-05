@@ -731,7 +731,7 @@ impl State {
                         dest.write_u32::<LittleEndian>(v.get_id())?;
                         t.as_view().write(dest.by_ref())?;
                     }
-                    Variable::Other(t) => {
+                    Variable::Power(t) => {
                         dest.write_u8(3)?;
                         t.as_view().write(dest.by_ref())?;
                     }
@@ -933,7 +933,7 @@ impl State {
                         f.read(&mut *source)?;
 
                         let f_r = f.as_view().rename(&state_map);
-                        variables.push(Variable::Other(Arc::new(f_r)));
+                        variables.push(Variable::Power(Arc::new(f_r)));
                     }
                     _ => {
                         return Err(std::io::Error::new(

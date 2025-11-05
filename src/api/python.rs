@@ -2182,7 +2182,11 @@ impl PythonTransformer {
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonTransformer> {
         let mut var_map = vec![];
         for v in vars {
-            var_map.push(v.expr.into());
+            var_map.push(
+                v.expr
+                    .try_into()
+                    .map_err(|e| exceptions::PyValueError::new_err(e))?,
+            );
         }
 
         let a = Arc::new(var_map);
@@ -2381,7 +2385,7 @@ impl PythonTransformer {
                 .iter()
                 .position(|v| match (v, x.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
                 .ok_or(TransformerError::ValueError(format!(
@@ -5308,14 +5312,11 @@ impl PythonExpression {
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
         let mut var_map = vec![];
         for v in vars {
-            match v.expr.as_view() {
-                AtomView::Var(v) => var_map.push(v.get_symbol().into()),
-                e => {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {e}",
-                    )))?;
-                }
-            }
+            var_map.push(
+                v.expr
+                    .try_into()
+                    .map_err(|e| exceptions::PyValueError::new_err(e))?,
+            );
         }
 
         let b = self.expr.as_view().set_coefficient_ring(&Arc::new(var_map));
@@ -5838,15 +5839,11 @@ impl PythonExpression {
         let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
-                match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_symbol().into()),
-                    e => {
-                        Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {}",
-                            e
-                        )))?;
-                    }
-                }
+                var_map.push(
+                    v.expr
+                        .try_into()
+                        .map_err(|e| exceptions::PyValueError::new_err(e))?,
+                );
             }
         }
 
@@ -5996,7 +5993,11 @@ impl PythonExpression {
         let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
-                var_map.push(v.expr.into());
+                var_map.push(
+                    v.expr
+                        .try_into()
+                        .map_err(|e| exceptions::PyValueError::new_err(e))?,
+                );
             }
         }
 
@@ -6795,14 +6796,14 @@ impl PythonExpression {
 
         for ((symbol, rename, args), body) in functions {
             let symbol = symbol
-                .to_id()
+                .get_id()
                 .ok_or(exceptions::PyValueError::new_err(format!(
                     "Bad function name {symbol}",
                 )))?;
             let args: Vec<_> = args
                 .iter()
                 .map(|x| {
-                    x.to_id().ok_or(exceptions::PyValueError::new_err(format!(
+                    x.get_id().ok_or(exceptions::PyValueError::new_err(format!(
                         "Bad function name {symbol}",
                     )))
                 })
@@ -6816,7 +6817,7 @@ impl PythonExpression {
         if let Some(ef) = &external_functions {
             for (symbol, name) in ef.keys() {
                 let symbol = symbol
-                    .to_id()
+                    .get_id()
                     .ok_or(exceptions::PyValueError::new_err(format!(
                         "Bad function name {symbol}",
                     )))?;
@@ -6830,7 +6831,7 @@ impl PythonExpression {
         if let Some(ef) = &conditionals {
             for symbol in ef {
                 let symbol = symbol
-                    .to_id()
+                    .get_id()
                     .ok_or(exceptions::PyValueError::new_err(format!(
                         "Bad function name {symbol}",
                     )))?;
@@ -6990,14 +6991,14 @@ impl PythonExpression {
 
         for ((symbol, rename, args), body) in functions {
             let symbol = symbol
-                .to_id()
+                .get_id()
                 .ok_or(exceptions::PyValueError::new_err(format!(
                     "Bad function name {symbol}",
                 )))?;
             let args: Vec<_> = args
                 .iter()
                 .map(|x| {
-                    x.to_id().ok_or(exceptions::PyValueError::new_err(format!(
+                    x.get_id().ok_or(exceptions::PyValueError::new_err(format!(
                         "Bad function name {symbol}",
                     )))
                 })
@@ -7011,7 +7012,7 @@ impl PythonExpression {
         if let Some(ef) = &external_functions {
             for (symbol, name) in ef.keys() {
                 let symbol = symbol
-                    .to_id()
+                    .get_id()
                     .ok_or(exceptions::PyValueError::new_err(format!(
                         "Bad function name {symbol}",
                     )))?;
@@ -8642,7 +8643,7 @@ impl PythonPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -8792,7 +8793,7 @@ impl PythonPolynomial {
                 .iter()
                 .position(|v| match (v, var.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
         {
@@ -8809,7 +8810,7 @@ impl PythonPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -8823,7 +8824,11 @@ impl PythonPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        let vars: Vec<_> = order
+            .into_iter()
+            .map(|x| x.expr.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -8949,7 +8954,7 @@ impl PythonPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -9030,7 +9035,7 @@ impl PythonPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -9129,7 +9134,7 @@ impl PythonPolynomial {
                     .iter()
                     .position(|v| match (v, vvv.expr.as_view()) {
                         (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                         _ => false,
                     })
                     .ok_or(exceptions::PyValueError::new_err(format!(
@@ -9273,7 +9278,10 @@ impl PythonPolynomial {
     /// >>> r = E('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: PolynomialOrInteger<Self>) -> PyResult<Self> {
-        let var: Variable = x.expr.into();
+        let var: Variable = x
+            .expr
+            .try_into()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
 
         let v = match v {
             PolynomialOrInteger::Polynomial(p) => p,
@@ -9537,7 +9545,7 @@ impl PythonPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -9594,7 +9602,10 @@ impl PythonPolynomial {
             ));
         }
 
-        let var = x.expr.into();
+        let var = x
+            .expr
+            .try_into()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
 
         let sample_points: Vec<Rational> = sample_points
             .into_iter()
@@ -9921,7 +9932,7 @@ impl PythonFiniteFieldPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -10084,7 +10095,7 @@ impl PythonFiniteFieldPolynomial {
                 .iter()
                 .position(|v| match (v, var.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
         {
@@ -10101,7 +10112,7 @@ impl PythonFiniteFieldPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -10115,7 +10126,11 @@ impl PythonFiniteFieldPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| x.expr.into()).collect();
+        let vars: Vec<_> = order
+            .into_iter()
+            .map(|x| x.expr.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
 
         self.poly = self
             .poly
@@ -10263,7 +10278,7 @@ impl PythonFiniteFieldPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -10344,7 +10359,7 @@ impl PythonFiniteFieldPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -10418,7 +10433,7 @@ impl PythonFiniteFieldPolynomial {
                     .iter()
                     .position(|v| match (v, vvv.expr.as_view()) {
                         (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                         _ => false,
                     })
                     .ok_or(exceptions::PyValueError::new_err(format!(
@@ -10640,7 +10655,7 @@ impl PythonFiniteFieldPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -10983,7 +10998,7 @@ impl PythonPrimeTwoPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -11140,7 +11155,7 @@ impl PythonPrimeTwoPolynomial {
                 .iter()
                 .position(|v| match (v, var.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
         {
@@ -11157,7 +11172,7 @@ impl PythonPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -11171,7 +11186,11 @@ impl PythonPrimeTwoPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| x.expr.into()).collect();
+        let vars: Vec<_> = order
+            .into_iter()
+            .map(|x| x.expr.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -11245,7 +11264,7 @@ impl PythonPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -11326,7 +11345,7 @@ impl PythonPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -11394,7 +11413,7 @@ impl PythonPrimeTwoPolynomial {
                     .iter()
                     .position(|v| match (v, vvv.expr.as_view()) {
                         (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                         _ => false,
                     })
                     .ok_or(exceptions::PyValueError::new_err(format!(
@@ -11616,7 +11635,7 @@ impl PythonPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -11836,7 +11855,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -11999,7 +12018,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 .iter()
                 .position(|v| match (v, var.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
         {
@@ -12016,7 +12035,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -12030,7 +12049,11 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        let vars: Vec<_> = order
+            .into_iter()
+            .map(|x| x.expr.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -12166,7 +12189,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -12247,7 +12270,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -12315,7 +12338,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                     .iter()
                     .position(|v| match (v, vvv.expr.as_view()) {
                         (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                         _ => false,
                     })
                     .ok_or(exceptions::PyValueError::new_err(format!(
@@ -12537,7 +12560,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -12787,7 +12810,7 @@ impl PythonGaloisFieldPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -12944,7 +12967,7 @@ impl PythonGaloisFieldPolynomial {
                 .iter()
                 .position(|v| match (v, var.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
         {
@@ -12961,7 +12984,7 @@ impl PythonGaloisFieldPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -12975,7 +12998,11 @@ impl PythonGaloisFieldPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        let vars: Vec<_> = order
+            .into_iter()
+            .map(|x| x.expr.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -13057,7 +13084,7 @@ impl PythonGaloisFieldPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -13138,7 +13165,7 @@ impl PythonGaloisFieldPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -13206,7 +13233,7 @@ impl PythonGaloisFieldPolynomial {
                     .iter()
                     .position(|v| match (v, vvv.expr.as_view()) {
                         (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                         _ => false,
                     })
                     .ok_or(exceptions::PyValueError::new_err(format!(
@@ -13428,7 +13455,7 @@ impl PythonGaloisFieldPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -13684,7 +13711,7 @@ impl PythonNumberFieldPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -13841,7 +13868,7 @@ impl PythonNumberFieldPolynomial {
                 .iter()
                 .position(|v| match (v, var.expr.as_view()) {
                     (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                     _ => false,
                 })
         {
@@ -13858,7 +13885,7 @@ impl PythonNumberFieldPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -13872,7 +13899,11 @@ impl PythonNumberFieldPolynomial {
     /// Set a new variable ordering for the polynomial.
     /// This can be used to introduce new variables as well.
     pub fn reorder(&mut self, order: Vec<PythonExpression>) -> PyResult<()> {
-        let vars: Vec<_> = order.into_iter().map(|x| Variable::from(x.expr)).collect();
+        let vars: Vec<_> = order
+            .into_iter()
+            .map(|x| x.expr.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
         self.poly = self
             .poly
             .rearrange_with_growth(&vars)
@@ -13954,7 +13985,7 @@ impl PythonNumberFieldPolynomial {
             .iter()
             .position(|v| match (v, var.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -14035,7 +14066,7 @@ impl PythonNumberFieldPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -14134,7 +14165,7 @@ impl PythonNumberFieldPolynomial {
                     .iter()
                     .position(|v| match (v, vvv.expr.as_view()) {
                         (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                         _ => false,
                     })
                     .ok_or(exceptions::PyValueError::new_err(format!(
@@ -14327,7 +14358,7 @@ impl PythonNumberFieldPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -14453,7 +14484,7 @@ impl PythonRationalPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -14589,7 +14620,7 @@ impl PythonRationalPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(
@@ -14823,7 +14854,7 @@ impl PythonFiniteFieldRationalPolynomial {
                         "Temporary variable in polynomial".to_string(),
                     ))?;
                 }
-                Variable::Function(_, a) | Variable::Other(a) => {
+                Variable::Function(_, a) | Variable::Power(a) => {
                     var_list.push(a.as_ref().clone().into());
                 }
             }
@@ -14964,7 +14995,7 @@ impl PythonFiniteFieldRationalPolynomial {
             .iter()
             .position(|v| match (v, x.expr.as_view()) {
                 (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                (Variable::Function(_, f) | Variable::Power(f), a) => f.as_view() == a,
                 _ => false,
             })
             .ok_or(exceptions::PyValueError::new_err(format!(

@@ -1479,7 +1479,7 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
                             .expect("Variable not found")
                             .clone();
                     }
-                    super::Variable::Function(_, o) | super::Variable::Other(o) => {
+                    super::Variable::Function(_, o) | super::Variable::Power(o) => {
                         *input = o.evaluate(coeff_map, const_map, function_map).unwrap();
                     }
                     super::Variable::Temporary(_) => panic!("Temporary variable in input"),

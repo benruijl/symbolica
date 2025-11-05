@@ -212,8 +212,9 @@ impl AtomView<'_> {
 
         let vars: Vec<_> = vars
             .iter()
-            .map(|v| v.as_atom_view().to_owned().into())
-            .collect();
+            .map(|v| v.as_atom_view().to_owned().try_into())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| SolveError::Other(e))?;
 
         AtomView::solve_linear_system_impl::<E>(&system, &vars)
     }
@@ -234,8 +235,8 @@ impl AtomView<'_> {
 
         let vars: Vec<_> = vars
             .iter()
-            .map(|v| v.as_atom_view().to_owned().into())
-            .collect();
+            .map(|v| v.as_atom_view().to_owned().try_into())
+            .collect::<Result<Vec<_>, _>>()?;
 
         AtomView::system_to_matrix_impl::<E>(&system, &vars)
     }

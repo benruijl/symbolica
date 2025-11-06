@@ -30,7 +30,7 @@ use crate::{
         Exponent, PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial, series::Series,
     },
-    printer::{AtomPrinter, PrintOptions, PrintState},
+    printer::{AtomPrinter, CanonicalOrderingSettings, PrintOptions, PrintState},
     solve::SolveError,
     state::Workspace,
     tensors::{CanonicalTensor, matrix::Matrix},
@@ -1079,7 +1079,28 @@ pub trait AtomCore {
         AtomPrinter::new_with_options(self.as_atom_view(), opts)
     }
 
+    /// Print the atom in a form that is independent of any implementation details, such
+    /// as the definition order of the symbols. Use [AtomCore::to_canonical_string] for a fully
+    /// canonical representation.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use symbolica::{atom::AtomCore, printer::CanonicalOrderingSettings, symbol};
+    /// let (y, x) = symbol!("canon::y", "canon::x");
+    /// let expr = x.to_atom() + y;
+    /// let canonical_str = expr.to_canonically_ordered_string(CanonicalOrderingSettings {
+    ///   include_namespace: false,
+    ///   include_attributes: false,
+    /// });
+    /// assert_eq!(canonical_str, "x+y");
+    /// ```
+    fn to_canonically_ordered_string(&self, settings: CanonicalOrderingSettings) -> String {
+        self.as_atom_view().to_canonically_ordered_string(settings)
+    }
+
     /// Print the atom in a form that is unique and independent of any implementation details.
+    /// The resulting string can be parsed back to the same expression.
     ///
     /// # Example
     ///

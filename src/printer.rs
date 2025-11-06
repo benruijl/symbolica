@@ -376,6 +376,22 @@ impl fmt::Display for AtomPrinter<'_> {
     }
 }
 
+/// Settings for canonical ordering of atoms when printing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CanonicalOrderingSettings {
+    pub include_namespace: bool,
+    pub include_attributes: bool,
+}
+
+impl Default for CanonicalOrderingSettings {
+    fn default() -> Self {
+        Self {
+            include_namespace: true,
+            include_attributes: true,
+        }
+    }
+}
+
 impl AtomView<'_> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -409,29 +425,38 @@ impl AtomView<'_> {
         AtomPrinter::new_with_options(*self, opts)
     }
 
+    pub(crate) fn to_canonically_ordered_string(
+        &self,
+        settings: CanonicalOrderingSettings,
+    ) -> String {
+        let fixed = self.canonical_string_sign_fix(&settings);
+        fixed.as_view().to_canonical_string_symmetric(&settings)
+    }
+
     /// Print the atom in a form that is unique and independent of any implementation details.
     pub(crate) fn to_canonical_string(&self) -> String {
-        let fixed = self.canonical_string_sign_fix();
-        fixed.as_view().to_canonical_string_symmetric()
+        let settings = CanonicalOrderingSettings::default();
+        let fixed = self.canonical_string_sign_fix(&settings);
+        fixed.as_view().to_canonical_string_symmetric(&settings)
     }
 
     /// Print the atom in a form that is unique and independent of any implementation details,
     /// treating all antisymmetric functions as symmetric.
-    pub(crate) fn to_canonical_string_symmetric(&self) -> String {
+    fn to_canonical_string_symmetric(&self, settings: &CanonicalOrderingSettings) -> String {
         let mut s = String::new();
-        self.to_canonical_view_impl(&mut s);
+        self.to_canonical_view_impl(&settings, &mut s);
         s
     }
 
     /// Fix the sign of antisymmetric functions so that they can be treated as symmetric under
     /// canonical string ordering.
-    fn canonical_string_sign_fix(&self) -> Atom {
+    fn canonical_string_sign_fix(&self, settings: &CanonicalOrderingSettings) -> Atom {
         match self {
             AtomView::Num(_) | AtomView::Var(_) => self.to_owned(),
             AtomView::Fun(f) => {
                 let mut fb = FunctionBuilder::new(f.get_symbol());
                 for aa in f.iter() {
-                    fb = fb.add_arg(aa.canonical_string_sign_fix());
+                    fb = fb.add_arg(aa.canonical_string_sign_fix(settings));
                 }
 
                 // sign changes in the arguments may cause a reordering, and linearity may
@@ -439,11 +464,11 @@ impl AtomView<'_> {
                 let res = fb.finish();
 
                 if f.is_antisymmetric() {
-                    fn sort_args(ff: &FunView) -> Atom {
+                    fn sort_args(ff: &FunView, settings: &CanonicalOrderingSettings) -> Atom {
                         let mut args = vec![];
                         for (i, aa) in ff.iter().enumerate() {
                             // all antisymmetric functions in the arguments can be treated as symmetric under canonical string ordering
-                            args.push((aa.to_canonical_string_symmetric(), i));
+                            args.push((aa.to_canonical_string_symmetric(settings), i));
                         }
 
                         args.sort();
@@ -469,7 +494,7 @@ impl AtomView<'_> {
                     }
 
                     match res.as_view() {
-                        AtomView::Fun(ff) => sort_args(&ff),
+                        AtomView::Fun(ff) => sort_args(&ff, settings),
                         AtomView::Mul(m) => {
                             // find the antisymmetric function in the product
                             let mut it = m.iter();
@@ -484,9 +509,9 @@ impl AtomView<'_> {
                             }
 
                             if let AtomView::Fun(fff) = first {
-                                return sort_args(&fff) * second;
+                                return sort_args(&fff, settings) * second;
                             } else if let AtomView::Fun(fff) = second {
-                                return sort_args(&fff) * first;
+                                return sort_args(&fff, settings) * first;
                             } else {
                                 panic!(
                                     "Expected one term in product to be antisymmetric function: {}",
@@ -505,13 +530,13 @@ impl AtomView<'_> {
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                b.canonical_string_sign_fix()
-                    .pow(e.canonical_string_sign_fix())
+                b.canonical_string_sign_fix(settings)
+                    .pow(e.canonical_string_sign_fix(settings))
             }
             AtomView::Mul(m) => {
                 let mut terms = vec![];
                 for x in m.iter() {
-                    terms.push(x.canonical_string_sign_fix());
+                    terms.push(x.canonical_string_sign_fix(settings));
                 }
 
                 Atom::mul_many(&terms)
@@ -519,7 +544,7 @@ impl AtomView<'_> {
             AtomView::Add(a) => {
                 let mut terms = vec![];
                 for x in a.iter() {
-                    terms.push(x.canonical_string_sign_fix());
+                    terms.push(x.canonical_string_sign_fix(settings));
                 }
 
                 Atom::add_many(&terms)
@@ -527,7 +552,7 @@ impl AtomView<'_> {
         }
     }
 
-    fn to_canonical_view_impl(&self, out: &mut String) {
+    fn to_canonical_view_impl(&self, settings: &CanonicalOrderingSettings, out: &mut String) {
         fn add_paren(cur: AtomView, s: AtomView) -> bool {
             if let AtomView::Pow(_) = cur {
                 match s {
@@ -550,16 +575,34 @@ impl AtomView<'_> {
 
         match self {
             AtomView::Num(_) => write!(out, "{}", self.printer(PrintOptions::file())).unwrap(),
-            AtomView::Var(v) => v.get_symbol().format(&PrintOptions::full(), out).unwrap(),
+            AtomView::Var(v) => {
+                if settings.include_attributes {
+                    v.get_symbol().format(&PrintOptions::full(), out).unwrap();
+                } else if settings.include_namespace {
+                    v.get_symbol().format(&PrintOptions::file(), out).unwrap();
+                } else {
+                    v.get_symbol()
+                        .format(&PrintOptions::file_no_namespace(), out)
+                        .unwrap();
+                }
+            }
             AtomView::Fun(f) => {
-                f.get_symbol().format(&PrintOptions::full(), out).unwrap();
+                if settings.include_attributes {
+                    f.get_symbol().format(&PrintOptions::full(), out).unwrap();
+                } else if settings.include_namespace {
+                    f.get_symbol().format(&PrintOptions::file(), out).unwrap();
+                } else {
+                    f.get_symbol()
+                        .format(&PrintOptions::file_no_namespace(), out)
+                        .unwrap();
+                }
                 out.push('(');
 
                 let mut args = vec![];
 
                 for x in f.iter() {
                     let mut arg = String::new();
-                    x.to_canonical_view_impl(&mut arg);
+                    x.to_canonical_view_impl(settings, &mut arg);
                     args.push(arg);
                 }
 
@@ -583,19 +626,19 @@ impl AtomView<'_> {
 
                 if add_paren(*self, b) {
                     write!(out, "(").unwrap();
-                    b.to_canonical_view_impl(out);
+                    b.to_canonical_view_impl(settings, out);
                     write!(out, ")").unwrap();
                 } else {
-                    b.to_canonical_view_impl(out);
+                    b.to_canonical_view_impl(settings, out);
                 }
 
                 if add_paren(*self, e) {
                     write!(out, "^(").unwrap();
-                    e.to_canonical_view_impl(out);
+                    e.to_canonical_view_impl(settings, out);
                     write!(out, ")").unwrap();
                 } else {
                     write!(out, "^").unwrap();
-                    e.to_canonical_view_impl(out);
+                    e.to_canonical_view_impl(settings, out);
                 }
             }
             AtomView::Mul(m) => {
@@ -608,7 +651,7 @@ impl AtomView<'_> {
                         String::new()
                     };
 
-                    x.to_canonical_view_impl(&mut term);
+                    x.to_canonical_view_impl(settings, &mut term);
 
                     if add_paren(*self, x) {
                         term.push(')');
@@ -637,7 +680,7 @@ impl AtomView<'_> {
                         String::new()
                     };
 
-                    x.to_canonical_view_impl(&mut term);
+                    x.to_canonical_view_impl(settings, &mut term);
 
                     if add_paren(*self, x) {
                         term.push(')');

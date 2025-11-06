@@ -30,6 +30,8 @@ enum TensorGraphNode<'a> {
     Slot(Option<AtomView<'a>>),
 }
 
+const CYCLE_SYMMETRY_MARKER: usize = usize::MAX - 2;
+
 impl std::fmt::Display for TensorGraphNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -270,7 +272,7 @@ impl<'a> AtomView<'a> {
 
                 for e in &n.edges {
                     let edge = graph.edge(*e);
-                    if edge.vertices.0 != cur_node {
+                    if edge.vertices.0 != cur_node || edge.data.data.0 == CYCLE_SYMMETRY_MARKER {
                         continue;
                     }
 
@@ -299,7 +301,7 @@ impl<'a> AtomView<'a> {
 
                 for e in &n.edges {
                     let edge = graph.edge(*e);
-                    if edge.vertices.0 != cur_node {
+                    if edge.vertices.0 != cur_node || edge.data.data.0 == CYCLE_SYMMETRY_MARKER {
                         continue;
                     }
 
@@ -342,7 +344,9 @@ impl<'a> AtomView<'a> {
 
                 for c in &n.edges {
                     let par_edge = graph.edge(*c);
-                    if par_edge.vertices.0 != cur_node {
+                    if par_edge.vertices.0 != cur_node
+                        || par_edge.data.data.0 == CYCLE_SYMMETRY_MARKER
+                    {
                         continue;
                     }
 
@@ -384,7 +388,10 @@ impl<'a> AtomView<'a> {
 
                             assert_eq!(p, processed_slots[child].unwrap());
                             if !added {
-                                args.push((original_child_index, indices[p].0.as_atom_view()));
+                                args.push((
+                                    original_child_index,
+                                    indices[p].0.as_atom_view().to_owned(),
+                                ));
                                 used_indices[p].1 += 1;
                                 added = true;
                             }
@@ -393,9 +400,20 @@ impl<'a> AtomView<'a> {
 
                     if rep_edge.is_none() {
                         if let TensorGraphNode::Slot(data) = child_node.data {
-                            args.push((original_child_index, data.unwrap()));
+                            args.push((original_child_index, data.unwrap().to_owned()));
                         } else {
-                            unreachable!("Slot is missing open index");
+                            let mut arg = Atom::new();
+                            Self::reconstruct(
+                                indices,
+                                graph,
+                                child,
+                                used_indices,
+                                processed_slots,
+                                ws,
+                                &mut arg,
+                            );
+
+                            args.push((original_child_index, arg));
                         }
 
                         continue;
@@ -413,7 +431,10 @@ impl<'a> AtomView<'a> {
                             })
                             .unwrap();
 
-                        args.push((original_child_index, indices[index].0.as_atom_view()));
+                        args.push((
+                            original_child_index,
+                            indices[index].0.as_atom_view().to_owned(),
+                        ));
 
                         *used = (true, 1);
                         processed_slots[child] = Some(index);
@@ -495,8 +516,6 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Fun(f) => {
-                let nargs = f.get_nargs();
-
                 let is_symmetric = f.is_symmetric();
                 let is_cyclesymmetric = f.is_cyclesymmetric();
                 let is_antisymmetric = f.is_antisymmetric();
@@ -505,13 +524,14 @@ impl<'a> AtomView<'a> {
                 let header = g.add_node(TensorGraphNode::Fun(f.get_symbol()));
 
                 // add a node for every slot
-                let start = g.nodes().len();
+                let mut first_index = 0;
+                let mut last_index = 0;
                 for (i, a) in f.iter().enumerate() {
-                    if let Some(p) = indices
+                    let new_node = if let Some(p) = indices
                         .iter()
                         .position(|x| x.0.as_atom_view() == a.as_atom_view())
                     {
-                        g.add_node(TensorGraphNode::Slot(None));
+                        let new_node = g.add_node(TensorGraphNode::Slot(None));
 
                         if connections[p].1 {
                             return Err(format!(
@@ -521,12 +541,12 @@ impl<'a> AtomView<'a> {
                         }
 
                         if connections[p].0.is_empty() {
-                            connections[p].0.push(start + i);
+                            connections[p].0.push(new_node);
                         } else {
                             for n2 in connections[p].0.drain(..) {
                                 connections[p].1 = true;
                                 g.add_edge(
-                                    start + i,
+                                    new_node,
                                     n2,
                                     false,
                                     HiddenData::new((0, Some(&indices[p].1)), 0),
@@ -534,35 +554,42 @@ impl<'a> AtomView<'a> {
                                 .unwrap();
                             }
                         }
+
+                        new_node
                     } else {
-                        g.add_node(TensorGraphNode::Slot(Some(a)));
-                    }
+                        a.tensor_to_graph_impl(indices, connections, g)?
+                    };
 
                     if is_symmetric || is_antisymmetric || is_cyclesymmetric {
-                        g.add_edge(header, start + i, true, HiddenData::new((0, None), i))
+                        g.add_edge(header, new_node, true, HiddenData::new((0, None), i))
                             .unwrap();
                     } else {
-                        g.add_edge(header, start + i, true, HiddenData::new((i, None), 0))
+                        g.add_edge(header, new_node, true, HiddenData::new((i, None), 0))
                             .unwrap();
                     }
 
                     if is_cyclesymmetric && i > 0 {
                         g.add_edge(
-                            start + i - 1,
-                            start + i,
+                            last_index,
+                            new_node,
                             true,
-                            HiddenData::new((0, None), 0),
+                            HiddenData::new((CYCLE_SYMMETRY_MARKER, None), 0),
                         )
                         .unwrap();
                     }
+
+                    last_index = new_node;
+                    if i == 0 {
+                        first_index = new_node;
+                    }
                 }
 
-                if is_cyclesymmetric {
+                if is_cyclesymmetric && f.get_nargs() > 1 {
                     g.add_edge(
-                        start + nargs - 1,
-                        start,
+                        last_index,
+                        first_index,
                         true,
-                        HiddenData::new((0, None), 0),
+                        HiddenData::new((CYCLE_SYMMETRY_MARKER, None), 0),
                     )
                     .unwrap();
                 }
@@ -767,5 +794,20 @@ mod test {
                 dummy_indices: vec![],
             },
         );
+    }
+
+    #[test]
+    fn function_nesting() {
+        let vars = [(parse!("mu1"), 1), (parse!("mu2"), 1)];
+
+        let a1 = parse!("f(g(mu1,mu2),mu1,k(2,mu2))");
+
+        let r1 = a1.canonize_tensors::<_, Atom, usize>(vars.clone()).unwrap();
+
+        let a2 = parse!("f(g(mu2,mu1),mu2,k(2,mu1))");
+
+        let r2 = a2.canonize_tensors::<_, Atom, usize>(vars).unwrap();
+
+        assert_eq!(r1, r2);
     }
 }

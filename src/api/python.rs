@@ -161,7 +161,7 @@ pub trait SymbolicaCommunityModule {
     feature = "python_stubgen",
     gen_stub_pyclass_enum(module = "symbolica.core")
 )]
-#[pyclass(name = "PrintMode", eq, eq_int)]
+#[pyclass(name = "PrintMode", eq, eq_int, module = "symbolica.core")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PythonPrintMode {
     /// Print using Symbolica notation.
@@ -256,10 +256,13 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonSymbolAttribute>()?;
     m.add_class::<PythonPrintMode>()?;
+    m.add_class::<PythonCondition>()?;
     m.add_class::<PythonReplacement>()?;
     m.add_class::<PythonExpressionEvaluator>()?;
     m.add_class::<PythonCompiledRealExpressionEvaluator>()?;
     m.add_class::<PythonCompiledComplexExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledSimdRealExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledSimdComplexExpressionEvaluator>()?;
     m.add_class::<PythonCompiledCudaRealExpressionEvaluator>()?;
     m.add_class::<PythonCompiledCudaComplexExpressionEvaluator>()?;
     m.add_class::<PythonRandomNumberGenerator>()?;
@@ -984,7 +987,7 @@ If a `minimal_poly` is provided, the Galois field will be created with `minimal_
     feature = "python_stubgen",
     gen_stub_pyclass_enum(module = "symbolica.core")
 )]
-#[pyclass(name = "AtomType", eq, eq_int)]
+#[pyclass(name = "AtomType", eq, eq_int, module = "symbolica.core")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 /// Specifies the type of the atom.
 pub enum PythonAtomType {
@@ -1006,7 +1009,7 @@ pub enum PythonAtomType {
     feature = "python_stubgen",
     gen_stub_pyclass_enum(module = "symbolica.core")
 )]
-#[pyclass(name = "SymbolAttribute", eq, eq_int)]
+#[pyclass(name = "SymbolAttribute", eq, eq_int, module = "symbolica.core")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 /// Specifies the attributes of a symbol.
 pub enum PythonSymbolAttribute {
@@ -1062,7 +1065,7 @@ impl From<SymbolAttribute> for PythonSymbolAttribute {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "AtomTree")]
+#[pyclass(name = "AtomTree", module = "symbolica.core")]
 pub struct PythonAtomTree {
     /// The type of this atom.
     #[pyo3(get)]
@@ -1226,7 +1229,7 @@ impl<T> OneOrMultiple<T> {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "HeldExpression", subclass)]
+#[pyclass(name = "HeldExpression", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonHeldExpression {
     pub expr: Pattern,
@@ -1247,10 +1250,10 @@ impl PythonHeldExpression {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression
+    /// >>> from symbolica import *
     /// >>> x = S('x')
     /// >>> e = (x+1)**5
-    /// >>> e = e.transform().expand().execute()
+    /// >>> e = e.hold(T().expand())()
     /// >>> print(e)
     pub fn __call__(&self, py: Python) -> PyResult<PythonExpression> {
         let mut out = Atom::default();
@@ -1470,7 +1473,7 @@ impl PythonHeldExpression {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Transformer", subclass)]
+#[pyclass(name = "Transformer", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonTransformer {
     pub chain: Vec<Transformer>,
@@ -1645,7 +1648,7 @@ impl PythonTransformer {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x, x_ = S('x', 'x_')
     /// >>> f = S('f')
-    /// >>> e = f((x+1)**2).replace(f(x_), x_.transform().expand())
+    /// >>> e = f((x+1)**2).replace(f(x_), x_.hold(T().expand()))
     /// >>> print(e)
     #[pyo3(signature = (var = None, via_poly = None))]
     pub fn expand(
@@ -1694,10 +1697,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x__ = S('x__')
     /// >>> f = S('f')
-    /// >>> e = f(2,3).replace(f(x__), x__.transform().prod())
+    /// >>> e = f(2,3).replace(f(x__), x__.hold(T().prod()))
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonTransformer> {
         self.append_transformer(Transformer::Product)
@@ -1707,10 +1710,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x__ = S('x__')
     /// >>> f = S('f')
-    /// >>> e = f(2,3).replace(f(x__), x__.transform().sum())
+    /// >>> e = f(2,3).replace(f(x__), x__.hold(T().sum()))
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonTransformer> {
         let mut r = self.clone();
@@ -1727,10 +1730,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x__ = S('x__')
     /// >>> f = S('f')
-    /// >>> e = f(2,3,4).replace(f(x__), x__.transform().nargs())
+    /// >>> e = f(2,3,4).replace(f(x__), x__.hold(T().nargs()))
     /// >>> print(e)
     #[pyo3(signature = (only_for_arg_fun = false))]
     pub fn nargs(&self, only_for_arg_fun: bool) -> PyResult<PythonTransformer> {
@@ -1742,9 +1745,9 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x, y, z, w, f, x__ = S('x', 'y', 'z', 'w', 'f', 'x__')
-    /// >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).transform().linearize([z]))
+    /// >>> e = f(x+y, 4*z*w+3).replace(f(x__), f(x__).hold(T().linearize([z])))
     /// >>> print(e)
     ///
     /// yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
@@ -1774,10 +1777,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x_ = S('x__')
     /// >>> f = S('f')
-    /// >>> e = f(3,2,1).replace(f(x__), x__.transform().sort())
+    /// >>> e = f(3,2,1).replace(f(x__), x__.hold(T().sort()))
     /// >>> print(e)
     pub fn sort(&self) -> PyResult<PythonTransformer> {
         self.append_transformer(Transformer::Sort)
@@ -1787,10 +1790,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x_ = S('x__')
     /// >>> f = S('f')
-    /// >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.transform().cycle_symmetrize())
+    /// >>> e = f(1,2,4,1,2,3).replace(f(x__), x_.hold(T().cycle_symmetrize()))
     /// >>> print(e)
     ///
     /// Yields `f(1,2,3,1,2,4)`.
@@ -1803,10 +1806,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x__ = S('x__')
     /// >>> f = S('f')
-    /// >>> e = f(1,2,1,2).replace(f(x__), x__.transform().deduplicate())
+    /// >>> e = f(1,2,1,2).replace(f(x__), x__.hold(T().deduplicate()))
     /// >>> print(e)
     ///
     /// Yields `f(1,2)`.
@@ -1818,8 +1821,8 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Function
-    /// >>> e = Function.COEFF((x^2+1)/y^2).transform().from_coeff()
+    /// >>> from symbolica import Expression, T
+    /// >>> e = Expression.COEFF((x^2+1)/y^2).hold(T().from_coeff())
     /// >>> print(e)
     pub fn from_coeff(&self) -> PyResult<PythonTransformer> {
         self.append_transformer(Transformer::FromNumber)
@@ -1829,10 +1832,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x, x__ = S('x', 'x__')
     /// >>> f = S('f')
-    /// >>> e = (x + 1).replace(x__, f(x__.transform().split()))
+    /// >>> e = (x + 1).replace(x__, f(x__.hold(T().split())))
     /// >>> print(e)
     pub fn split(&self) -> PyResult<PythonTransformer> {
         self.append_transformer(Transformer::Split)
@@ -1851,10 +1854,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x_, f_id, g_id = S('x__', 'f', 'g')
     /// >>> f = S('f')
-    /// >>> e = f(1,2,1,3).replace(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
+    /// >>> e = f(1,2,1,3).replace(f(x_), x_.hold(T().partitions([(f_id, 2), (g_id, 1), (f_id, 1)])))
     /// >>> print(e)
     ///
     /// yields:
@@ -1897,10 +1900,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x_, f_id = S('x__', 'f')
     /// >>> f = S('f')
-    /// >>> e = f(1,2,1,2).replace(f(x_), x_.transform().permutations(f_id))
+    /// >>> e = f(1,2,1,2).replace(f(x_), x_.hold(T().permutations(f_id)))
     /// >>> print(e)
     ///
     /// yields:
@@ -1931,10 +1934,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression, Transformer
+    /// >>> from symbolica import Expression, T
     /// >>> x_ = S('x_')
     /// >>> f = S('f')
-    /// >>> e = f(2).replace(f(x_), x_.transform().map(lambda r: r**2))
+    /// >>> e = f(2).replace(f(x_), x_.hold(T().map(lambda r: r**2)))
     /// >>> print(e)
     pub fn map(
         &self,
@@ -1979,7 +1982,7 @@ impl PythonTransformer {
     /// --------
     /// >>> from symbolica import *
     /// >>> x, y = S('x', 'y')
-    /// >>> t = Transformer().map_terms(Transformer().print(), n_cores=2)
+    /// >>> t = T().map_terms(T().print(), n_cores=2)
     /// >>> e = t(x + y)
     #[pyo3(signature = (*transformers, n_cores=1))]
     pub fn map_terms(
@@ -2017,10 +2020,10 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression
+    /// >>> from symbolica import Expression, T
     /// >>> x = S('x')
     /// >>> f = S('f')
-    /// >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
+    /// >>> e = (1+x).hold(T().split().for_each(T().map(f)))()
     #[pyo3(signature = (*transformers))]
     pub fn for_each(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
@@ -2041,8 +2044,8 @@ impl PythonTransformer {
     /// >>> from symbolica import *
     /// >>> x_ = S('x_')
     /// >>> f = S('f')
-    /// >>> f(10).transform().repeat(Transformer().replace(
-    /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
+    /// >>> f(10).hold(T().repeat(T().replace(
+    /// >>> f(x_), f(x_+1)).check_interrupt()))()
     pub fn check_interrupt(&self) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, _state, out| {
             out.set_from_view(&expr);
@@ -2060,10 +2063,10 @@ impl PythonTransformer {
     /// >>> x_ = S('x_')
     /// >>> f = S('f')
     /// >>> e = E("f(5)")
-    /// >>> e = e.transform().repeat(
-    /// >>>     Transformer().expand(),
-    /// >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
-    /// >>> ).execute()
+    /// >>> e = e.hold(T().repeat(
+    /// >>>     T().expand(),
+    /// >>>     T().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+    /// >>> ))()
     #[pyo3(signature = (*transformers))]
     pub fn repeat(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
@@ -2148,14 +2151,14 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression
+    /// >>> from symbolica import Expression, T
     /// >>> x_ = S('x_')
     /// >>> f = S('f')
     /// >>> e = E("f(5)")
-    /// >>> e = e.transform().repeat(
-    /// >>>     Transformer().expand(),
-    /// >>>     Transformer().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
-    /// >>> ).execute()
+    /// >>> e = e.hold(T().repeat(
+    /// >>>     T().expand(),
+    /// >>>     T().replace(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+    /// >>> ))()
     #[pyo3(signature = (*transformers))]
     pub fn chain(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
         let mut r = self.clone();
@@ -2204,19 +2207,19 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression
+    /// >>> from symbolica import Expression, T
     /// >>> x, y = S('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
-    /// >>> print(e.transform().collect(x).execute())
+    /// >>> print(e.hold(T().collect(x))())
     ///
     /// yields `x^2+x*(y+5)+5`.
     ///
-    /// >>> from symbolica import Expression
+    /// >>> from symbolica import Expression, T
     /// >>> x, y, x_, var, coeff = S('x', 'y', 'x_', 'var', 'coeff')
     /// >>> e = 5*x + x * y + x**2 + 5
-    /// >>> print(e.collect(x, key_map=Transformer().replace(x_, var(x_)),
-    ///         coeff_map=Transformer().replace(x_, coeff(x_))))
+    /// >>> print(e.collect(x, key_map=T().replace(x_, var(x_)),
+    ///         coeff_map=T().replace(x_, coeff(x_))))
     ///
     /// yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
     ///
@@ -2274,11 +2277,11 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> from symbolica import Expression
+    /// >>> from symbolica import Expression, T
     /// >>> x, f = S('x', 'f')
     /// >>> e = f(1,2) + x*f(1,2)
     /// >>>
-    /// >>> print(e.transform().collect_symbol(x).execute())
+    /// >>> print(e.hold(T().collect_symbol(x))())
     ///
     /// yields `(1+x)*f(1,2)`.
     ///
@@ -2325,7 +2328,7 @@ impl PythonTransformer {
     ///
     /// >>> from symbolica import *
     /// >>> e = E('x*(x+y*x+x^2+y*(x+x^2))')
-    /// >>> e.transform().collect_factors().execute()
+    /// >>> e.hold(T().collect_factors())()
     ///
     /// yields
     ///
@@ -2586,7 +2589,7 @@ impl PythonTransformer {
     ///
     /// >>> x, y, f = S('x', 'y', 'f')
     /// >>> e = f(x,y)
-    /// >>> r = e.transform().replace_multiple([Replacement(x, y), Replacement(y, x)])
+    /// >>> r = e.hold(T().replace_multiple([Replacement(x, y), Replacement(y, x)]))
     pub fn replace_multiple(
         &self,
         replacements: Vec<PythonReplacement>,
@@ -2600,7 +2603,7 @@ impl PythonTransformer {
     ///
     /// Examples
     /// --------
-    /// >>> E('f(10)').transform().print(terms_on_new_line = True).execute()
+    /// >>> E('f(10)').hold(T().print(terms_on_new_line = True))()
     #[pyo3(signature =
         (mode = PythonPrintMode::Symbolica,
             terms_on_new_line = false,
@@ -2672,7 +2675,7 @@ impl PythonTransformer {
     /// >>> x_ = S('x_')
     /// >>> f = S('f')
     /// >>> e = E("f(5)")
-    /// >>> e = e.transform().stats('replace', Transformer().replace(f(x_), 1)).execute()
+    /// >>> e = e.hold(T().stats('replace', T().replace(f(x_), 1)))()
     ///
     /// yields
     /// ```log
@@ -2741,7 +2744,7 @@ impl PythonTransformer {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Expression", subclass)]
+#[pyclass(name = "Expression", subclass, module = "symbolica.core")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
     pub expr: Atom,
@@ -2766,7 +2769,7 @@ impl Deref for PythonExpression {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "PatternRestriction")]
+#[pyclass(name = "PatternRestriction", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
     pub condition: Condition<PatternRestriction>,
@@ -2867,7 +2870,7 @@ impl PythonPatternRestriction {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Condition")]
+#[pyclass(name = "Condition", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCondition {
     pub condition: Condition<Relation>,
@@ -7172,7 +7175,7 @@ impl PythonExpression {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Replacement")]
+#[pyclass(name = "Replacement", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonReplacement {
     replacement: Replacement,
@@ -7753,7 +7756,7 @@ impl_stub_type!(SeriesOrExpression = PythonSeries | PythonExpression);
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Series")]
+#[pyclass(name = "Series", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonSeries {
     pub series: Series<AtomField>,
@@ -8065,7 +8068,7 @@ impl PythonSeries {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "TermStreamer", subclass)]
+#[pyclass(name = "TermStreamer", subclass, module = "symbolica.core")]
 pub struct PythonTermStreamer {
     pub stream: TermStreamer<CompressorWriter<BufWriter<File>>>,
 }
@@ -8281,7 +8284,7 @@ self_cell!(
         feature = "python_stubgen",
         gen_stub_pyclass(module = "symbolica.core")
     )]
-    #[pyclass(name = "AtomIterator")]
+    #[pyclass(name = "AtomIterator", module = "symbolica.core")]
     pub struct PythonAtomIterator {
         owner: Atom,
         #[covariant]
@@ -8331,7 +8334,7 @@ self_cell!(
         feature = "python_stubgen",
         gen_stub_pyclass(module = "symbolica.core")
     )]
-    #[pyclass(name = "MatchIterator")]
+    #[pyclass(name = "MatchIterator", module = "symbolica.core")]
     pub struct PythonMatchIterator {
         owner: OwnedMatch,
         #[not_covariant]
@@ -8376,7 +8379,7 @@ self_cell!(
         feature = "python_stubgen",
         gen_stub_pyclass(module = "symbolica.core")
     )]
-    #[pyclass(name = "ReplaceIterator")]
+    #[pyclass(name = "ReplaceIterator", module = "symbolica.core")]
     pub struct PythonReplaceIterator {
         owner: OwnedReplace,
         #[not_covariant]
@@ -8420,7 +8423,7 @@ impl<T: PyStubType> PyStubType for PolynomialOrInteger<T> {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Polynomial", subclass)]
+#[pyclass(name = "Polynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonPolynomial {
     pub poly: MultivariatePolynomial<RationalField, u16>,
@@ -9715,7 +9718,7 @@ impl PythonPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "FiniteFieldPolynomial", subclass)]
+#[pyclass(name = "FiniteFieldPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
     pub poly: MultivariatePolynomial<Zp, u16>,
@@ -10772,7 +10775,7 @@ impl PythonFiniteFieldPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "PrimeTwoPolynomial", subclass)]
+#[pyclass(name = "PrimeTwoPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonPrimeTwoPolynomial {
     pub poly: MultivariatePolynomial<Z2, u16>,
@@ -11622,7 +11625,11 @@ impl PythonPrimeTwoPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "GaloisFieldPrimeTwoPolynomial", subclass)]
+#[pyclass(
+    name = "GaloisFieldPrimeTwoPolynomial",
+    subclass,
+    module = "symbolica.core"
+)]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPrimeTwoPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Z2>, u16>,
@@ -12576,7 +12583,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "GaloisFieldPolynomial", subclass)]
+#[pyclass(name = "GaloisFieldPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Zp>, u16>,
@@ -13470,7 +13477,7 @@ impl PythonGaloisFieldPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "NumberFieldPolynomial", subclass)]
+#[pyclass(name = "NumberFieldPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonNumberFieldPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Q>, u16>,
@@ -14341,7 +14348,7 @@ impl PythonNumberFieldPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "RationalPolynomial", subclass)]
+#[pyclass(name = "RationalPolynomial", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
     pub poly: RationalPolynomial<IntegerRing, u16>,
@@ -14706,7 +14713,11 @@ impl PythonRationalPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "FiniteFieldRationalPolynomial", subclass)]
+#[pyclass(
+    name = "FiniteFieldRationalPolynomial",
+    subclass,
+    module = "symbolica.core"
+)]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
     pub poly: RationalPolynomial<Zp, u16>,
@@ -15045,7 +15056,7 @@ impl ConvertibleToRationalPolynomial {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Evaluator")]
+#[pyclass(name = "Evaluator", module = "symbolica.core")]
 pub struct PythonExpressionEvaluator {
     pub eval_rat: ExpressionEvaluator<Complex<Rational>>,
     pub eval: Option<ExpressionEvaluatorWithExternalFunctions<f64>>,
@@ -16183,7 +16194,7 @@ cuda_block_size: Optional[int]
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledRealEvaluator")]
+#[pyclass(name = "CompiledRealEvaluator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCompiledRealExpressionEvaluator {
     pub eval: CompiledRealEvaluator,
@@ -16255,7 +16266,7 @@ impl PythonCompiledRealExpressionEvaluator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledSimdRealEvaluator")]
+#[pyclass(name = "CompiledSimdRealEvaluator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCompiledSimdRealExpressionEvaluator {
     pub eval: CompiledSimdRealEvaluator,
@@ -16329,7 +16340,7 @@ impl PythonCompiledSimdRealExpressionEvaluator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledCudaRealEvaluator")]
+#[pyclass(name = "CompiledCudaRealEvaluator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCompiledCudaRealExpressionEvaluator {
     pub eval: CompiledCudaRealEvaluator,
@@ -16413,7 +16424,7 @@ impl PythonCompiledCudaRealExpressionEvaluator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledCudaComplexEvaluator")]
+#[pyclass(name = "CompiledCudaComplexEvaluator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCompiledCudaComplexExpressionEvaluator {
     pub eval: CompiledCudaComplexEvaluator,
@@ -16503,7 +16514,7 @@ impl PythonCompiledCudaComplexExpressionEvaluator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledComplexEvaluator")]
+#[pyclass(name = "CompiledComplexEvaluator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCompiledComplexExpressionEvaluator {
     pub eval: CompiledComplexEvaluator,
@@ -16579,7 +16590,7 @@ impl PythonCompiledComplexExpressionEvaluator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "CompiledSimdComplexEvaluator")]
+#[pyclass(name = "CompiledSimdComplexEvaluator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonCompiledSimdComplexExpressionEvaluator {
     pub eval: CompiledSimdComplexEvaluator,
@@ -16667,7 +16678,7 @@ impl_stub_type!(ScalarOrMatrix = ConvertibleToRationalPolynomial | PythonMatrix)
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Matrix", subclass)]
+#[pyclass(name = "Matrix", subclass, module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonMatrix {
     pub matrix: Matrix<RationalPolynomialField<IntegerRing, u16>>,
@@ -16675,30 +16686,37 @@ pub struct PythonMatrix {
 
 impl PythonMatrix {
     fn unify(&self, rhs: &PythonMatrix) -> (PythonMatrix, PythonMatrix) {
-        if self.matrix.field == rhs.matrix.field {
-            return (self.clone(), rhs.clone());
-        }
+        let mut zero = self.matrix.field().zero();
 
-        let mut new_self = self.matrix.clone();
-        let mut new_rhs = rhs.matrix.clone();
+        let mut self_data = self.matrix.clone().into_vec();
+        let mut new_rhs_data = rhs.matrix.clone().into_vec();
 
-        let mut zero = self.matrix.field.zero();
-
-        zero.unify_variables(&mut new_rhs[(0, 0)]);
-        new_self.field = RationalPolynomialField::new(Z);
-        new_rhs.field = new_self.field.clone();
-
-        // now update every element
-        for e in &mut new_self.data {
+        for e in &mut self_data {
             zero.unify_variables(e);
         }
-        for e in &mut new_rhs.data {
+        for e in &mut new_rhs_data {
             zero.unify_variables(e);
         }
 
         (
-            PythonMatrix { matrix: new_self },
-            PythonMatrix { matrix: new_rhs },
+            PythonMatrix {
+                matrix: Matrix::from_linear(
+                    self_data,
+                    self.matrix.nrows() as u32,
+                    self.matrix.ncols() as u32,
+                    RationalPolynomialField::new(Z),
+                )
+                .unwrap(),
+            },
+            PythonMatrix {
+                matrix: Matrix::from_linear(
+                    new_rhs_data,
+                    rhs.matrix.nrows() as u32,
+                    rhs.matrix.ncols() as u32,
+                    RationalPolynomialField::new(Z),
+                )
+                .unwrap(),
+            },
         )
     }
 
@@ -16706,25 +16724,27 @@ impl PythonMatrix {
         &self,
         rhs: &PythonRationalPolynomial,
     ) -> (PythonMatrix, PythonRationalPolynomial) {
-        if self.matrix.field == RationalPolynomialField::new(Z) {
-            return (self.clone(), rhs.clone());
-        }
+        let mut zero = self.matrix.field().zero();
 
-        let mut new_self = self.matrix.clone();
-        let mut new_rhs = rhs.poly.clone();
+        let mut self_data = self.matrix.clone().into_vec();
 
-        let mut zero = self.matrix.field.zero();
-
-        zero.unify_variables(&mut new_rhs);
-        new_self.field = RationalPolynomialField::new(Z);
-
-        // now update every element
-        for e in &mut new_self.data {
+        for e in &mut self_data {
             zero.unify_variables(e);
         }
 
+        let mut new_rhs = rhs.poly.clone();
+        zero.unify_variables(&mut new_rhs);
+
         (
-            PythonMatrix { matrix: new_self },
+            PythonMatrix {
+                matrix: Matrix::from_linear(
+                    self_data,
+                    self.matrix.nrows() as u32,
+                    self.matrix.ncols() as u32,
+                    RationalPolynomialField::new(Z),
+                )
+                .unwrap(),
+            },
             PythonRationalPolynomial { poly: new_rhs },
         )
     }
@@ -17233,7 +17253,7 @@ impl PythonMatrix {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Sample")]
+#[pyclass(name = "Sample", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonSample {
     #[pyo3(get)]
@@ -17329,7 +17349,7 @@ impl PythonSample {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "RandomNumberGenerator")]
+#[pyclass(name = "RandomNumberGenerator", module = "symbolica.core")]
 pub struct PythonRandomNumberGenerator {
     state: MonteCarloRng,
 }
@@ -17352,7 +17372,7 @@ impl PythonRandomNumberGenerator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "NumericalIntegrator")]
+#[pyclass(name = "NumericalIntegrator", module = "symbolica.core")]
 #[derive(Clone)]
 pub struct PythonNumericalIntegrator {
     grid: Grid<f64>,
@@ -17707,7 +17727,7 @@ impl PythonNumericalIntegrator {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "HalfEdge")]
+#[pyclass(name = "HalfEdge", module = "symbolica.core")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonHalfEdge {
     half_edge: HalfEdge<Atom>,
@@ -17756,7 +17776,7 @@ impl PythonHalfEdge {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Graph")]
+#[pyclass(name = "Graph", module = "symbolica.core")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonGraph {
     graph: Graph<Atom, Atom>,
@@ -18192,7 +18212,7 @@ impl PythonGraph {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "Integer")]
+#[pyclass(name = "Integer", module = "symbolica.core")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonInteger {}
 
@@ -18330,7 +18350,7 @@ impl PythonInteger {
     feature = "python_stubgen",
     gen_stub_pyclass(module = "symbolica.core")
 )]
-#[pyclass(name = "PrimeIterator")]
+#[pyclass(name = "PrimeIterator", module = "symbolica.core")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonPrimeIterator {
     cur: PrimeIteratorU64,

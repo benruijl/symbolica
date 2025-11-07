@@ -1365,10 +1365,14 @@ impl<T: Default> ExpressionEvaluator<T> {
                             }
                         }
 
-                        if let Instr::BuiltinFun(r, _, _) = &self.instructions[line] {
-                            self.instructions[line] = Instr::Add(*r, vec![new_idx]);
-                        } else {
-                            panic!("Expected BuiltinFun instruction");
+                        match &self.instructions[line] {
+                            Instr::BuiltinFun(r, _, _) => {
+                                self.instructions[line] = Instr::Add(*r, vec![new_idx]);
+                            }
+                            Instr::ExternalFun(r, _, _) => {
+                                self.instructions[line] = Instr::Add(*r, vec![new_idx]);
+                            }
+                            _ => panic!("Expected BuiltinFun or ExternalFun instruction"),
                         }
                     }
 

@@ -718,7 +718,7 @@ impl FormattedPrintNum for NumView<'_> {
             print_state: &PrintState,
             f: &mut W,
         ) -> fmt::Result {
-            if print_state.superscript {
+            if print_state.superscript && opts.mode.is_symbolica() {
                 let map = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
                 s = s
                     .as_bytes()
@@ -802,15 +802,23 @@ impl FormattedPrintNum for NumView<'_> {
             f: &mut W,
             opts: &PrintOptions,
         ) -> Result<bool, Error> {
+            if imag.is_zero()
+                && real.denominator_ref().is_one()
+                && print_state.suppress_one
+                && (real.numerator_ref().is_one() || *real.numerator_ref() == -1)
+            {
+                if *real.numerator_ref() == -1 && !global_negative {
+                    f.write_char('-')?;
+                }
+                return Ok(true);
+            }
+
             let need_paren =
                 (print_state.in_product || print_state.in_exp || print_state.in_exp_base)
                     && (!real.is_zero() && !imag.is_zero())
                     || print_state.in_exp_base
-                        && (real.is_negative()
-                            || imag.is_negative()
-                            || !real.is_integer()
-                            || !imag.is_integer())
-                    || print_state.in_exp && (!real.is_integer() || !imag.is_integer());
+                        && (real.is_negative() || !imag.is_zero() || !real.is_integer())
+                    || print_state.in_exp && (!real.is_integer() || !imag.is_zero());
 
             if need_paren {
                 f.write_char('(')?;
@@ -919,108 +927,10 @@ impl FormattedPrintNum for NumView<'_> {
 
         match d {
             CoefficientView::Natural(num, den, num_i, den_i) => {
-                if num_i == 0 && den == 1 && print_state.suppress_one && (num == 1 || num == -1) {
-                    if num == -1 && !global_negative {
-                        f.write_char('-')?;
-                    }
-                    return Ok(true);
-                }
+                let real = Rational::from_unchecked(num, den);
+                let imag = Rational::from_unchecked(num_i, den_i);
 
-                let need_paren = (print_state.in_product
-                    || print_state.in_exp
-                    || print_state.in_exp_base)
-                    && (num != 0 && num_i != 0)
-                    || print_state.in_exp_base && (num < 0 || num_i < 0 || den != 1 || den_i != 1)
-                    || print_state.in_exp && (den != 1 || den_i != 1);
-
-                if need_paren {
-                    f.write_char('(')?;
-                }
-
-                if !opts.mode.is_latex()
-                    && (opts.number_thousands_separator.is_some() || print_state.superscript)
-                {
-                    if num != 0 {
-                        if !global_negative && num < 0 {
-                            f.write_char('-')?;
-                        }
-
-                        format_num(num.unsigned_abs().to_string(), opts, &print_state, f)?;
-                        if den != 1 {
-                            f.write_char('/')?;
-                            format_num(den.to_string(), opts, &print_state, f)?;
-                        }
-                    }
-
-                    if num != 0 && num_i > 0 {
-                        f.write_char('+')?;
-                    }
-
-                    if num_i != 0 {
-                        if !global_negative && num_i < 0 {
-                            f.write_char('-')?;
-                        }
-                        format_num(num_i.unsigned_abs().to_string(), opts, &print_state, f)?;
-                        f.write_str(i_str)?;
-                        if den_i != 1 {
-                            f.write_char('/')?;
-                            format_num(den_i.to_string(), opts, &print_state, f)?;
-                        }
-                    }
-                } else {
-                    if num != 0 || num_i == 0 {
-                        if !global_negative && num < 0 {
-                            f.write_char('-')?;
-                        }
-                        if den != 1 {
-                            if opts.mode.is_latex() {
-                                f.write_fmt(format_args!(
-                                    "\\frac{{{}}}{{{}}}",
-                                    num.unsigned_abs(),
-                                    den
-                                ))?;
-                            } else {
-                                f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))?;
-                            }
-                        } else {
-                            f.write_fmt(format_args!("{}", num.unsigned_abs()))?;
-                        }
-                    }
-
-                    if num != 0 && num_i > 0 {
-                        f.write_char('+')?;
-                    }
-
-                    if num_i != 0 {
-                        if !global_negative && num_i < 0 {
-                            f.write_char('-')?;
-                        }
-                        if den_i != 1 {
-                            if opts.mode.is_latex() {
-                                f.write_fmt(format_args!(
-                                    "\\frac{{{}}}{{{}}}𝑖",
-                                    num_i.unsigned_abs(),
-                                    den_i,
-                                ))?;
-                            } else {
-                                f.write_fmt(format_args!(
-                                    "{}{}/{}",
-                                    num_i.unsigned_abs(),
-                                    i_str,
-                                    den_i
-                                ))?;
-                            }
-                        } else {
-                            f.write_fmt(format_args!("{}{}", num_i.unsigned_abs(), i_str))?;
-                        }
-                    }
-                }
-
-                if need_paren {
-                    f.write_char(')')?;
-                }
-
-                Ok(false)
+                print_complex_rational(real, imag, global_negative, i_str, print_state, f, opts)
             }
             CoefficientView::Float(r, i) => {
                 if i.is_zero() {

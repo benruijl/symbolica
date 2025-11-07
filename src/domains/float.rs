@@ -297,7 +297,9 @@ impl SelfRing for Complex<Float> {
     ) -> Result<bool, fmt::Error> {
         let re_zero = SingleFloat::is_zero(&self.re);
         let im_zero = SingleFloat::is_zero(&self.im);
-        let add_paren = (state.in_product || state.in_exp) && !re_zero && !im_zero;
+        let add_paren =
+            (state.in_product || state.in_exp || state.in_exp_base) && !re_zero && !im_zero
+                || (state.in_exp || state.in_exp_base) && !im_zero;
         if add_paren {
             f.write_char('(')?;
             state.in_sum = false;

@@ -122,14 +122,27 @@ impl State {
         Symbol::raw_fn(9, 0, false, false, false, false, true, true, false, true);
     pub(crate) const PI: Symbol =
         Symbol::raw_fn(10, 0, false, false, false, false, true, true, false, true);
+    pub(crate) const SEP: Symbol =
+        Symbol::raw_fn(11, 0, false, false, false, false, true, true, true, true);
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 11] = [
-        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "conj", "der", "𝑒", "𝜋",
+    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 12] = [
+        "arg",
+        "coeff",
+        "exp",
+        "log",
+        "sin",
+        "cos",
+        "sqrt",
+        "conj",
+        "der",
+        Symbol::E_STR,
+        Symbol::PI_STR,
+        Symbol::SEP_STR,
     ];
 
     /// The list of built-in symbols.
-    pub const BUILTIN_SYMBOLS: [Symbol; 11] = [
+    pub const BUILTIN_SYMBOLS: [Symbol; 12] = [
         Self::ARG,
         Self::COEFF,
         Self::EXP,
@@ -141,6 +154,7 @@ impl State {
         Self::DERIVATIVE,
         Self::E,
         Self::PI,
+        Self::SEP,
     ];
 
     pub fn is_builtin_name<S: AsRef<str>>(str: S) -> bool {
@@ -333,37 +347,12 @@ impl State {
         id.get_id() < Self::BUILTIN_SYMBOL_NAMES.len() as u32
     }
 
-    pub(crate) fn check_symbol_name(name: &str) -> Result<(), String> {
-        if name.is_empty() {
-            return Err("Identifier cannot be empty.".into());
-        }
-
-        let illegal_chars = [
-            '\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']', ' ', '\t', '\n', '\r', '\\',
-            ';', '&', '!', '%', '.',
-        ];
-
-        for c in illegal_chars {
-            if name.contains(c) {
-                return Err(format!("Illegal character '{c}' in identifier.").into());
-            }
-        }
-
-        if name.chars().next().unwrap().is_numeric() {
-            return Err("Identifier cannot start with a number.".into());
-        }
-
-        Ok(())
-    }
-
     /// Get the symbol for a certain name if the name is already registered,
     /// else register it and return a new symbol without attributes.
     pub(crate) fn get_symbol(&mut self, name: NamespacedSymbol) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.symbol.into()) {
             Entry::Occupied(o) => Ok(*o.get()),
             Entry::Vacant(v) => {
-                State::check_symbol_name(v.key())?;
-
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
                 if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
@@ -532,8 +521,6 @@ impl State {
                 }
             }
             Entry::Vacant(v) => {
-                State::check_symbol_name(v.key())?;
-
                 let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
                 if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");

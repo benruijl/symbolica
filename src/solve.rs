@@ -28,6 +28,24 @@ pub enum SolveError {
     Other(String),
 }
 
+impl std::fmt::Display for SolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SolveError::Underdetermined {
+                rank,
+                partial_solution,
+            } => write!(
+                f,
+                "Underdetermined system of rank {}/{}. Partial solution: {:?}",
+                rank,
+                partial_solution.len(),
+                partial_solution
+            ),
+            SolveError::Other(e) => f.write_str(e),
+        }
+    }
+}
+
 impl AtomView<'_> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
     pub(crate) fn nsolve<N: SingleFloat + Real + PartialOrd>(

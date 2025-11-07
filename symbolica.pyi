@@ -240,7 +240,7 @@ def N(num: int | float | complex | str | Decimal, relative_error: Optional[float
     """
 
 
-def E(input: str, default_namespace: str = "python") -> Expression:
+def E(input: str, mode: ParseMode = ParseMode.Symbolica, default_namespace: str = "python") -> Expression:
     """
     Parse a Symbolica expression from a string.
 
@@ -248,17 +248,27 @@ def E(input: str, default_namespace: str = "python") -> Expression:
     ----------
     input: str
         An input string. UTF-8 characters are allowed.
+    mode: ParseMode
+        The parsing mode to use. Use `ParseMode.Mathematica` to parse Mathematica expressions.
+    default_namespace: str
+        The default namespace to use when parsing symbols.
 
     Examples
     --------
     >>> e = E('x^2+y+y*4')
     >>> print(e)
-    x^2+5*y
+
+    `x^2+5*y`
+
+    >>> e = E('Cos[test`x] (2+ 3 I)', mode=ParseMode.Mathematica)
+    >>> print(e)
+
+    `cos(test::x)(2+3i)`
 
     Raises
     ------
     ValueError
-        If the input is not a valid Symbolica expression.
+        If the input is not a valid expression.
     """
 
 
@@ -367,6 +377,15 @@ class AtomTree:
     """The string data of this atom."""
     tail: List[AtomTree]
     """The list of child atoms of this atom."""
+
+
+class ParseMode(Enum):
+    """Specifies the parse mode."""
+
+    Symbolica = 1
+    """Parse using Symbolica notation."""
+    Mathematica = 2
+    """Parse using Mathematica notation."""
 
 
 class PrintMode(Enum):
@@ -648,7 +667,7 @@ class Expression:
         """Return all defined symbol names (function names and variables)."""
 
     @classmethod
-    def parse(_cls, input: str, default_namespace: str = "python") -> Expression:
+    def parse(_cls, input: str, mode: ParseMode = ParseMode.Symbolica, default_namespace: str = "python") -> Expression:
         """
         Parse a Symbolica expression from a string.
 
@@ -656,17 +675,27 @@ class Expression:
         ----------
         input: str
             An input string. UTF-8 characters are allowed.
+        mode: ParseMode
+            The parsing mode to use. Use `ParseMode.Mathematica` to parse Mathematica expressions.
+        default_namespace: str
+            The default namespace to use when parsing symbols.
 
         Examples
         --------
         >>> e = E('x^2+y+y*4')
         >>> print(e)
-        x^2+5*y
+
+        `x^2+5*y`
+
+        >>> e = E('Cos[test`x] (2+ 3 I)', mode=ParseMode.Mathematica)
+        >>> print(e)
+
+        `cos(test::x)(2+3i)`
 
         Raises
         ------
         ValueError
-            If the input is not a valid Symbolica expression.
+            If the input is not a valid expression.
         """
 
     def __new__(cls) -> Expression:
@@ -815,6 +844,18 @@ class Expression:
         --------
         >>> from sympy import *
         >>> s = sympy.parse_expr(E('x^2+f((1+x)^y)').to_sympy())
+        """
+
+    def to_mathematica(self, show_namespaces: bool = True) -> str:
+        """
+        Convert the expression into a Mathematica-parsable string.
+
+        Examples
+        --------
+        >>> a = E('cos(x+2i + 3)+sqrt(conj(x)) + test::y')
+        >>> print(a.to_mathematica(show_namespaces=True))
+
+        Yields ```test`y+Cos[x+3+2I]+Sqrt[Conjugate[x]]```.
         """
 
     def __hash__(self) -> str:

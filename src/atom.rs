@@ -49,7 +49,7 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     coefficient::Coefficient,
     domains::{float::Complex, rational::Rational},
-    parser::Token,
+    parser::{ParseSettings, Token},
     printer::{AtomPrinter, PrintFunction, PrintOptions},
     state::{RecycledAtom, State, SymbolData, Workspace},
     transformer::StatsOptions,
@@ -548,14 +548,20 @@ impl Symbol {
     pub const SQRT: Symbol = State::SQRT;
     /// The complex conjugate function.
     pub const CONJ: Symbol = State::CONJ;
+    /// The built-in function that represents a logical separator of function arguments.
+    pub const SEP: Symbol = State::SEP;
     /// The built-in function that represents an abstract derivative.
     pub const DERIVATIVE: Symbol = State::DERIVATIVE;
-    /// The constant e, the base of the natural logarithm.
+    /// The constant `𝑒`, the base of the natural logarithm.
     pub const E: Symbol = State::E;
     /// The mathematical constant `π`.
     pub const PI: Symbol = State::PI;
     /// The string representation of the constant `π`.
     pub const PI_STR: &'static str = "𝜋";
+    /// The string representation of the constant `e`.
+    pub const E_STR: &'static str = "𝑒";
+    /// The string representation of [Symbol::SEP].
+    pub const SEP_STR: &'static str = "‖";
 
     /// Create a builder for a new symbol with the given name and namespace.
     ///
@@ -948,7 +954,7 @@ impl Symbol {
                 && !State::is_builtin(*self)
                 && (opts.hide_namespace != Some(namespace) || opts.include_attributes)
             {
-                if opts.color_namespace {
+                if opts.color_namespace && opts.mode.is_symbolica() {
                     f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
 
                     if opts.include_attributes {
@@ -979,9 +985,25 @@ impl Symbol {
 
                     f.write_fmt(format_args!("{}", "::".dimmed()))?;
                 } else {
-                    f.write_fmt(format_args!("{namespace}::"))?;
+                    if opts.mode.is_mathematica() {
+                        for part in namespace.split("::") {
+                            let mut inside_full_form_unicode = false;
+                            for c in part.split(Symbol::SEP_STR) {
+                                if inside_full_form_unicode {
+                                    f.write_fmt(format_args!("\\[{}]", c))?;
+                                } else {
+                                    f.write_str(c)?;
+                                }
+                                inside_full_form_unicode = !inside_full_form_unicode;
+                            }
 
-                    if opts.include_attributes {
+                            f.write_char('`')?;
+                        }
+                    } else {
+                        f.write_fmt(format_args!("{namespace}::"))?;
+                    }
+
+                    if opts.mode.is_symbolica() && opts.include_attributes {
                         f.write_str("{")?;
                         let mut first = true;
                         for (x, t) in self.get_attributes_tuple_str() {
@@ -1009,10 +1031,39 @@ impl Symbol {
                 }
             }
 
-            if opts.color_builtin_symbols && name.ends_with('_') {
+            if opts.mode.is_symbolica() && opts.color_builtin_symbols && name.ends_with('_') {
                 f.write_fmt(format_args!("{}", name.cyan().italic()))
-            } else if opts.color_builtin_symbols && State::is_builtin(*self) {
+            } else if opts.mode.is_symbolica()
+                && opts.color_builtin_symbols
+                && State::is_builtin(*self)
+            {
                 f.write_fmt(format_args!("{}", name.purple()))
+            } else if opts.mode.is_mathematica() {
+                if State::is_builtin(*self) {
+                    match *self {
+                        Symbol::E => f.write_str("E"),
+                        Symbol::PI => f.write_str("Pi"),
+                        Symbol::COS => f.write_str("Cos"),
+                        Symbol::SIN => f.write_str("Sin"),
+                        Symbol::EXP => f.write_str("Exp"),
+                        Symbol::LOG => f.write_str("Log"),
+                        Symbol::SQRT => f.write_str("Sqrt"),
+                        Symbol::CONJ => f.write_str("Conjugate"),
+                        Symbol::DERIVATIVE => f.write_str("Derivative"),
+                        _ => f.write_str(name),
+                    }
+                } else {
+                    let mut inside_full_form_unicode = false;
+                    for c in name.split(Symbol::SEP_STR) {
+                        if inside_full_form_unicode {
+                            f.write_fmt(format_args!("\\[{}]", c))?;
+                        } else {
+                            f.write_str(c)?;
+                        }
+                        inside_full_form_unicode = !inside_full_form_unicode;
+                    }
+                    Ok(())
+                }
             } else {
                 f.write_str(name)
             }
@@ -1633,14 +1684,13 @@ impl Atom {
     ///
     /// # Examples
     /// ```rust
-    /// use symbolica::{wrap_input, with_default_namespace};
-    /// use symbolica::atom::Atom;
-    /// let x = Atom::parse(wrap_input!("x")).unwrap();
-    /// let x_2 = Atom::parse(with_default_namespace!("x_2", "b")).unwrap();
+    /// use symbolica::{atom::Atom, wrap_input, with_default_namespace, parser::ParseSettings};
+    /// let x = Atom::parse(wrap_input!("x"), ParseSettings::default()).unwrap();
+    /// let x_2 = Atom::parse(with_default_namespace!("x_2", "b"), ParseSettings::default()).unwrap();
     /// assert!(x != x_2);
     /// ```
-    pub fn parse(input: DefaultNamespace) -> Result<Atom, String> {
-        Workspace::get_local().with(|ws| Token::parse(input.data, false)?.to_atom(&input, ws))
+    pub fn parse(input: DefaultNamespace, settings: ParseSettings) -> Result<Atom, String> {
+        Workspace::get_local().with(|ws| Token::parse(input.data, settings)?.to_atom(&input, ws))
     }
 
     /// Create a new atom that represents a variable.
@@ -2292,7 +2342,7 @@ macro_rules! try_symbol {
 /// Parse using another default namespace:
 /// ```
 /// use symbolica::parse;
-/// let a = parse!("test::x + y", "custom");
+/// let a = parse!("test::x + y", default_namespace = "custom");
 /// assert_eq!(a, parse!("test::x + custom::y"));
 /// ```
 ///
@@ -2310,6 +2360,25 @@ macro_rules! try_symbol {
 /// let a = parse!("1.23456e-6`5");
 /// println!("{}", a);
 /// ```
+///
+/// Parse Mathematica code:
+/// ```
+/// use symbolica::parse;
+/// let a = parse!("Cos[x] + Sqrt[Conjugate[x]] + Test`y + Exp[x] + Log[x]", Mathematica);
+/// println!("{}", a);
+/// ```
+///
+/// Conversion from a subset of `InputForm` is supported, excluding certain operators
+/// such as `.` and `->`. For maximal compatibility use `NumberMarks->False`,
+/// or `FullForm` for expressions involving non-supported structures.
+///
+///
+/// Parse with custom settings:
+/// ```
+/// use symbolica::{parse, parser::ParseSettings};
+/// let a = parse!("Cos[x]", settings = ParseSettings::mathematica());
+/// println!("{}", a);
+/// ```
 #[macro_export]
 macro_rules! parse {
     ($($all_args:tt)*) => {
@@ -2322,9 +2391,32 @@ macro_rules! parse {
 #[macro_export]
 macro_rules! try_parse {
     ($s: expr) => {
-        $crate::atom::Atom::parse($crate::wrap_input!($s))
+        $crate::atom::Atom::parse(
+            $crate::wrap_input!($s),
+            $crate::parser::ParseSettings::symbolica(),
+        )
     };
-    ($s: expr, $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!($s, $ns)) }};
+    ($s: expr, Mathematica) => {{
+        $crate::atom::Atom::parse(
+            $crate::wrap_input!($s),
+            $crate::parser::ParseSettings::mathematica(),
+        )
+    }};
+    ($s: expr, settings = $settings: expr) => {{ $crate::atom::Atom::parse($crate::wrap_input!($s), $settings) }};
+
+    ($s: expr, default_namespace = $ns: expr) => {
+        $crate::atom::Atom::parse(
+            $crate::with_default_namespace!($s, $ns),
+            $crate::parser::ParseSettings::symbolica(),
+        )
+    };
+    ($s: expr, Mathematica, default_namespace = $ns: expr) => {{
+        $crate::atom::Atom::parse(
+            $crate::with_default_namespace!($s, $ns),
+            $crate::parser::ParseSettings::mathematica(),
+        )
+    }};
+    ($s: expr, settings = $settings: expr, default_namespace = $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!($s, $ns), $settings) }};
 }
 
 /// Parse an atom from literal code. Use [parse!](crate::parse) to parse from a string.
@@ -2340,20 +2432,42 @@ macro_rules! try_parse {
 /// Parse using another default namespace:
 /// ```
 /// use symbolica::{parse, parse_lit};
-/// let a = parse_lit!(test::x + y, "custom");
+/// let a = parse_lit!(test::x + y, default_namespace = "custom");
 /// assert_eq!(a, parse!("test::x + custom::y"));
 /// ```
 #[macro_export]
 macro_rules! parse_lit {
-    ($s: expr) => {{ $crate::atom::Atom::parse($crate::wrap_input!(stringify!($s))).unwrap() }};
-    ($s: expr, $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!(stringify!($s), $ns)).unwrap() }};
+    ($s: expr) => {{
+        $crate::atom::Atom::parse(
+            $crate::wrap_input!(stringify!($s)),
+            $crate::parser::ParseSettings::symbolica(),
+        )
+        .unwrap()
+    }};
+    ($s: expr, default_namespace = $ns: expr) => {{
+        $crate::atom::Atom::parse(
+            $crate::with_default_namespace!(stringify!($s), $ns),
+            $crate::parser::ParseSettings::symbolica(),
+        )
+        .unwrap()
+    }};
 }
 
 /// Try to parse an atom from literal code. Use [parse_lit!](crate::parse_lit) for parsing that panics on an error.
 #[macro_export]
 macro_rules! try_parse_lit {
-    ($s: expr) => {{ $crate::atom::Atom::parse($crate::wrap_input!(stringify!($s))) }};
-    ($s: expr, $ns: expr) => {{ $crate::atom::Atom::parse($crate::with_default_namespace!(stringify!($s), $ns)) }};
+    ($s: expr) => {{
+        $crate::atom::Atom::parse(
+            $crate::wrap_input!(stringify!($s)),
+            $crate::parser::ParseSettings::symbolica(),
+        )
+    }};
+    ($s: expr, default_namespace = $ns: expr) => {{
+        $crate::atom::Atom::parse(
+            $crate::with_default_namespace!(stringify!($s), $ns),
+            $crate::parser::ParseSettings::symbolica(),
+        )
+    }};
 }
 
 impl Atom {
@@ -2452,7 +2566,7 @@ mod test {
         let x = parse!("v1+f1(v2)");
         assert_eq!(
             format!("{x:#?}"),
-            "AddView { data: [5, 17, 2, 13, 2, 1, 12, 3, 5, 0, 0, 0, 1, 42, 2, 1, 13] }"
+            "AddView { data: [5, 17, 2, 13, 2, 1, 13, 3, 5, 0, 0, 0, 1, 43, 2, 1, 14] }"
         );
         assert_eq!(
             x.get_all_symbols(true),

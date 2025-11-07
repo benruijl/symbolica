@@ -88,7 +88,7 @@ use crate::{
         Replacement, WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
-    parser::Token,
+    parser::{ParseMode, ParseSettings, Token},
     poly::{
         GrevLexOrder, INLINED_EXPONENTS, LexOrder, Variable, factor::Factorize, gcd::PolynomialGCD,
         groebner::GroebnerBasis, polynomial::MultivariatePolynomial, series::Series,
@@ -158,6 +158,29 @@ pub trait SymbolicaCommunityModule {
 
     /// Register all classes, functions and methods in the submodule `m`.
     fn register_module(m: &Bound<'_, PyModule>) -> PyResult<()>;
+}
+
+/// Specifies the print mode.
+#[cfg_attr(
+    feature = "python_stubgen",
+    gen_stub_pyclass_enum(module = "symbolica.core")
+)]
+#[pyclass(name = "ParseMode", eq, eq_int, module = "symbolica.core")]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PythonParseMode {
+    /// parse using Symbolica notation.
+    Symbolica,
+    /// Parse using Mathematica notation.
+    Mathematica,
+}
+
+impl From<PythonParseMode> for ParseMode {
+    fn from(mode: PythonParseMode) -> Self {
+        match mode {
+            PythonParseMode::Symbolica => ParseMode::Symbolica,
+            PythonParseMode::Mathematica => ParseMode::Mathematica,
+        }
+    }
 }
 
 /// Specifies the print mode.
@@ -259,6 +282,7 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonSymbolAttribute>()?;
+    m.add_class::<PythonParseMode>()?;
     m.add_class::<PythonPrintMode>()?;
     m.add_class::<PythonCondition>()?;
     m.add_class::<PythonReplacement>()?;
@@ -801,6 +825,10 @@ fn number_shorthand(
 /// ----------
 /// input: str
 ///     An input string. UTF-8 characters are allowed.
+/// mode: ParseMode
+///     The parsing mode to use. Use `ParseMode.Mathematica` to parse Mathematica expressions.
+/// default_namespace: str
+///     The default namespace to use when parsing symbols.
 ///
 /// Examples
 /// --------
@@ -808,21 +836,32 @@ fn number_shorthand(
 /// >>> print(e)
 /// x^2+5*y
 ///
+/// >>> e = E('Cos[test`x] (2+ 3 I)', mode=ParseMode.Mathematica)
+/// >>> print(e)
+///
+/// `cos(test::x)(2+3i)`
+///
 /// Raises
 /// ------
 /// ValueError
-///     If the input is not a valid Symbolica expression.
+///     If the input is not a valid expression.
 #[cfg_attr(
     feature = "python_stubgen",
     gen_stub_pyfunction(module = "symbolica.core")
 )]
-#[pyfunction(name = "E", signature = (expr,default_namespace="python"))]
+#[pyfunction(name = "E", signature = (expr, mode=PythonParseMode::Symbolica, default_namespace="python"))]
 fn expression_shorthand(
     expr: &str,
+    mode: PythonParseMode,
     default_namespace: &str,
     py: Python,
 ) -> PyResult<PythonExpression> {
-    PythonExpression::parse(&PythonExpression::type_object(py), expr, default_namespace)
+    PythonExpression::parse(
+        &PythonExpression::type_object(py),
+        expr,
+        mode,
+        default_namespace,
+    )
 }
 
 /// Create a new transformer that maps an expression.
@@ -845,8 +884,13 @@ pub fn poly_shorthand(
     vars: Option<Vec<PythonExpression>>,
     py: Python,
 ) -> PyResult<Py<PyAny>> {
-    PythonExpression::parse(&PythonExpression::type_object(py), expr, default_namespace)?
-        .to_polynomial(modulus, power, minimal_poly, vars, py)
+    PythonExpression::parse(
+        &PythonExpression::type_object(py),
+        expr,
+        PythonParseMode::Symbolica,
+        default_namespace,
+    )?
+    .to_polynomial(modulus, power, minimal_poly, vars, py)
 }
 
 #[cfg(feature = "python_stubgen")]
@@ -3789,7 +3833,7 @@ impl PythonExpression {
             Ok(Atom::num(num).into())
         } else if let Ok(num) = num.cast_bound::<PyInt>(py) {
             let a = format!("{num}");
-            PythonExpression::parse(_cls, &a, "python")
+            PythonExpression::parse(_cls, &a, PythonParseMode::Symbolica, "python")
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             if let Some(relative_error) = relative_error {
                 let mut r: Rational = f.0.into();
@@ -3913,8 +3957,12 @@ impl PythonExpression {
     ///
     /// Parameters
     /// ----------
-    /// input:
-    ///     str An input string. UTF-8 character are allowed.
+    /// input: str
+    ///     An input string. UTF-8 characters are allowed.
+    /// mode: ParseMode
+    ///     The parsing mode to use. Use `ParseMode.Mathematica` to parse Mathematica expressions.
+    /// default_namespace: str
+    ///     The default namespace to use when parsing symbols.
     ///
     /// Examples
     /// --------
@@ -3922,20 +3970,32 @@ impl PythonExpression {
     /// >>> print(e)
     /// x^2+5*y
     ///
+    /// >>> e = E('Cos[test`x] (2+ 3 I)', mode=ParseMode.Mathematica)
+    /// >>> print(e)
+    ///
+    /// `cos(test::x)(2+3i)`
+    ///
     /// Raises
     /// ------
     /// ValueError
-    ///     If the input is not a valid Symbolica expression.
-    ///
-    #[pyo3(signature = (input, default_namespace = "python"))]
+    ///     If the input is not a valid expression.
+    #[pyo3(signature = (input, mode = PythonParseMode::Symbolica, default_namespace = "python"))]
     #[classmethod]
     pub fn parse(
         _cls: &Bound<'_, PyType>,
         input: &str,
+        mode: PythonParseMode,
         default_namespace: &str,
     ) -> PyResult<PythonExpression> {
-        let e = try_parse!(input, default_namespace.to_string())
-            .map_err(exceptions::PyValueError::new_err)?;
+        let e = try_parse!(
+            input,
+            settings = ParseSettings {
+                mode: mode.into(),
+                ..ParseSettings::default()
+            },
+            default_namespace = default_namespace.to_string()
+        )
+        .map_err(exceptions::PyValueError::new_err)?;
         Ok(e.into())
     }
 
@@ -4106,7 +4166,7 @@ impl PythonExpression {
         ))
     }
 
-    /// Convert the expression into a sympy-parsable string.
+    /// Convert the expression into a Sympy-parsable string.
     ///
     /// Examples
     /// --------
@@ -4114,6 +4174,26 @@ impl PythonExpression {
     /// >>> s = sympy.parse_expr(E('x^2+f((1+x)^y)').to_sympy())
     pub fn to_sympy(&self) -> PyResult<String> {
         Ok(format!("{}", self.expr.printer(PrintOptions::sympy())))
+    }
+
+    /// Convert the expression into a Mathematica-parsable string.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a = E('cos(x+2i + 3)+sqrt(conj(x)) + test::y')
+    /// >>> print(a.to_mathematica())
+    ///
+    /// Yields ```test`y+Cos[x+3+2I]+Sqrt[Conjugate[x]]```.
+    #[pyo3(signature = (show_namespaces = true))]
+    pub fn to_mathematica(&self, show_namespaces: bool) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            self.expr.printer(PrintOptions {
+                hide_all_namespaces: !show_namespaces,
+                hide_namespace: Some("python"),
+                ..PrintOptions::mathematica()
+            })
+        ))
     }
 
     /// Convert the expression into an integer if possible.
@@ -9361,7 +9441,7 @@ impl PythonPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let e = Token::parse(arg, true)
+        let e = Token::parse(arg, ParseSettings::polynomial())
             .map_err(exceptions::PyValueError::new_err)?
             .to_polynomial(&Q, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
@@ -10716,7 +10796,7 @@ impl PythonFiniteFieldPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let e = Token::parse(arg, true)
+        let e = Token::parse(arg, ParseSettings::polynomial())
             .map_err(exceptions::PyValueError::new_err)?
             .to_polynomial(&Zp64::new(prime), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
@@ -14760,7 +14840,7 @@ impl PythonRationalPolynomial {
             var_name_map.push((*v).into());
         }
 
-        let e = Token::parse(arg, true)
+        let e = Token::parse(arg, ParseSettings::polynomial())
             .map_err(exceptions::PyValueError::new_err)?
             .to_rational_polynomial(&Q, &Z, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
@@ -15097,7 +15177,7 @@ impl PythonFiniteFieldRationalPolynomial {
         }
 
         let field = Zp64::new(prime);
-        let e = Token::parse(arg, true)
+        let e = Token::parse(arg, ParseSettings::polynomial())
             .map_err(exceptions::PyValueError::new_err)?
             .to_rational_polynomial(&field, &field, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;

@@ -6,7 +6,7 @@ use colored::Colorize;
 
 use crate::{
     atom::{
-        AddView, Atom, AtomView, FunctionBuilder, MulView, NumView, PowView, VarView,
+        AddView, Atom, AtomView, FunctionBuilder, MulView, NumView, PowView, Symbol, VarView,
         representation::FunView,
     },
     coefficient::CoefficientView,
@@ -119,8 +119,8 @@ impl PrintOptions {
             mode: PrintMode::Mathematica,
             precision: None,
             pretty_matrix: false,
-            hide_namespace: None,
-            hide_all_namespaces: true,
+            hide_namespace: Some("symbolica"),
+            hide_all_namespaces: false,
             include_attributes: false,
             color_namespace: false,
             max_terms: None,
@@ -381,6 +381,7 @@ impl fmt::Display for AtomPrinter<'_> {
 pub struct CanonicalOrderingSettings {
     pub include_namespace: bool,
     pub include_attributes: bool,
+    pub hide_namespace: Option<&'static str>,
 }
 
 impl Default for CanonicalOrderingSettings {
@@ -388,6 +389,7 @@ impl Default for CanonicalOrderingSettings {
         Self {
             include_namespace: true,
             include_attributes: true,
+            hide_namespace: None,
         }
     }
 }
@@ -579,7 +581,15 @@ impl AtomView<'_> {
                 if settings.include_attributes {
                     v.get_symbol().format(&PrintOptions::full(), out).unwrap();
                 } else if settings.include_namespace {
-                    v.get_symbol().format(&PrintOptions::file(), out).unwrap();
+                    v.get_symbol()
+                        .format(
+                            &PrintOptions {
+                                hide_namespace: settings.hide_namespace,
+                                ..PrintOptions::file()
+                            },
+                            out,
+                        )
+                        .unwrap();
                 } else {
                     v.get_symbol()
                         .format(&PrintOptions::file_no_namespace(), out)
@@ -590,7 +600,15 @@ impl AtomView<'_> {
                 if settings.include_attributes {
                     f.get_symbol().format(&PrintOptions::full(), out).unwrap();
                 } else if settings.include_namespace {
-                    f.get_symbol().format(&PrintOptions::file(), out).unwrap();
+                    f.get_symbol()
+                        .format(
+                            &PrintOptions {
+                                hide_namespace: settings.hide_namespace,
+                                ..PrintOptions::file()
+                            },
+                            out,
+                        )
+                        .unwrap();
                 } else {
                     f.get_symbol()
                         .format(&PrintOptions::file_no_namespace(), out)
@@ -830,8 +848,10 @@ impl FormattedPrintNum for NumView<'_> {
             print_state.in_sum = false;
         }
 
-        let i_str = if opts.color_builtin_symbols {
+        let i_str = if opts.mode.is_symbolica() && opts.color_builtin_symbols {
             "\u{1b}\u{5b}\u{33}\u{35}\u{6d}\u{1d456}\u{1b}\u{5b}\u{30}\u{6d}"
+        } else if opts.mode.is_mathematica() {
+            "I"
         } else {
             "𝑖"
         };
@@ -1172,6 +1192,37 @@ impl FormattedPrintFn for FunView<'_> {
         print_state.suppress_one = false;
         let mut first = true;
         for x in self.iter() {
+            if opts.mode.is_mathematica() {
+                if let AtomView::Var(s) = x
+                    && s.get_symbol() == Symbol::SEP
+                {
+                    first = true;
+                    f.write_str("][")?;
+                    continue;
+                }
+
+                // curry the derivative function
+                if id == Symbol::DERIVATIVE {
+                    if let AtomView::Fun(fun) = x {
+                        f.write_str("][")?;
+                        fun.get_symbol().format(opts, f)?;
+                        f.write_str("][")?;
+
+                        first = true;
+                        for x2 in fun.iter() {
+                            if !first {
+                                f.write_char(',')?;
+                            } else {
+                                first = false;
+                            }
+
+                            x2.format(f, opts, print_state)?;
+                        }
+                        continue;
+                    }
+                }
+            }
+
             if !first {
                 f.write_char(',')?;
             }

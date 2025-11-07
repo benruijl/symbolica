@@ -98,6 +98,68 @@ pub enum Operator {
     Inv,      // left side should be tagged as 'finished', for internal use
 }
 
+/// The mode in which to parse the expression.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParseMode {
+    Symbolica,
+    Mathematica,
+}
+
+impl Default for ParseMode {
+    fn default() -> Self {
+        ParseMode::Symbolica
+    }
+}
+
+/// Settings for parsing.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParseSettings {
+    pub mode: ParseMode,
+    pub distribute_neg: bool,
+}
+
+impl ParseMode {
+    pub fn is_mathematica(&self) -> bool {
+        *self == ParseMode::Mathematica
+    }
+
+    pub fn is_symbolica(&self) -> bool {
+        *self == ParseMode::Symbolica
+    }
+}
+
+impl ParseSettings {
+    pub const fn symbolica() -> Self {
+        ParseSettings {
+            mode: ParseMode::Symbolica,
+            distribute_neg: false,
+        }
+    }
+
+    pub const fn mathematica() -> Self {
+        ParseSettings {
+            mode: ParseMode::Mathematica,
+            distribute_neg: false,
+        }
+    }
+
+    pub const fn polynomial() -> Self {
+        ParseSettings {
+            mode: ParseMode::Symbolica,
+            distribute_neg: true,
+        }
+    }
+}
+
+impl Default for ParseSettings {
+    fn default() -> Self {
+        ParseSettings {
+            mode: ParseMode::Symbolica,
+            distribute_neg: false,
+        }
+    }
+}
+
 impl std::fmt::Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -185,7 +247,8 @@ pub enum Token {
 impl Token {
     const OPS: [char; 11] = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
     const WHITESPACE: [char; 5] = [' ', '\t', '\n', '\r', '\\'];
-    const FORBIDDEN: [char; 11] = [';', '&', '!', '%', '.', '"', '¿', '⧞', '∞', '{', '}'];
+    const WHITESPACE_MATHEMATICA: [char; 4] = [' ', '\t', '\n', '\r'];
+    const FORBIDDEN: [char; 12] = [';', '&', '!', '%', '.', '"', '¿', '⧞', '∞', '{', '}', '`'];
 }
 
 impl std::fmt::Display for Token {
@@ -262,7 +325,7 @@ impl std::fmt::Display for Token {
 impl Token {
     /// Check the validity of a symbol name.
     pub fn check_symbol_name(symbol: &str) -> Result<(), String> {
-        if symbol.contains(':') {
+        if !symbol.starts_with('"') && symbol.contains(':') {
             return Err(format!("Symbol name {} cannot contain ':'", symbol));
         }
 
@@ -277,6 +340,24 @@ impl Token {
 
         if symbol.starts_with(|c: char| c.is_numeric()) {
             return Err(format!("Symbol namespace '{symbol}' starts with a number"));
+        }
+
+        if symbol.starts_with('"') && symbol.ends_with('"') {
+            let mut escaped = false;
+            for (i, c) in symbol.chars().enumerate().skip(1).take(symbol.len() - 2) {
+                if escaped {
+                    escaped = false;
+                } else if c == '\\' {
+                    escaped = true;
+                } else if c == '"' {
+                    return Err(format!(
+                        "Invalid character '\"' at position {} in symbol namespace '{symbol}'",
+                        i
+                    ));
+                }
+            }
+
+            return Ok(());
         }
 
         for c in symbol.chars() {
@@ -803,11 +884,174 @@ impl Token {
         Ok(())
     }
 
+    /// Map Mathematica `FullForm` symbols to internal functions and operators.
+    /// The first argument is the function name.
+    fn map_mathematica_full_form_symbols(args: &mut Vec<Token>) -> Result<Option<Self>, String> {
+        if let Some(Token::ID(name)) = args.get(0) {
+            match name.as_str() {
+                "Power" => {
+                    let mut args = std::mem::take(args);
+                    args.remove(0);
+                    Ok(Some(Token::Op(false, false, Operator::Pow, args)))
+                }
+                "Times" => {
+                    let mut args = std::mem::take(args);
+                    args.remove(0);
+                    Ok(Some(Token::Op(false, false, Operator::Mul, args)))
+                }
+                "Plus" => {
+                    let mut args = std::mem::take(args);
+                    args.remove(0);
+                    Ok(Some(Token::Op(false, false, Operator::Add, args)))
+                }
+                "Rational" => {
+                    if args.len() != 3 {
+                        return Err("Rational takes exactly two arguments".into());
+                    }
+                    let num = std::mem::replace(&mut args[1], Token::EOF);
+                    let den = std::mem::replace(&mut args[2], Token::EOF);
+                    Ok(Some(Token::Op(
+                        false,
+                        false,
+                        Operator::Mul,
+                        vec![num, Token::Op(false, false, Operator::Inv, vec![den])],
+                    )))
+                }
+                "Complex" => {
+                    if args.len() != 3 {
+                        return Err("Complex takes exactly two arguments".into());
+                    }
+                    let real = std::mem::replace(&mut args[1], Token::EOF);
+                    let imag = std::mem::replace(&mut args[2], Token::EOF);
+
+                    Ok(Some(Token::Op(
+                        false,
+                        false,
+                        Operator::Add,
+                        vec![
+                            real,
+                            Token::Op(
+                                false,
+                                false,
+                                Operator::Mul,
+                                vec![imag, Token::Number("1".into(), true)],
+                            ),
+                        ],
+                    )))
+                }
+                "DirectedInfinity" => {
+                    if args.len() == 1 {
+                        Ok(Some(Token::SpecialNumber('⧞')))
+                    } else if args.len() == 2 {
+                        let arg = std::mem::replace(&mut args[1], Token::EOF);
+                        Ok(Some(Token::Op(
+                            false,
+                            false,
+                            Operator::Mul,
+                            vec![arg, Token::SpecialNumber('∞')],
+                        )))
+                    } else {
+                        Err("DirectedInfinity takes at most one argument".into())
+                    }
+                }
+                "Derivative" | "der" => {
+                    // will be called for every curried argument
+                    args[0] = Token::ID("der".into());
+
+                    let sep = Token::ID(Symbol::SEP_STR.into());
+                    args.retain(|x| *x != sep);
+
+                    let mut function_index = 1;
+                    for x in &args[1..] {
+                        if let Token::Number(_, _) = x {
+                            function_index += 1;
+                        }
+                    }
+
+                    if function_index == args.len() {
+                        return Ok(None);
+                    }
+
+                    // merge curried arguments into one function
+                    // Derivative[2][f][x,y] => der(2,f(x,y))
+                    if let Token::ID(_) = &args[function_index] {
+                        // upgrade argument to function
+                        let fn_arg = args.split_off(function_index);
+                        args.push(Token::Fn(false, false, fn_arg));
+                    } else {
+                        let new_fn_arg = args.split_off(function_index + 1);
+
+                        if let Token::Fn(false, false, fn_arg) = &mut args[function_index] {
+                            fn_arg.extend(new_fn_arg);
+                        } else {
+                            return Err("Derivative function argument is not a function".into());
+                        }
+                    }
+
+                    Ok(None)
+                }
+                "Pattern" => {
+                    if args.len() == 3
+                        && let Some(Token::ID(_)) = args.get(1)
+                        && let Some(Token::Fn(_, _, wildcard_type)) = args.get(2)
+                        && wildcard_type.len() == 1
+                        && let Some(Token::ID(wt)) = wildcard_type.get(0)
+                    {
+                        let level;
+                        match wt.as_str() {
+                            "Blank" => {
+                                level = 1;
+                            }
+                            "BlankSequence" => {
+                                level = 2;
+                            }
+                            "BlankNullSequence" => {
+                                level = 3;
+                            }
+                            _ => {
+                                return Ok(None);
+                            }
+                        }
+
+                        let mut args = std::mem::take(args);
+                        let mut t = args.swap_remove(1);
+                        if let Token::ID(symbol) = &mut t {
+                            for _ in 0..level {
+                                symbol.push('_');
+                            }
+                        } else {
+                            unreachable!();
+                        }
+
+                        Ok(Some(t))
+                    } else {
+                        Ok(None)
+                    }
+                }
+                "SetAccuracy" => {
+                    if args.len() == 3
+                        && let Some(Token::Number(s, false)) = args.get(1)
+                        && s == "0"
+                        && let Some(Token::Number(prec, false)) = args.get(2)
+                    {
+                        // precision on 0 is treated as accuracy
+                        Ok(Some(Token::Number(SmartString::from("0`") + prec, false)))
+                    } else {
+                        Ok(None)
+                    }
+                }
+                _ => Ok(None),
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Parse a Symbolica expression, generating a token tree. For most users,
     /// it is recommended to use [crate::parse] instead, which returns an atom.
     ///
     /// Optionally, distribute distribute unary minus operators into sums.
-    pub fn parse(input: &str, distribute_neg: bool) -> Result<Token, String> {
+    pub fn parse(input: &str, settings: ParseSettings) -> Result<Token, String> {
         LicenseManager::check();
 
         // Remove ANSI color codes from the input string.
@@ -828,6 +1072,12 @@ impl Token {
             input = Cow::Owned(s);
         }
 
+        let whitespaces = if settings.mode.is_mathematica() {
+            Token::WHITESPACE_MATHEMATICA.as_slice()
+        } else {
+            Token::WHITESPACE.as_slice()
+        };
+
         let mut stack: Vec<_> = Vec::with_capacity(20);
         stack.push(Token::Start);
         let mut state = ParseState::Any;
@@ -841,15 +1091,65 @@ impl Token {
         let mut line_counter = 1;
         let mut column_counter = 1;
 
+        let mut inside_mathematica_full_form = false;
         loop {
             match state {
                 ParseState::Identifier => {
-                    if Token::OPS.contains(&c) || Token::WHITESPACE.contains(&c) {
+                    if inside_mathematica_full_form && c == '[' {
+                        // convert \[Alpha] to ‖Alpha‖
+                        if !id_buffer.ends_with(Symbol::SEP_STR) {
+                            Err(format!(
+                                "Unexpected '{c:?}' in input at line {line_counter} and column {column_counter}"
+                            ))?;
+                        }
+                    } else if inside_mathematica_full_form && c == ']' {
+                        inside_mathematica_full_form = false;
+                        id_buffer.push_str(Symbol::SEP_STR);
+                    } else if Token::OPS.contains(&c) || whitespaces.contains(&c) {
                         state = ParseState::Any;
 
-                        stack.push(Token::ID(id_buffer.as_str().into()));
+                        if settings.mode.is_mathematica() {
+                            match id_buffer.as_str() {
+                                "Pi" => {
+                                    stack.push(Token::ID(Symbol::PI_STR.into()));
+                                }
+                                "E" => {
+                                    stack.push(Token::ID(Symbol::E_STR.into()));
+                                }
+                                "I" => {
+                                    stack.push(Token::Number("1".into(), true));
+                                }
+                                "Sqrt" => {
+                                    stack.push(Token::ID("sqrt".into()));
+                                }
+                                "Cos" => {
+                                    stack.push(Token::ID("cos".into()));
+                                }
+                                "Sin" => {
+                                    stack.push(Token::ID("sin".into()));
+                                }
+                                "Log" => {
+                                    stack.push(Token::ID("log".into()));
+                                }
+                                "Exp" => {
+                                    stack.push(Token::ID("exp".into()));
+                                }
+                                "Conjugate" => {
+                                    stack.push(Token::ID("conj".into()));
+                                }
+                                "Indeterminate" => {
+                                    stack.push(Token::SpecialNumber('¿'));
+                                }
+                                _ => {
+                                    stack.push(Token::ID(id_buffer.as_str().into()));
+                                }
+                            }
+                        } else {
+                            stack.push(Token::ID(id_buffer.as_str().into()));
+                        }
+
                         id_buffer.clear();
-                    } else if c == '{' {
+                    } else if c == '{' && settings.mode == ParseMode::Symbolica {
                         while c != '}' && c != '\0' {
                             id_buffer.push(c);
                             c = char_iter.next().unwrap_or('\0');
@@ -870,6 +1170,11 @@ impl Token {
                         }
 
                         id_buffer.push(c);
+                    } else if settings.mode.is_mathematica() && c == '`' {
+                        id_buffer.push_str("::");
+                    } else if settings.mode.is_mathematica() && c == '\\' {
+                        inside_mathematica_full_form = true;
+                        id_buffer.push_str(Symbol::SEP_STR);
                     } else if !Token::FORBIDDEN.contains(&c) {
                         id_buffer.push(c);
                     } else {
@@ -934,6 +1239,19 @@ impl Token {
                             break;
                         }
 
+                        if settings.mode.is_mathematica() && c == '*' {
+                            c = char_iter.next().unwrap_or('\0');
+                            column_counter += 1;
+
+                            if c == '^' {
+                                c = 'e';
+                            } else {
+                                extra_ops.push(c);
+                                c = '*';
+                                break;
+                            }
+                        }
+
                         let digit_is_exp = c == 'e' || c == 'E';
 
                         if c != '_' && c != ' ' {
@@ -988,7 +1306,7 @@ impl Token {
             }
 
             if state == ParseState::Any {
-                if Token::WHITESPACE.contains(&c) {
+                if whitespaces.contains(&c) {
                     if c == '\n' {
                         column_counter = 1;
                         line_counter += 1;
@@ -1033,7 +1351,9 @@ impl Token {
                     }
                     '(' => {
                         // check if the opening bracket belongs to a function
-                        if let Some(Token::ID(_)) = stack.last() {
+                        if settings.mode == ParseMode::Symbolica
+                            && let Some(Token::ID(_)) = stack.last()
+                        {
                             let name = unsafe { stack.pop().unwrap_unchecked() };
                             if let Token::ID(_) = name {
                                 stack.push(Token::Fn(true, false, vec![name])); // serves as open paren
@@ -1071,16 +1391,58 @@ impl Token {
                                 if let Token::ID(_) = name {
                                     stack.push(Token::Fn(true, true, vec![name]));
                                 }
-                            } else {
+                            } else if settings.mode == ParseMode::Symbolica {
                                 // insert multiplication: f(x)[3,4] -> f(x)*[3,4]
                                 stack.push(Token::Op(true, true, Operator::Mul, vec![]));
                                 extra_ops.push(c);
+                            } else if settings.mode == ParseMode::Mathematica
+                                && let Token::Fn(need_more, _, args) =
+                                    unsafe { stack.last_mut().unwrap_unchecked() }
+                            {
+                                // parse curried functions, e.g. f[x][y]
+                                *need_more = true;
+                                args.push(Token::ID(Symbol::SEP_STR.into()));
+                            } else {
+                                Err(format!(
+                                    "Unexpected '[' in input at line {line_counter} and column {column_counter}"
+                                ))?;
                             }
-                        } else {
+                        } else if settings.mode == ParseMode::Symbolica {
                             state = ParseState::RationalPolynomial;
+                        } else {
+                            Err(format!(
+                                "Unexpected '[' in input at line {line_counter} and column {column_counter}"
+                            ))?;
                         }
                     }
                     ']' => stack.push(Token::CloseBracket),
+                    '"' => {
+                        if !settings.mode.is_mathematica() {
+                            Err(format!(
+                                "Unexpected '\"' in input at line {line_counter} and column {column_counter}"
+                            ))?;
+                        }
+
+                        // parse a string as a literal id in the current namespace
+                        id_buffer.clear();
+                        let mut escape = true;
+                        while (escape || c != '"') && c != '\0' {
+                            id_buffer.push(c);
+                            escape = c == '\\';
+                            c = char_iter.next().unwrap_or('\0');
+                            column_counter += 1;
+                        }
+
+                        if c == '\0' {
+                            Err(format!(
+                                "Unexpected 'EOF' in input at line {line_counter} and column {column_counter}"
+                            ))?;
+                        }
+
+                        id_buffer.push(c);
+                        stack.push(Token::ID(id_buffer.as_str().into()));
+                        id_buffer.clear();
+                    }
                     _ => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal()
                             && (!c.is_ascii_digit()
@@ -1101,7 +1463,13 @@ impl Token {
                             stack.push(Token::SpecialNumber(c));
                         } else if !Token::FORBIDDEN.contains(&c) {
                             state = ParseState::Identifier;
-                            id_buffer.push(c);
+
+                            if settings.mode.is_mathematica() && c == '\\' {
+                                inside_mathematica_full_form = true;
+                                id_buffer.push_str(Symbol::SEP_STR);
+                            } else {
+                                id_buffer.push(c);
+                            }
                         } else {
                             Err(format!(
                                 "Unexpected '{c}' in input at line {line_counter} and column {column_counter}"
@@ -1128,13 +1496,22 @@ impl Token {
                             let c = x.clone();
                             let pos = stack.len() - 2;
                             // check if we have an empty function
-                            if let Token::Fn(f, bracket, _) =
+                            if let Token::Fn(f, bracket, args) =
                                 unsafe { stack.get_unchecked_mut(pos) }
                             {
                                 if c == Token::CloseParenthesis && !*bracket
                                     || c == Token::CloseBracket && *bracket
                                 {
                                     *f = false;
+
+                                    if settings.mode.is_mathematica() {
+                                        if let Some(rewrite) =
+                                            Token::map_mathematica_full_form_symbols(args)?
+                                        {
+                                            *unsafe { stack.get_unchecked_mut(pos) } = rewrite;
+                                        }
+                                    }
+
                                     stack.pop();
                                 } else {
                                     Err(format!(
@@ -1174,10 +1551,13 @@ impl Token {
 
                 match first.get_precedence().cmp(&last.get_precedence()) {
                     std::cmp::Ordering::Greater => {
-                        first.add_right(middle, distribute_neg).map_err(|e| {
-                            format!("Error at line {line_counter} and position {column_counter}: ")
-                                + e.as_str()
-                        })?;
+                        first
+                            .add_right(middle, settings.distribute_neg)
+                            .map_err(|e| {
+                                format!(
+                                    "Error at line {line_counter} and position {column_counter}: "
+                                ) + e.as_str()
+                            })?;
                         stack.push(last);
                     }
                     std::cmp::Ordering::Less => {
@@ -1221,6 +1601,14 @@ impl Token {
                                     args.extend(arg2);
                                 } else {
                                     args.push(mid);
+                                }
+
+                                if settings.mode.is_mathematica() {
+                                    if let Some(rewrite) =
+                                        Token::map_mathematica_full_form_symbols(args)?
+                                    {
+                                        *first = rewrite;
+                                    }
                                 }
                             }
                             (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
@@ -1521,12 +1909,37 @@ mod test {
 
     use crate::{
         atom::{AtomCore, SymbolAttribute},
-        domains::integer::Z,
+        domains::{SelfRing, integer::Z},
         parse,
         parser::Token,
-        printer::PrintOptions,
+        printer::{PrintOptions, PrintState},
         symbol,
     };
+
+    #[test]
+    fn mathematica() {
+        let a = parse!("cos(x+2i + 3)+sqrt(conj(x)) + test::y + exp(test::test2::x) + log(α)");
+        let s = a.format_string(&PrintOptions::mathematica(), PrintState::default());
+        let b = parse!(s, Mathematica);
+        assert_eq!(a, b);
+
+        let input = "a\\[Alpha]b+\\[Beta]";
+        let b = parse!(input, Mathematica);
+        assert_eq!(b, parse!("a‖Alpha‖b+‖Beta‖"));
+        let s = b.format_string(&PrintOptions::mathematica(), PrintState::default());
+        assert_eq!(s, input);
+
+        let input =
+            "Pattern[f, Blank[]][Pattern[x, BlankSequence[]], Pattern[v, BlankNullSequence[]]]";
+        let b = parse!(input, Mathematica);
+        assert_eq!(b, parse!("f_(x__, v___)"));
+
+        let a = parse!("2*x+2*^5y + SetAccuracy[0, 10.]", Mathematica);
+        assert_eq!(a, parse!("2*x+2e5*y"));
+
+        let a = parse!("\"a b $ * \\\" / // c\"", Mathematica);
+        assert!(a.get_symbol().is_some());
+    }
 
     #[test]
     fn attributes() {

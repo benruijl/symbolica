@@ -9,7 +9,7 @@ use crate::domains::SelfRing;
 use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
 use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::Q;
-use crate::parser::Token;
+use crate::parser::{ParseSettings, Token};
 use crate::poly::Variable;
 use crate::{LicenseManager, symbol};
 use crate::{
@@ -159,7 +159,7 @@ unsafe extern "C" fn simplify(
         LicenseManager::check();
     }
 
-    let token = Token::parse(cstr, true).unwrap();
+    let token = Token::parse(cstr, ParseSettings::polynomial()).unwrap();
 
     let opts = PrintOptions {
         explicit_rational_polynomial,
@@ -265,7 +265,7 @@ unsafe extern "C" fn simplify_factorized(
 
     let symbolica = unsafe { &mut *symbolica };
 
-    let token = Token::parse(cstr, true).unwrap();
+    let token = Token::parse(cstr, ParseSettings::polynomial()).unwrap();
 
     let opts = PrintOptions {
         explicit_rational_polynomial,

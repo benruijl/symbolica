@@ -188,6 +188,24 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
         state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
+        if opts.mode.is_mathematica() {
+            let mut s = String::new();
+            if let Some(p) = opts.precision {
+                if state.in_sum {
+                    s.write_fmt(format_args!("{self:+.p$}"))?
+                } else {
+                    s.write_fmt(format_args!("{self:.p$}"))?
+                }
+            } else if state.in_sum {
+                s.write_fmt(format_args!("{self:+}"))?
+            } else {
+                s.write_fmt(format_args!("{self}"))?
+            }
+
+            f.write_str(&s.replace('e', "*^"))?;
+            return Ok(false);
+        }
+
         if let Some(p) = opts.precision {
             if state.in_sum {
                 f.write_fmt(format_args!("{element:+.p$}"))?
@@ -227,6 +245,24 @@ impl SelfRing for F64 {
         state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
+        if opts.mode.is_mathematica() {
+            let mut s = String::new();
+            if let Some(p) = opts.precision {
+                if state.in_sum {
+                    s.write_fmt(format_args!("{self:+.p$}"))?
+                } else {
+                    s.write_fmt(format_args!("{self:.p$}"))?
+                }
+            } else if state.in_sum {
+                s.write_fmt(format_args!("{self:+}"))?
+            } else {
+                s.write_fmt(format_args!("{self}"))?
+            }
+
+            f.write_str(&s.replace('e', "*^"))?;
+            return Ok(false);
+        }
+
         if let Some(p) = opts.precision {
             if state.in_sum {
                 f.write_fmt(format_args!("{self:+.p$}"))?
@@ -261,6 +297,24 @@ impl SelfRing for Float {
         state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<bool, fmt::Error> {
+        if opts.mode.is_mathematica() {
+            let mut s = String::new();
+            if let Some(p) = opts.precision {
+                if state.in_sum {
+                    s.write_fmt(format_args!("{self:+.p$}"))?
+                } else {
+                    s.write_fmt(format_args!("{self:.p$}"))?
+                }
+            } else if state.in_sum {
+                s.write_fmt(format_args!("{self:+}"))?
+            } else {
+                s.write_fmt(format_args!("{self}"))?
+            }
+
+            f.write_str(&s.replace('e', "*^"))?;
+            return Ok(false);
+        }
+
         if let Some(p) = opts.precision {
             if state.in_sum {
                 f.write_fmt(format_args!("{self:+.p$}"))?
@@ -316,8 +370,10 @@ impl SelfRing for Complex<Float> {
         if !im_zero {
             self.im.format(opts, state, f)?;
 
-            if opts.color_builtin_symbols {
+            if opts.mode.is_symbolica() && opts.color_builtin_symbols {
                 f.write_str("\u{1b}\u{5b}\u{33}\u{35}\u{6d}\u{1d456}\u{1b}\u{5b}\u{30}\u{6d}")?;
+            } else if opts.mode.is_mathematica() {
+                f.write_char('I')?;
             } else {
                 f.write_char('𝑖')?;
             }
@@ -1785,7 +1841,8 @@ impl Float {
     /// Precision can be specified by a trailing backtick followed by the precision.
     /// For example: ```1.234`20``` for a precision of 20 decimal digits.
     /// The precision is allowed to be a floating point number.
-    ///  If `prec` is `None` and no precision is specified, the precision is derived from the string, with
+    ///  If `prec` is `None` and no precision is specified (either no backtick
+    /// or a backtick without a number following), the precision is derived from the string, with
     /// a minimum of 53 bits (`f64` precision).
     pub fn parse(s: &str, prec: Option<u32>) -> Result<Self, String> {
         if let Some(prec) = prec {
@@ -1795,11 +1852,15 @@ impl Float {
                     .complete(prec),
             ))
         } else if let Some((f, p)) = s.split_once('`') {
-            let prec = (p
-                .parse::<f64>()
-                .map_err(|e| format!("Invalid precision: {e}"))?
-                * LOG2_10)
-                .ceil() as u32;
+            let prec = if p.is_empty() {
+                53
+            } else {
+                (p.parse::<f64>()
+                    .map_err(|e| format!("Invalid precision: {e}"))?
+                    * LOG2_10)
+                    .ceil() as u32
+            };
+
             Ok(Float(
                 MultiPrecisionFloat::parse(f)
                     .map_err(|e| e.to_string())?

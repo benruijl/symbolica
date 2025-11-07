@@ -1092,6 +1092,7 @@ pub trait AtomCore {
     /// let canonical_str = expr.to_canonically_ordered_string(CanonicalOrderingSettings {
     ///   include_namespace: false,
     ///   include_attributes: false,
+    ///   ..Default::default()
     /// });
     /// assert_eq!(canonical_str, "x+y");
     /// ```

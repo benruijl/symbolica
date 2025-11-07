@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::AtomCore, domains::integer::Z, parse, parser::Token, poly::Variable, symbol,
+    atom::AtomCore,
+    domains::integer::Z,
+    parse,
+    parser::{ParseMode, ParseSettings, Token},
+    poly::Variable,
+    symbol,
 };
 
 #[test]
@@ -57,10 +62,16 @@ fn factorized_rational_poly_large() {
     let var_names = ["d".into(), "y".into()];
     let vars = Arc::new(vec![symbol!("d").into(), symbol!("y").into()]);
 
-    let p = Token::parse(input, true)
-        .unwrap()
-        .to_factorized_rational_polynomial::<_, _, u16>(&Z, &Z, &vars, &var_names)
-        .unwrap();
+    let p = Token::parse(
+        input,
+        ParseSettings {
+            distribute_neg: true,
+            mode: ParseMode::Symbolica,
+        },
+    )
+    .unwrap()
+    .to_factorized_rational_polynomial::<_, _, u16>(&Z, &Z, &vars, &var_names)
+    .unwrap();
 
     assert!(p.is_zero());
 }

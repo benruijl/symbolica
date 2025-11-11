@@ -1551,7 +1551,11 @@ impl<T: Default> ExpressionEvaluator<T> {
 }
 
 impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
-    /// Merge evaluator `other` into `self`. The parameters must be the same.
+    /// Merge evaluator `other` into `self`. The parameters must be the same, and
+    /// the outputs will be concatenated.
+    ///
+    /// The optional `cpe_rounds` parameter can be used to limit the number of common
+    /// pair elimination rounds after the merge.
     pub fn merge(&mut self, mut other: Self, cpe_rounds: Option<usize>) -> Result<(), String> {
         if self.param_count != other.param_count {
             return Err(format!(
@@ -4326,6 +4330,14 @@ pub struct ExpressionEvaluatorWithExternalFunctions<T> {
 }
 
 impl<T: Real> ExpressionEvaluatorWithExternalFunctions<T> {
+    #[allow(dead_code)]
+    pub(crate) fn update_stack(&mut self, e: ExpressionEvaluator<T>) {
+        self.stack = e.stack;
+        self.param_count = e.param_count;
+        self.instructions = e.instructions;
+        self.result_indices = e.result_indices;
+    }
+
     pub fn evaluate_single(&mut self, params: &[T]) -> T {
         if self.result_indices.len() != 1 {
             panic!(

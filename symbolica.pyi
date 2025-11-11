@@ -4787,6 +4787,26 @@ class Evaluator:
         ```
         """
 
+    def merge(self, other: Evaluator, cpe_rounds: Optional[int] = None) -> Evaluator:
+        """
+        Merge evaluator `other` into `self`. The parameters must be the same, and
+        the outputs will be concatenated.
+
+        The optional `cpe_rounds` parameter can be used to limit the number of common
+        pair elimination rounds after the merge.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> e1 = E('x').evaluator({}, {}, [S('x')])
+        >>> e2 = E('x+1').evaluator({}, {}, [S('x')])
+        >>> e = e1.merge(e2)
+        >>> e.evaluate([2])
+
+        yields `[2, 3]`.
+        """
+
     @overload
     def compile(
         self,
@@ -5474,10 +5494,10 @@ class Graph:
 
         Parameters
         ----------
-        external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]]
+        external_nodes: Sequence[tuple[Expression | int, HalfEdge]]
             The external edges, consisting of a tuple of the node data and a tuple of the edge direction and edge data.
             If the node data is the same, flip symmetries will be recognized.
-        vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]]
+        vertex_signatures: Sequence[Sequence[HalfEdge]]
             The allowed connections for each vertex.
         max_vertices: int, optional
             The maximum number of vertices in the graph.

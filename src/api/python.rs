@@ -15417,6 +15417,58 @@ impl PythonExpressionEvaluator {
         ))
     }
 
+    /// Merge evaluator `other` into `self`. The parameters must be the same, and
+    /// the outputs will be concatenated.
+    ///
+    /// The optional `cpe_rounds` parameter can be used to limit the number of common
+    /// pair elimination rounds after the merge.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> e1 = E('x').evaluator({}, {}, [S('x')])
+    /// >>> e2 = E('x+1').evaluator({}, {}, [S('x')])
+    /// >>> e = e1.merge(e2)
+    /// >>> e.evaluate([2])
+    ///
+    /// yields `[2, 3]`.
+    #[pyo3(signature = (other, cpe_iterations = None))]
+    fn merge(
+        &mut self,
+        other: &PythonExpressionEvaluator,
+        cpe_iterations: Option<usize>,
+    ) -> PyResult<()> {
+        self.eval_rat
+            .merge(other.eval_rat.clone(), cpe_iterations)
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not merge evaluators: {e}",))
+            })?;
+
+        if self.eval_rat.is_real()
+            && let Some(old_eval) = &mut self.eval
+        {
+            let new_eval_rat = self
+                .eval_rat
+                .clone()
+                .map_coeff(&|x| x.to_real().unwrap().to_f64());
+
+            old_eval.update_stack(new_eval_rat);
+        } else {
+            self.eval = None;
+        };
+
+        self.eval_complex = self
+            .eval_rat
+            .clone()
+            .map_coeff(&|x| Complex::new(x.re.to_f64(), x.im.to_f64()));
+
+        self.eval_complex_ext
+            .update_stack(self.eval_complex.clone());
+
+        Ok(())
+    }
+
     /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
     /// This method has less overhead than `evaluate`.
     #[gen_stub(override_return_type(

@@ -12,7 +12,10 @@ use std::{
 use ahash::HashMap;
 
 use crate::{
-    domains::algebraic_number::AlgebraicExtension,
+    domains::{
+        algebraic_number::AlgebraicExtension,
+        float::{FloatField, SingleFloat},
+    },
     poly::{
         GrevLexOrder, LexOrder, PositiveExponent, Variable,
         factor::Factorize,
@@ -440,6 +443,39 @@ where
                 }
             }
 
+            // normalize denominator to have leading coefficient of one
+            if !field.is_one(&den.lcoeff()) {
+                let c = den.lcoeff();
+                num = num.div_coeff(&c);
+                den = den.div_coeff(&c);
+            }
+
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
+        }
+    }
+}
+
+impl<T: SingleFloat + std::hash::Hash + Eq + InternalOrdering, E: PositiveExponent>
+    FromNumeratorAndDenominator<FloatField<T>, FloatField<T>, E>
+    for RationalPolynomial<FloatField<T>, E>
+{
+    fn from_num_den(
+        mut num: MultivariatePolynomial<FloatField<T>, E>,
+        mut den: MultivariatePolynomial<FloatField<T>, E>,
+        field: &FloatField<T>,
+        _do_gcd: bool,
+    ) -> Self {
+        num.unify_variables(&mut den);
+
+        if den.is_one() {
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
+        } else {
             // normalize denominator to have leading coefficient of one
             if !field.is_one(&den.lcoeff()) {
                 let c = den.lcoeff();

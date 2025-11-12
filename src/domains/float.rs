@@ -10,7 +10,7 @@ use std::{
 use rand::Rng;
 use wide::{f64x2, f64x4};
 
-use crate::domains::integer::Integer;
+use crate::{coefficient::ConvertToRing, domains::integer::Integer};
 
 use super::{EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, rational::Rational};
 use rug::{
@@ -29,6 +29,135 @@ pub struct FloatField<T> {
 impl<T> FloatField<T> {
     pub fn from_rep(rep: T) -> Self {
         FloatField { rep }
+    }
+}
+
+impl ConvertToRing for FloatField<F64> {
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        self.rep.from_rational(&number.into())
+    }
+
+    fn try_element_from_coefficient(
+        &self,
+        number: crate::coefficient::Coefficient,
+    ) -> Result<Self::Element, String> {
+        match number {
+            crate::coefficient::Coefficient::Complex(complex) => {
+                if complex.is_real() {
+                    Ok(F64(complex.re.to_f64().into()))
+                } else {
+                    Err("Cannot convert {number} to real float".to_string())
+                }
+            }
+            crate::coefficient::Coefficient::Float(complex) => {
+                if complex.is_real() {
+                    Ok(F64(complex.re.to_f64().into()))
+                } else {
+                    Err("Cannot convert {number} to real float".to_string())
+                }
+            }
+            _ => Err("Cannot convert {number} to complex".to_string()),
+        }
+    }
+
+    fn try_element_from_coefficient_view(
+        &self,
+        number: crate::coefficient::CoefficientView<'_>,
+    ) -> Result<Self::Element, String> {
+        self.try_element_from_coefficient(number.to_owned())
+    }
+}
+
+impl ConvertToRing for FloatField<Float> {
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        self.rep.from_rational(&number.into())
+    }
+
+    fn try_element_from_coefficient(
+        &self,
+        number: crate::coefficient::Coefficient,
+    ) -> Result<Self::Element, String> {
+        match number {
+            crate::coefficient::Coefficient::Complex(complex) => {
+                if complex.is_real() {
+                    Ok(complex.re.to_multi_prec_float(self.rep.prec()))
+                } else {
+                    Err("Cannot convert {number} to real float".to_string())
+                }
+            }
+            crate::coefficient::Coefficient::Float(complex) => {
+                if complex.is_real() {
+                    Ok(complex.re)
+                } else {
+                    Err("Cannot convert {number} to real float".to_string())
+                }
+            }
+            _ => Err("Cannot convert {number} to complex".to_string()),
+        }
+    }
+
+    fn try_element_from_coefficient_view(
+        &self,
+        number: crate::coefficient::CoefficientView<'_>,
+    ) -> Result<Self::Element, String> {
+        self.try_element_from_coefficient(number.to_owned())
+    }
+}
+
+impl ConvertToRing for FloatField<Complex<F64>> {
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        self.rep.from_rational(&number.into())
+    }
+
+    fn try_element_from_coefficient(
+        &self,
+        number: crate::coefficient::Coefficient,
+    ) -> Result<Self::Element, String> {
+        match number {
+            crate::coefficient::Coefficient::Complex(complex) => Ok(Complex::new(
+                complex.re.to_f64().into(),
+                complex.im.to_f64().into(),
+            )),
+            crate::coefficient::Coefficient::Float(complex) => Ok(Complex::new(
+                complex.re.to_f64().into(),
+                complex.im.to_f64().into(),
+            )),
+            _ => Err("Cannot convert {number} to complex".to_string()),
+        }
+    }
+
+    fn try_element_from_coefficient_view(
+        &self,
+        number: crate::coefficient::CoefficientView<'_>,
+    ) -> Result<Self::Element, String> {
+        self.try_element_from_coefficient(number.to_owned())
+    }
+}
+
+impl ConvertToRing for FloatField<Complex<Float>> {
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        self.rep.from_rational(&number.into())
+    }
+
+    fn try_element_from_coefficient(
+        &self,
+        number: crate::coefficient::Coefficient,
+    ) -> Result<Self::Element, String> {
+        match number {
+            crate::coefficient::Coefficient::Complex(complex) => Ok(Complex::new(
+                complex.re.to_multi_prec_float(self.rep.re.prec()).into(),
+                complex.im.to_multi_prec_float(self.rep.im.prec()).into(),
+            )),
+            crate::coefficient::Coefficient::Float(complex) => Ok(complex),
+            _ => Err("Cannot convert {number} to complex".to_string()),
+        }
+    }
+
+    fn try_element_from_coefficient_view(
+        &self,
+        number: crate::coefficient::CoefficientView<'_>,
+    ) -> Result<Self::Element, String> {
+        self.try_element_from_coefficient(number.to_owned())
     }
 }
 

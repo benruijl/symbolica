@@ -15,9 +15,10 @@ use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, GaloisField,
     PrimeIteratorU64, SMOOTH_PRIME_BASE, SMOOTH_PRIMES, ToFiniteField, Zp, Zp64,
 };
+use crate::domains::float::{FloatField, SingleFloat};
 use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES, Z};
 use crate::domains::rational::{Q, Rational, RationalField};
-use crate::domains::{EuclideanDomain, Field, Ring};
+use crate::domains::{EuclideanDomain, Field, InternalOrdering, Ring};
 use crate::poly::INLINED_EXPONENTS;
 use crate::poly::factor::Factorize;
 use crate::tensors::matrix::{Matrix, MatrixError};
@@ -4018,5 +4019,47 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
         } else {
             a
         }
+    }
+}
+
+/// Polynomial GCD functions for floating point coefficient return 1 (for now).
+impl<T: SingleFloat + std::hash::Hash + Eq + InternalOrdering, E: PositiveExponent> PolynomialGCD<E>
+    for FloatField<T>
+{
+    fn heuristic_gcd(
+        _a: &MultivariatePolynomial<Self, E>,
+        _b: &MultivariatePolynomial<Self, E>,
+    ) -> Option<(
+        MultivariatePolynomial<Self, E>,
+        MultivariatePolynomial<Self, E>,
+        MultivariatePolynomial<Self, E>,
+    )> {
+        None
+    }
+
+    fn gcd_multiple(f: Vec<MultivariatePolynomial<Self, E>>) -> MultivariatePolynomial<Self, E> {
+        f[0].one()
+    }
+
+    /// Returns 1 (for now).
+    fn gcd(
+        a: &MultivariatePolynomial<Self, E>,
+        _b: &MultivariatePolynomial<Self, E>,
+        _vars: &[usize],
+        _bounds: &mut [E],
+    ) -> MultivariatePolynomial<Self, E> {
+        a.one()
+    }
+
+    fn get_gcd_var_bounds(
+        a: &MultivariatePolynomial<Self, E>,
+        _b: &MultivariatePolynomial<Self, E>,
+        _vars: &[usize],
+    ) -> SmallVec<[E; INLINED_EXPONENTS]> {
+        (0..a.nvars()).map(|_| E::zero()).collect()
+    }
+
+    fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
+        a.one()
     }
 }

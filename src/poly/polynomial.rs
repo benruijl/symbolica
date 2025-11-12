@@ -1732,6 +1732,31 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         res
     }
 
+    /// Evaluate the polynomial at the given point, mapping coefficients to the ring `U`.
+    pub fn evaluate_with_coeff_map<U: Ring, T: Fn(&F::Element) -> U::Element>(
+        &self,
+        map_coeff: T,
+        point: &[U::Element],
+        ring: &U,
+    ) -> U::Element {
+        let mut res = map_coeff(&self.ring.zero());
+        assert_eq!(point.len(), self.nvars());
+
+        for t in self {
+            let mut c = map_coeff(&t.coefficient);
+
+            for (i, v) in point.iter().zip(t.exponents) {
+                if v != &E::zero() {
+                    ring.mul_assign(&mut c, &ring.pow(i, v.to_u32() as u64));
+                }
+            }
+
+            ring.add_assign(&mut res, &c);
+        }
+
+        res
+    }
+
     /// Replace all variables in the polynomial by an element from
     /// the ring `v`.
     pub fn replace_all(&self, r: &[F::Element]) -> F::Element {

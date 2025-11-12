@@ -672,6 +672,24 @@ impl<R: Field, E: PositiveExponent> RationalPolynomial<R, E> {
     }
 }
 
+impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
+    /// Evaluate the rational polynomial at the given point, mapping coefficients to the ring `U`.
+    pub fn evaluate_with_coeff_map<U: Field, T: Fn(&R::Element) -> U::Element + Clone>(
+        &self,
+        map_coeff: T,
+        point: &[U::Element],
+        ring: &U,
+    ) -> U::Element {
+        let num_eval = self
+            .numerator
+            .evaluate_with_coeff_map(map_coeff.clone(), point, ring);
+        let den_eval = self
+            .denominator
+            .evaluate_with_coeff_map(map_coeff, point, ring);
+        ring.div(&num_eval, &den_eval)
+    }
+}
+
 impl<R: Ring, E: PositiveExponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
@@ -1521,13 +1539,24 @@ mod test {
     use crate::{
         atom::AtomCore,
         domains::{
-            InternalOrdering, Ring, integer::Z, rational::Q,
+            InternalOrdering, Ring,
+            finite_field::{ToFiniteField, Zp},
+            integer::Z,
+            rational::Q,
             rational_polynomial::RationalPolynomial,
         },
         parse, symbol,
     };
 
     use super::RationalPolynomialField;
+
+    #[test]
+    fn eval_map() {
+        let a = parse!(" (x^2 + 19) / (x + 44) ").to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        let f = Zp::new(17);
+        let res = a.evaluate_with_coeff_map(|c| c.to_finite_field(&f), &[f.nth(3.into())], &f);
+        assert_eq!(res, f.nth(10.into()));
+    }
 
     #[test]
     fn field() {

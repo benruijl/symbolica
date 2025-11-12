@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::{
+    domains::algebraic_number::AlgebraicExtension,
     poly::{
         PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial,
@@ -626,6 +627,90 @@ where
     }
 }
 
+impl<F: Field, E: PositiveExponent>
+    FromNumeratorAndFactorizedDenominator<AlgebraicExtension<F>, AlgebraicExtension<F>, E>
+    for FactorizedRationalPolynomial<AlgebraicExtension<F>, E>
+where
+    AlgebraicExtension<F>: Field + PolynomialGCD<E>,
+    MultivariatePolynomial<AlgebraicExtension<F>, E>: Factorize,
+{
+    fn from_num_den(
+        mut num: MultivariatePolynomial<AlgebraicExtension<F>, E>,
+        mut dens: Vec<(MultivariatePolynomial<AlgebraicExtension<F>, E>, usize)>,
+        field: &AlgebraicExtension<F>,
+        do_factor: bool,
+    ) -> FactorizedRationalPolynomial<AlgebraicExtension<F>, E> {
+        for _ in 0..2 {
+            for (d, _) in &mut dens {
+                num.unify_variables(d);
+            }
+        }
+
+        let mut constant = num.ring.one();
+
+        if dens.is_empty() {
+            return FactorizedRationalPolynomial {
+                numerator: num,
+                numer_coeff: constant.clone(),
+                denom_coeff: constant.clone(),
+                denominators: dens,
+            };
+        }
+
+        if do_factor {
+            for (d, _) in &mut dens {
+                let gcd = num.gcd(d);
+
+                if !gcd.is_one() {
+                    num = num / &gcd;
+                    *d = &*d / &gcd;
+                }
+            }
+
+            // factor all denominators, as they may be unfactored
+            // TODO: add extra flag for this?
+            let mut factored = vec![];
+            for (d, p) in dens {
+                for (f, p2) in d.factor() {
+                    factored.push((f, p * p2));
+                }
+            }
+
+            // TODO: fuse factors that are the same
+
+            dens = factored;
+        }
+
+        dens.retain(|f| {
+            if f.0.is_constant() {
+                field.mul_assign(&mut constant, &field.pow(&f.0.coefficients[0], f.1 as u64));
+                false
+            } else {
+                true
+            }
+        });
+
+        num = num.mul_coeff(field.inv(&constant));
+        constant = field.one();
+
+        // normalize denominator to have leading coefficient of one
+        for (d, _) in &mut dens {
+            if !field.is_one(&d.lcoeff()) {
+                let c = field.inv(&d.lcoeff());
+                num = num.mul_coeff(c.clone());
+                *d = d.clone().mul_coeff(c); // TODO: prevent clone
+            }
+        }
+
+        FactorizedRationalPolynomial {
+            numerator: num,
+            numer_coeff: constant.clone(),
+            denom_coeff: constant,
+            denominators: dens,
+        }
+    }
+}
+
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> FactorizedRationalPolynomial<R, E>
 where
     Self: FromNumeratorAndFactorizedDenominator<R, R, E>,
@@ -732,6 +817,54 @@ where
             ),
             denominators: disjoint_factors,
         }
+    }
+}
+
+impl<R: Field, E: PositiveExponent> FactorizedRationalPolynomial<R, E> {
+    /// Evaluate the rational polynomial.
+    pub fn evaluate(&self, x: &[R::Element]) -> R::Element {
+        let ring = &self.numerator.ring;
+        let mut num = self.numerator.replace_all(x);
+        ring.mul_assign(&mut num, &self.numer_coeff);
+
+        let mut den = self.denom_coeff.clone();
+        for (d, p) in &self.denominators {
+            let mut eval = d.replace_all(x);
+            if *p != 1 {
+                eval = ring.pow(&eval, *p as u64);
+            }
+
+            ring.mul_assign(&mut den, &eval);
+        }
+
+        ring.div(&num, &den)
+    }
+}
+
+impl<R: Ring, E: PositiveExponent> FactorizedRationalPolynomial<R, E> {
+    /// Evaluate the rational polynomial at the given point, mapping coefficients to the ring `U`.
+    pub fn evaluate_with_coeff_map<U: Field, T: Fn(&R::Element) -> U::Element + Clone>(
+        &self,
+        map_coeff: T,
+        point: &[U::Element],
+        ring: &U,
+    ) -> U::Element {
+        let mut num = self
+            .numerator
+            .evaluate_with_coeff_map(map_coeff.clone(), point, ring);
+        ring.mul_assign(&mut num, &map_coeff(&self.numer_coeff));
+
+        let mut den = map_coeff(&self.denom_coeff);
+        for (d, p) in &self.denominators {
+            let mut eval = d.evaluate_with_coeff_map(map_coeff.clone(), point, ring);
+            if *p != 1 {
+                eval = ring.pow(&eval, *p as u64);
+            }
+
+            ring.mul_assign(&mut den, &eval);
+        }
+
+        ring.div(&num, &den)
     }
 }
 
@@ -1371,5 +1504,28 @@ where
         }
 
         factors
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        atom::AtomCore,
+        domains::{
+            Ring,
+            finite_field::{ToFiniteField, Zp},
+            integer::Z,
+            rational::Q,
+        },
+        parse,
+    };
+
+    #[test]
+    fn eval_map() {
+        let a = parse!("3 (x^2 + 19) / (4 (x + 44)(x-4)(x+4)) ")
+            .to_factorized_rational_polynomial::<_, _, u8>(&Q, &Z, None);
+        let f = Zp::new(17);
+        let res = a.evaluate_with_coeff_map(|c| c.to_finite_field(&f), &[f.nth(3.into())], &f);
+        assert_eq!(res, f.nth(5.into()));
     }
 }

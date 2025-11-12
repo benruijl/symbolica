@@ -968,6 +968,93 @@ impl<F: Ring> Matrix<F> {
 
         Ok((m1, m2))
     }
+
+    /// Compute the determinant of the matrix.
+    pub fn det(&self) -> Result<F::Element, MatrixError<F>> {
+        if self.nrows != self.ncols {
+            Err(MatrixError::NotSquare)?;
+        }
+
+        let f = &self.field;
+        match self.nrows {
+            0 => Err(MatrixError::Singular),
+            1 => Ok(self.data[0].clone()),
+            2 => Ok(f.sub(
+                &f.mul(&self.data[0], &self.data[3]),
+                &f.mul(&self.data[1], &self.data[2]),
+            )),
+            3 => {
+                let m0 = f.mul(
+                    &self.data[0],
+                    &f.sub(
+                        &f.mul(&self.data[4], &self.data[8]),
+                        &f.mul(&self.data[5], &self.data[7]),
+                    ),
+                );
+                let m1 = f.mul(
+                    &self.data[1],
+                    &f.sub(
+                        &f.mul(&self.data[5], &self.data[6]),
+                        &f.mul(&self.data[3], &self.data[8]),
+                    ),
+                );
+                let m2 = f.mul(
+                    &self.data[2],
+                    &f.sub(
+                        &f.mul(&self.data[3], &self.data[7]),
+                        &f.mul(&self.data[4], &self.data[6]),
+                    ),
+                );
+
+                Ok(f.add(&f.add(&m0, &m1), &m2))
+            }
+            _ => {
+                // Bareiss fraction-free determinant algorithm
+                let mut m = self.clone();
+                let mut flip_sign = false;
+
+                for k in 0..self.nrows - 1 {
+                    if self.field.is_zero(&m[(k, k)]) {
+                        let mut pivot_row = k;
+                        while pivot_row < self.nrows && self.field.is_zero(&m[(pivot_row, k)]) {
+                            pivot_row += 1;
+                        }
+
+                        if pivot_row == self.nrows {
+                            return Ok(self.field.zero());
+                        }
+
+                        m.swap_rows(k, pivot_row);
+                        flip_sign = !flip_sign;
+                    }
+
+                    for i in k + 1..self.nrows {
+                        for j in k + 1..self.ncols {
+                            let val = f.sub(
+                                &f.mul(&m[(i, j)], &m[(k, k)]),
+                                &f.mul(&m[(i, k)], &m[(k, j)]),
+                            );
+
+                            if k > 0 {
+                                m[(i, j)] =
+                                    f.try_div(&val, &m[(k - 1, k - 1)]).unwrap_or_else(|| {
+                                        panic!(
+                                            "Inexact division in determinant calculation of {}",
+                                            self
+                                        )
+                                    });
+                            } else {
+                                m[(i, j)] = val;
+                            }
+                        }
+                    }
+                }
+
+                let det = m[(self.nrows - 1, self.nrows - 1)].clone();
+                if flip_sign { Ok(f.neg(&det)) } else { Ok(det) }
+            }
+        }
+    }
 }
 
 impl<F: Ring> SelfRing for Matrix<F> {
@@ -1426,49 +1513,6 @@ impl<F: Field> Matrix<F> {
         m.data.truncate(m.nrows as usize * m.ncols as usize);
 
         Ok(m)
-    }
-
-    /// Compute the determinant of the matrix.
-    pub fn det(&self) -> Result<F::Element, MatrixError<F>> {
-        if self.nrows != self.ncols {
-            Err(MatrixError::NotSquare)?;
-        }
-
-        let f = &self.field;
-        match self.nrows {
-            0 => Err(MatrixError::Singular),
-            1 => Ok(self.data[0].clone()),
-            2 => Ok(f.sub(
-                &f.mul(&self.data[0], &self.data[3]),
-                &f.mul(&self.data[1], &self.data[2]),
-            )),
-            3 => {
-                let m0 = f.mul(
-                    &self.data[0],
-                    &f.sub(
-                        &f.mul(&self.data[4], &self.data[8]),
-                        &f.mul(&self.data[5], &self.data[7]),
-                    ),
-                );
-                let m1 = f.mul(
-                    &self.data[1],
-                    &f.sub(
-                        &f.mul(&self.data[5], &self.data[6]),
-                        &f.mul(&self.data[3], &self.data[8]),
-                    ),
-                );
-                let m2 = f.mul(
-                    &self.data[2],
-                    &f.sub(
-                        &f.mul(&self.data[3], &self.data[7]),
-                        &f.mul(&self.data[4], &self.data[6]),
-                    ),
-                );
-
-                Ok(f.add(&f.add(&m0, &m1), &m2))
-            }
-            _ => self.clone().det_in_place(),
-        }
     }
 
     /// Compute the determinant of the matrix in-place.

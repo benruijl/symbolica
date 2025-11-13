@@ -98,7 +98,7 @@ pub static GLOBAL_SETTINGS: GlobalSettings = GlobalSettings {
     use_hu_monagan_poly_gcd: AtomicBool::new(false),
 };
 
-/// Write an error messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
+/// Write an error messages using `tracing`. Initializes a default tracing subscriber on the first call if [GlobalSettings::initialize_tracing] is `true`.
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
@@ -117,7 +117,7 @@ macro_rules! error {
    };
 }
 
-/// Write warning messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
+/// Write warning messages using `tracing`. Initializes a default tracing subscriber on the first call if [GlobalSettings::initialize_tracing] is `true`.
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
@@ -135,7 +135,7 @@ macro_rules! warn {
     };
 }
 
-/// Write info messages using `tracing`. Initializes a default tracing subscriber on the first call if [INITIALIZE_TRACING] is `true`.
+/// Write info messages using `tracing`. Initializes a default tracing subscriber on the first call if [GlobalSettings::initialize_tracing] is `true`.
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {

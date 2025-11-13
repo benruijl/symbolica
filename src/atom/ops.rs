@@ -58,7 +58,6 @@ macro_rules! impl_atom_arithmetic {
 }
 
 /// Implements binary operations for various combinations of Atom types
-#[macro_export]
 macro_rules! impl_binary_ops {
     ($op_trait:ident, $op_method:ident, $op_ws_fn:ident) => {
         // Atom op Atom
@@ -195,7 +194,6 @@ macro_rules! impl_binary_ops {
 }
 
 /// Implements assignment operations for various combinations of Atom types
-#[macro_export]
 macro_rules! impl_assign_ops {
     ($assign_trait:ident, $assign_method:ident, $op_trait:ident, $op_method:ident) => {
         // Atom op= Atom

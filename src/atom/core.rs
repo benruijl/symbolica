@@ -6,7 +6,7 @@ use ahash::{HashMap, HashSet};
 use rayon::ThreadPool;
 
 use crate::{
-    atom::FunctionBuilder,
+    atom::{FunctionBuilder, KeyLookup},
     coefficient::{Coefficient, CoefficientView, ConvertToRing},
     domains::{
         EuclideanDomain, InternalOrdering,
@@ -39,13 +39,17 @@ use crate::{
 use std::sync::Arc;
 
 use super::{
-    Atom, AtomOrView, AtomView, KeyLookup, ListSlice, Symbol,
+    Atom, AtomOrView, AtomView, ListSlice, Symbol,
     representation::{InlineNum, InlineVar},
 };
 
 /// All core features of expressions, such as expansion and
 /// pattern matching that leave the expression unchanged.
-pub trait AtomCore {
+///
+///
+/// This trait is sealed, such that new methods can be added
+/// without breaking existing implementations.
+pub trait AtomCore: private::Sealed {
     /// Take a view of the atom.
     fn as_atom_view(&self) -> AtomView<'_>;
 
@@ -1712,4 +1716,16 @@ impl AtomCore for AtomOrView<'_> {
     fn as_atom_view(&self) -> AtomView<'_> {
         self.as_view()
     }
+}
+
+mod private {
+    use crate::atom::{AtomView, InlineNum, InlineVar};
+
+    pub trait Sealed {}
+
+    impl Sealed for InlineVar {}
+    impl Sealed for InlineNum {}
+    impl<'a> Sealed for AtomView<'a> {}
+    impl<T: AsRef<super::Atom>> Sealed for T {}
+    impl Sealed for super::AtomOrView<'_> {}
 }

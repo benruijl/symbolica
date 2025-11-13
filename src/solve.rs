@@ -1,3 +1,7 @@
+//! Solve systems of equations.
+//!
+//! See [AtomCore::solve_linear_system] and [AtomCore::nsolve_system].
+
 use std::{ops::Neg, sync::Arc};
 
 use crate::{

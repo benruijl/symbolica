@@ -45,6 +45,7 @@ type EvalFnType<A, T> = Box<
     ) -> T,
 >;
 
+/// A closure that can be called to evaluate a function called with arguments of type `T`.
 pub struct EvaluationFn<A, T>(EvalFnType<A, T>);
 
 impl<A, T> EvaluationFn<A, T> {
@@ -293,6 +294,7 @@ struct Expr {
     body: Atom,
 }
 
+/// Settings for optimizing the evaluation of expressions.
 #[derive(Clone)]
 pub struct OptimizationSettings {
     pub horner_iterations: usize,
@@ -330,11 +332,12 @@ impl Default for OptimizationSettings {
 }
 
 #[derive(Debug, Clone)]
-pub struct SplitExpression<T> {
-    pub tree: Vec<Expression<T>>,
-    pub subexpressions: Vec<Expression<T>>,
+struct SplitExpression<T> {
+    tree: Vec<Expression<T>>,
+    subexpressions: Vec<Expression<T>>,
 }
 
+/// A tree representation of multiple expressions, including function definitions.
 #[derive(Debug, Clone)]
 pub struct EvalTree<T> {
     functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
@@ -390,6 +393,7 @@ impl BuiltinSymbol {
     }
 }
 
+/// A tree representation of an expression.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -464,7 +468,7 @@ impl<T: InternalOrdering + Eq> Ord for Expression<T> {
 type ExpressionHash = u64;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum HashedExpression<T> {
+enum HashedExpression<T> {
     Const(ExpressionHash, T),
     Parameter(ExpressionHash, usize),
     Eval(ExpressionHash, usize, Vec<HashedExpression<T>>),
@@ -4321,6 +4325,8 @@ extern "C" {{
     }
 }
 
+/// An optimized evaluator for expressions that can evaluate expressions with parameters
+/// and some registered external functions.
 pub struct ExpressionEvaluatorWithExternalFunctions<T> {
     stack: Vec<T>,
     param_count: usize,
@@ -4655,11 +4661,13 @@ impl<T: Clone> ExpressionEvaluator<T> {
     }
 }
 
+/// A label in the instruction list [Instr].
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Label(usize);
 
+/// An evaluation instruction.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone, PartialEq)]
@@ -6232,6 +6240,7 @@ impl<T: Real> EvalTree<T> {
     }
 }
 
+/// Represents exported code that can be compiled with [Self::compile].
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
@@ -6241,6 +6250,7 @@ pub struct ExportedCode<T: CompiledNumber> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+/// Represents a library that can be loaded with [Self::load].
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[derive(Debug, Clone)]
@@ -6552,6 +6562,7 @@ pub trait CompiledNumber: Sized {
     fn get_default_compile_options() -> CompileOptions;
 }
 
+/// Load a compiled evaluator from a shared library, optionally with settings.
 pub trait EvaluatorLoader<T: CompiledNumber>: Sized {
     /// Load a compiled evaluator from a shared library.
     fn load(file: impl AsRef<Path>, function_name: &str) -> Result<Self, String> {
@@ -6703,6 +6714,7 @@ impl BatchEvaluator<Complex<f64>> for CompiledComplexEvaluator {
     }
 }
 
+/// Efficient evaluator for compiled real-valued functions.
 pub struct CompiledRealEvaluator {
     library: LibraryRealf64,
     path: PathBuf,
@@ -6826,6 +6838,7 @@ impl<Context> bincode::Decode<Context> for CompiledRealEvaluator {
     }
 }
 
+/// Efficient evaluator for compiled complex-valued functions.
 pub struct CompiledComplexEvaluator {
     path: PathBuf,
     fn_name: String,
@@ -7085,6 +7098,7 @@ impl BatchEvaluator<f64> for CompiledSimdRealEvaluator {
     }
 }
 
+/// Efficient evaluator using simd for compiled real-valued functions.
 pub struct CompiledSimdRealEvaluator {
     path: PathBuf,
     fn_name: String,
@@ -7388,6 +7402,7 @@ impl BatchEvaluator<Complex<f64>> for CompiledSimdComplexEvaluator {
     }
 }
 
+/// Efficient evaluator using simd for compiled complex-valued functions.
 pub struct CompiledSimdComplexEvaluator {
     path: PathBuf,
     fn_name: String,
@@ -7667,6 +7682,7 @@ impl<Context> bincode::Decode<Context> for CompiledCudaComplexEvaluator {
     }
 }
 
+/// Efficient evaluator using CUDA for compiled real-valued functions.
 pub struct CompiledCudaRealEvaluator {
     path: PathBuf,
     fn_name: String,
@@ -7798,6 +7814,7 @@ impl CompiledCudaRealEvaluator {
     }
 }
 
+/// Efficient evaluator using CUDA for compiled complex-valued functions.
 pub struct CompiledCudaComplexEvaluator {
     path: PathBuf,
     fn_name: String,
@@ -8140,13 +8157,6 @@ impl<T: CompiledNumber> ExportedCode<T> {
             _phantom: std::marker::PhantomData,
         })
     }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum FormatCPP {
-    CPP,
-    ASM,
-    CUDA,
 }
 
 /// The inline assembly mode used to generate fast

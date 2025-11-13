@@ -125,6 +125,9 @@ impl TryFrom<&str> for NamespacedSymbol {
     }
 }
 
+/// Wrap a symbol with the current namespace and positional data (file and line).
+/// Use [symbol] or [parse] instead.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! wrap_symbol {
     ($e:literal) => {{

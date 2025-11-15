@@ -13,6 +13,7 @@ use ahash::HashMap;
 
 use crate::{
     domains::{
+        RingOps, Set,
         algebraic_number::AlgebraicExtension,
         float::{FloatField, SingleFloat},
     },
@@ -80,10 +81,7 @@ where
         }
     }
 
-    fn upgrade_element(
-        &self,
-        element: <Self as Ring>::Element,
-    ) -> <Self::Upgraded as Ring>::Element {
+    fn upgrade_element(&self, element: <Self as Set>::Element) -> <Self::Upgraded as Set>::Element {
         let one = element.one();
         RationalPolynomial::from_num_den(element, one, &self.ring, false)
     }
@@ -185,7 +183,7 @@ impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
     where
         R::Element: ToFiniteField<UField>,
         FiniteField<UField>: FiniteFieldCore<UField>,
-        <FiniteField<UField> as Ring>::Element: Copy,
+        <FiniteField<UField> as Set>::Element: Copy,
     {
         // check the gcd, since the rational polynomial may simplify
         RationalPolynomial::from_num_den(
@@ -418,7 +416,7 @@ impl<UField: FiniteFieldWorkspace, E: PositiveExponent>
     for RationalPolynomial<FiniteField<UField>, E>
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
-    <FiniteField<UField> as Ring>::Element: Copy,
+    <FiniteField<UField> as Set>::Element: Copy,
 {
     fn from_num_den(
         mut num: MultivariatePolynomial<FiniteField<UField>, E>,
@@ -703,13 +701,65 @@ impl<R: Ring, E: PositiveExponent> Display for RationalPolynomialField<R, E> {
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Ring
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Set
+    for RationalPolynomialField<R, E>
+{
+    type Element = RationalPolynomial<R, E>;
+
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> RingOps<RationalPolynomial<R, E>>
     for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
-    type Element = RationalPolynomial<R, E>;
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        &a + &b
+    }
 
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        // TODO: optimize
+        self.add(a, self.neg(b))
+    }
+
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        &a * &b
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        // TODO: optimize
+        *a = self.add(&*a, &b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(&*a, &b);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(&*a, &b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.add_assign(a, &(&b * &c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.sub_assign(a, &(&b * &c));
+    }
+
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> RingOps<&RationalPolynomial<R, E>>
+    for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
     }
@@ -725,15 +775,15 @@ where
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         // TODO: optimize
-        *a = self.add(a, b);
+        *a = self.add(&*a, b);
     }
 
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(&*a, b);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
@@ -747,7 +797,13 @@ where
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }
+}
 
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Ring
+    for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
     fn zero(&self) -> Self::Element {
         let num = MultivariatePolynomial::new_zero(&self.ring);
         RationalPolynomial {
@@ -804,10 +860,6 @@ where
 
     fn characteristic(&self) -> Integer {
         self.ring.characteristic()
-    }
-
-    fn size(&self) -> Integer {
-        Integer::zero()
     }
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {

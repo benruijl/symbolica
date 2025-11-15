@@ -2,6 +2,7 @@
 
 use crate::{
     atom::{Atom, AtomCore, AtomView},
+    domains::{RingOps, Set},
     poly::Variable,
 };
 
@@ -115,9 +116,58 @@ impl InternalOrdering for Atom {
     }
 }
 
-impl Ring for AtomField {
+impl Set for AtomField {
     type Element = Atom;
 
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl RingOps<Atom> for AtomField {
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        self.normalize(a + b)
+    }
+
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        self.normalize(a - b)
+    }
+
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        self.normalize(a * b)
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = &*a + b;
+        self.normalize_mut(a);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = &*a - b;
+        self.normalize_mut(a);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(&*a, &b);
+        self.normalize_mut(a);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = &*a + self.mul(b, c);
+        self.normalize_mut(a);
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = &*a - self.mul(b, c);
+        self.normalize_mut(a);
+    }
+
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        self.normalize(-a)
+    }
+}
+
+impl RingOps<&Atom> for AtomField {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.normalize(a + b)
     }
@@ -141,7 +191,7 @@ impl Ring for AtomField {
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
         self.normalize_mut(a);
     }
 
@@ -158,7 +208,9 @@ impl Ring for AtomField {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         self.normalize(-a)
     }
+}
 
+impl Ring for AtomField {
     fn zero(&self) -> Self::Element {
         Atom::num(0)
     }
@@ -218,10 +270,6 @@ impl Ring for AtomField {
     }
 
     fn characteristic(&self) -> Integer {
-        0.into()
-    }
-
-    fn size(&self) -> Integer {
         0.into()
     }
 

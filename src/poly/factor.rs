@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::{
     combinatorics::CombinationIterator,
     domains::{
-        EuclideanDomain, Field, InternalOrdering, Ring,
+        EuclideanDomain, Field, InternalOrdering, Ring, RingOps, Set,
         algebraic_number::AlgebraicExtension,
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, PrimeIteratorU64,
@@ -758,7 +758,7 @@ impl<E: PositiveExponent> Factorize
         for (f, p) in &sf {
             if f.is_constant() {
                 self.ring
-                    .mul_assign(&mut constant, &self.ring.pow(&f.get_constant(), *p as u64));
+                    .mul_assign(&mut constant, self.ring.pow(&f.get_constant(), *p as u64));
                 continue;
             }
 
@@ -817,7 +817,7 @@ impl<
 > Factorize for MultivariatePolynomial<F, E, LexOrder>
 where
     FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
-    <FiniteField<UField> as Ring>::Element: Copy,
+    <FiniteField<UField> as Set>::Element: Copy,
     AlgebraicExtension<<F as GaloisField>::Base>: PolynomialGCD<E>,
 {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
@@ -972,7 +972,7 @@ impl<
 > MultivariatePolynomial<F, E, LexOrder>
 where
     FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
-    <FiniteField<UField> as Ring>::Element: Copy,
+    <FiniteField<UField> as Set>::Element: Copy,
     AlgebraicExtension<<F as GaloisField>::Base>: PolynomialGCD<E>,
 {
     /// Bernardin's algorithm for square free factorization.
@@ -1097,7 +1097,7 @@ where
         while !f.is_one() {
             i += 1;
 
-            h = h.exp_mod_univariate(self.ring.size(), &mut f);
+            h = h.exp_mod_univariate(self.ring.size().unwrap(), &mut f);
 
             let mut g = f.gcd(&(&h - &x));
 
@@ -1187,7 +1187,7 @@ where
                 b
             } else {
                 // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
-                let p = self.ring.size();
+                let p = self.ring.size().unwrap();
                 random_poly.exp_mod_univariate_fast(
                     var,
                     &(&p.pow(d as u64) - &1i64.into()) / &2i64.into(),
@@ -1345,7 +1345,7 @@ where
         let mut i = 0;
         let mut rng = rng();
         loop {
-            if self.ring.size() == i {
+            if self.ring.size() == Some(i.into()) {
                 let field = self
                     .ring
                     .upgrade(self.ring.get_extension_degree().to_u64().unwrap() as usize + 1);
@@ -1477,8 +1477,8 @@ where
     fn canonical_sort(
         biv_polys: &[Self],
         replace_var: usize,
-        sample_points: &[(usize, <F as Ring>::Element)],
-    ) -> Vec<(Self, <F as Ring>::Element, Self)> {
+        sample_points: &[(usize, <F as Set>::Element)],
+    ) -> Vec<(Self, <F as Set>::Element, Self)> {
         let mut univariate_factors = biv_polys
             .iter()
             .map(|f| {
@@ -1506,7 +1506,7 @@ where
     fn lcoeff_precomputation(
         &self,
         bivariate_factors: &[Self],
-        sample_points: &[(usize, <F as Ring>::Element)],
+        sample_points: &[(usize, <F as Set>::Element)],
         order: &[usize],
     ) -> Result<(Vec<Self>, Vec<Self>), usize> {
         let lcoeff = self.univariate_lcoeff(order[0]);
@@ -1669,7 +1669,7 @@ where
     fn multivariate_hensel_lift_with_auto_lcoeff_fixing(
         &self,
         factors: &[Self],
-        sample_points: &[(usize, <F as Ring>::Element)],
+        sample_points: &[(usize, <F as Set>::Element)],
         order: &[usize],
     ) -> Vec<Self> {
         let lcoeff = self.univariate_lcoeff(order[0]);
@@ -1733,7 +1733,7 @@ where
     fn univariate_diophantine_field(
         factors: &[Self],
         order: &[usize],
-        sample_points: &[(usize, <F as Ring>::Element)],
+        sample_points: &[(usize, <F as Set>::Element)],
     ) -> (Vec<Self>, Vec<Self>) {
         // produce univariate factors and univariate delta
         let mut univariate_factors = factors.to_vec();
@@ -1805,7 +1805,7 @@ where
         'new_sample: loop {
             sample_fail += &1.into();
 
-            if &sample_fail * &2.into() > self.ring.size() {
+            if &sample_fail * &2.into() > self.ring.size().unwrap() {
                 // the field is too small, upgrade
                 let field = self
                     .ring

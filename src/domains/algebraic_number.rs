@@ -8,7 +8,7 @@ use crate::{
     atom::Atom,
     coefficient::ConvertToRing,
     combinatorics::CombinationIterator,
-    domains::rational::Q,
+    domains::{RingOps, Set, rational::Q},
     poly::{
         PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial, univariate::UnivariatePolynomial,
@@ -82,7 +82,7 @@ impl RootInfo {
 /// ```
 /// use symbolica::{
 ///     atom::{Atom, AtomCore},
-///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
+///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring, RingOps},
 ///     parse,
 /// };
 ///
@@ -136,14 +136,14 @@ where
 
     fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
         let r = self.to_integer(a);
-        let s = self.size();
+        let s = self.size().unwrap();
         if &r * &2.into() > s { &r - &s } else { r }
     }
 
     fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>
     where
         Self::Base: PolynomialGCD<u16>,
-        <Self::Base as Ring>::Element: Copy,
+        <Self::Base as Set>::Element: Copy,
     {
         AlgebraicExtension::galois_field(
             self.poly.ring.clone(),
@@ -156,13 +156,13 @@ where
         &self,
         e: &Self::Element,
         larger_field: &AlgebraicExtension<Self::Base>,
-    ) -> <AlgebraicExtension<Self::Base> as Ring>::Element {
+    ) -> <AlgebraicExtension<Self::Base> as Set>::Element {
         larger_field.to_element(e.poly.clone())
     }
 
     fn downgrade_element(
         &self,
-        e: &<AlgebraicExtension<Self::Base> as Ring>::Element,
+        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
     ) -> Self::Element {
         self.to_element(e.poly.clone())
     }
@@ -174,11 +174,11 @@ where
     Integer: ToFiniteField<UField>,
 {
     fn element_from_integer(&self, number: Integer) -> Self::Element {
-        let mut q = &number % &self.size();
+        let mut q = &number % &self.size().unwrap();
         let mut pow = 0;
         let mut poly = self.poly.zero();
         while !q.is_zero() {
-            let (qn, r) = q.quot_rem(&self.poly.ring.size());
+            let (qn, r) = q.quot_rem(&self.poly.ring.size().unwrap());
             poly.append_monomial(r.to_finite_field(&self.poly.ring), &[pow]);
             pow += 1;
             q = qn;
@@ -328,7 +328,7 @@ where
 impl<UField: FiniteFieldWorkspace> AlgebraicExtension<FiniteField<UField>>
 where
     FiniteField<UField>: FiniteFieldCore<UField> + PolynomialGCD<u16>,
-    <FiniteField<UField> as Ring>::Element: Copy,
+    <FiniteField<UField> as Set>::Element: Copy,
 {
     /// Construct the Galois field GF(prime^exp).
     /// The irreducible polynomial is determined automatically.
@@ -348,7 +348,7 @@ where
         ) -> bool
         where
             FiniteField<UField>: FiniteFieldCore<UField> + PolynomialGCD<u16>,
-            <FiniteField<UField> as Ring>::Element: Copy,
+            <FiniteField<UField> as Set>::Element: Copy,
             AlgebraicExtension<FiniteField<UField>>: PolynomialGCD<u16>,
         {
             poly.clear();
@@ -493,7 +493,7 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
     pub fn try_to_element(
         &self,
         poly: MultivariatePolynomial<R, u16>,
-    ) -> Result<<Self as Ring>::Element, String> {
+    ) -> Result<<Self as Set>::Element, String> {
         if poly.nvars() == 0 {
             let mut new_poly = poly;
             new_poly.variables = self.poly.variables.clone();
@@ -526,7 +526,7 @@ impl<R: EuclideanDomain> AlgebraicExtension<R> {
         }
     }
 
-    pub fn to_element(&self, poly: MultivariatePolynomial<R, u16>) -> <Self as Ring>::Element {
+    pub fn to_element(&self, poly: MultivariatePolynomial<R, u16>) -> <Self as Set>::Element {
         self.try_to_element(poly).unwrap()
     }
 }
@@ -585,7 +585,7 @@ impl<R: Ring> std::fmt::Display for AlgebraicExtension<R> {
 /// ```
 /// use symbolica::{
 ///     atom::{Atom, AtomCore},
-///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
+///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring, RingOps},
 ///     parse,
 /// };
 ///
@@ -655,9 +655,62 @@ impl<R: Ring> AlgebraicNumber<R> {
     }
 }
 
-impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
+impl<R: EuclideanDomain> Set for AlgebraicExtension<R> {
     type Element = AlgebraicNumber<R>;
 
+    fn size(&self) -> Option<Integer> {
+        self.poly
+            .ring
+            .size()
+            .map(|s| s.pow(self.poly.degree(0) as u64))
+    }
+}
+
+impl<R: EuclideanDomain> RingOps<AlgebraicNumber<R>> for AlgebraicExtension<R> {
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        AlgebraicNumber {
+            poly: a.poly + b.poly,
+        }
+    }
+
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        AlgebraicNumber {
+            poly: a.poly - b.poly,
+        }
+    }
+
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        AlgebraicNumber {
+            poly: (&a.poly * &b.poly).quot_rem_univariate_monic(&self.poly).1,
+        }
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.add(&*a, &b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(&*a, &b);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(&*a, &b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = self.add(&*a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = self.sub(&*a, &self.mul(b, c));
+    }
+
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        AlgebraicNumber { poly: -a.poly }
+    }
+}
+
+impl<R: EuclideanDomain> RingOps<&AlgebraicNumber<R>> for AlgebraicExtension<R> {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         AlgebraicNumber {
             poly: &a.poly + &b.poly,
@@ -677,23 +730,23 @@ impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
     }
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.add(a, b);
+        *a = self.add(&*a, b);
     }
 
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(&*a, b);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        *a = self.add(a, &self.mul(b, c));
+        *a = self.add(&*a, &self.mul(b, c));
     }
 
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        *a = self.sub(a, &self.mul(b, c));
+        *a = self.sub(&*a, &self.mul(b, c));
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
@@ -701,7 +754,9 @@ impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
             poly: -a.poly.clone(),
         }
     }
+}
 
+impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
     fn zero(&self) -> Self::Element {
         AlgebraicNumber {
             poly: self.poly.zero(),
@@ -742,10 +797,6 @@ impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
 
     fn characteristic(&self) -> Integer {
         self.poly.ring.characteristic()
-    }
-
-    fn size(&self) -> Integer {
-        self.poly.ring.size().pow(self.poly.degree(0) as u64)
     }
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
@@ -931,8 +982,8 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
         new_symbol: Option<Variable>,
     ) -> (
         AlgebraicExtension<R>,
-        <AlgebraicExtension<R> as Ring>::Element,
-        <AlgebraicExtension<R> as Ring>::Element,
+        <AlgebraicExtension<R> as Set>::Element,
+        <AlgebraicExtension<R> as Set>::Element,
     )
     where
         AlgebraicExtension<R>: PolynomialGCD<u16> + Ring<Element = AlgebraicNumber<R>>,
@@ -1098,11 +1149,11 @@ impl AlgebraicExtension<Q> {
 #[cfg(test)]
 mod tests {
     use crate::atom::AtomCore;
-    use crate::domains::Ring;
     use crate::domains::algebraic_number::{AlgebraicExtension, RootInfo};
     use crate::domains::finite_field::{PrimeIteratorU64, Z2, Zp};
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
+    use crate::domains::{Ring, RingOps};
     use crate::{parse, symbol};
 
     #[test]

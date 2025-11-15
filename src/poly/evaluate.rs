@@ -11,7 +11,7 @@ use rand::{Rng, rng};
 
 use crate::{
     atom::{Atom, AtomView, KeyLookup},
-    domains::{Ring, float::Real},
+    domains::{Ring, RingOps, float::Real},
     evaluate::EvaluationFn,
 };
 use crate::{
@@ -232,14 +232,14 @@ impl HornerScheme<RationalField> {
                 let e = match &n.content_rest.0 {
                     Some(s) => match &n.content_rest.1 {
                         Some(s1) => Q.add(
-                            &Q.mul(&Q.pow(&samples[n.var], n.pow as u64), &s.evaluate(samples)),
-                            &s1.evaluate(samples),
+                            Q.mul(Q.pow(&samples[n.var], n.pow as u64), s.evaluate(samples)),
+                            s1.evaluate(samples),
                         ),
-                        None => Q.mul(&Q.pow(&samples[n.var], n.pow as u64), &s.evaluate(samples)),
+                        None => Q.mul(Q.pow(&samples[n.var], n.pow as u64), s.evaluate(samples)),
                     },
                     None => match &n.content_rest.1 {
                         Some(s1) => {
-                            Q.add(&Q.pow(&samples[n.var], n.pow as u64), &s1.evaluate(samples))
+                            Q.add(Q.pow(&samples[n.var], n.pow as u64), s1.evaluate(samples))
                         }
                         None => Q.pow(&samples[n.var], n.pow as u64),
                     },

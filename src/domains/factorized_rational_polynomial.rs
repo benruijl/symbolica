@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    domains::algebraic_number::AlgebraicExtension,
+    domains::{RingOps, Set, algebraic_number::AlgebraicExtension},
     poly::{
         PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial,
@@ -119,7 +119,7 @@ impl<R: Ring, E: PositiveExponent> FactorizedRationalPolynomial<R, E> {
     where
         R::Element: ToFiniteField<UField>,
         FiniteField<UField>: FiniteFieldCore<UField>,
-        <FiniteField<UField> as Ring>::Element: Copy,
+        <FiniteField<UField> as Set>::Element: Copy,
     {
         let constant = field.div(
             &self.numer_coeff.to_finite_field(field),
@@ -548,7 +548,7 @@ impl<UField: FiniteFieldWorkspace, E: PositiveExponent>
     for FactorizedRationalPolynomial<FiniteField<UField>, E>
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
-    <FiniteField<UField> as Ring>::Element: Copy,
+    <FiniteField<UField> as Set>::Element: Copy,
 {
     fn from_num_den(
         mut num: MultivariatePolynomial<FiniteField<UField>, E>,
@@ -881,7 +881,7 @@ impl<R: Ring, E: PositiveExponent> Display for FactorizedRationalPolynomialField
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Ring
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Set
     for FactorizedRationalPolynomialField<R, E>
 where
     FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
@@ -889,6 +889,62 @@ where
 {
     type Element = FactorizedRationalPolynomial<R, E>;
 
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    RingOps<FactorizedRationalPolynomial<R, E>> for FactorizedRationalPolynomialField<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
+{
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        &a + &b
+    }
+
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        // TODO: optimize
+        self.add(a, self.neg(b))
+    }
+
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        &a * &b
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        // TODO: optimize
+        *a = self.add(&*a, &b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(&*a, &b);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(&*a, &b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.add_assign(a, &(&b * &c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.sub_assign(a, &(&b * &c));
+    }
+
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    RingOps<&FactorizedRationalPolynomial<R, E>> for FactorizedRationalPolynomialField<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
+{
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
     }
@@ -904,15 +960,15 @@ where
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         // TODO: optimize
-        *a = self.add(a, b);
+        *a = self.add(&*a, b);
     }
 
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(&*a, b);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
@@ -926,7 +982,14 @@ where
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }
+}
 
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Ring
+    for FactorizedRationalPolynomialField<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
+{
     fn zero(&self) -> Self::Element {
         FactorizedRationalPolynomial {
             numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone()),
@@ -985,10 +1048,6 @@ where
 
     fn characteristic(&self) -> Integer {
         self.ring.characteristic()
-    }
-
-    fn size(&self) -> Integer {
-        0.into()
     }
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {

@@ -53,7 +53,7 @@ use std::{cmp::Ordering, rc::Rc};
 use ahash::HashMap;
 
 use crate::domains::{
-    Field, Ring,
+    Field, Ring, RingOps, Set,
     algebraic_number::AlgebraicExtension,
     finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Z2, Zp, Zp64},
     rational::RationalField,
@@ -626,7 +626,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
 pub trait Echelonize: Field {
     type LargerField;
 
-    fn from_larger(&self, element: &Self::LargerField) -> <Self as Ring>::Element;
+    fn from_larger(&self, element: &Self::LargerField) -> <Self as Set>::Element;
     fn echelonize<E: Exponent, O: MonomialOrder>(
         matrix: &mut Vec<Vec<(Self::LargerField, usize)>>,
         selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
@@ -836,7 +836,7 @@ impl Echelonize for Zp {
         matrix.retain(|r| !r.is_empty());
     }
 
-    fn from_larger(&self, element: &i64) -> <Self as Ring>::Element {
+    fn from_larger(&self, element: &i64) -> <Self as Set>::Element {
         self.to_element(*element as u32)
     }
 }
@@ -972,7 +972,7 @@ macro_rules! echelonize_impl {
                 matrix.retain(|r| !r.is_empty());
             }
 
-            fn from_larger(&self, element: &Self::LargerField) -> <Self as Ring>::Element {
+            fn from_larger(&self, element: &Self::LargerField) -> <Self as Set>::Element {
                 element.clone()
             }
         }

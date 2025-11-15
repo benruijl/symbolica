@@ -14,6 +14,7 @@ use rug::{
 };
 
 use crate::{
+    domains::{RingOps, Set},
     printer::{PrintOptions, PrintState},
     tensors::matrix::Matrix,
 };
@@ -497,7 +498,7 @@ impl std::fmt::Debug for Integer {
 }
 
 impl ToFiniteField<u32> for Integer {
-    fn to_finite_field(&self, field: &Zp) -> <Zp as Ring>::Element {
+    fn to_finite_field(&self, field: &Zp) -> <Zp as Set>::Element {
         match self {
             Integer::Single(n) => field.to_element(n.rem_euclid(field.get_prime() as i64) as u32),
             Integer::Double(n) => field.to_element(n.rem_euclid(field.get_prime() as i128) as u32),
@@ -507,7 +508,7 @@ impl ToFiniteField<u32> for Integer {
 }
 
 impl ToFiniteField<u64> for Integer {
-    fn to_finite_field(&self, field: &Zp64) -> <Zp64 as Ring>::Element {
+    fn to_finite_field(&self, field: &Zp64) -> <Zp64 as Set>::Element {
         match self {
             &Integer::Single(n) => {
                 if field.get_prime() > i64::MAX as u64 {
@@ -525,7 +526,7 @@ impl ToFiniteField<u64> for Integer {
 }
 
 impl ToFiniteField<Two> for Integer {
-    fn to_finite_field(&self, field: &Z2) -> <Z2 as Ring>::Element {
+    fn to_finite_field(&self, field: &Z2) -> <Z2 as Set>::Element {
         match self {
             &Integer::Single(n) => field.to_element(Two(n.rem_euclid(2) as u8)),
             &Integer::Double(n) => field.to_element(Two(n.rem_euclid(2) as u8)),
@@ -538,7 +539,7 @@ impl ToFiniteField<Integer> for Integer {
     fn to_finite_field(
         &self,
         field: &FiniteField<Integer>,
-    ) -> <FiniteField<Integer> as Ring>::Element {
+    ) -> <FiniteField<Integer> as Set>::Element {
         field.to_element(self.clone())
     }
 }
@@ -547,7 +548,7 @@ impl ToFiniteField<Mersenne64> for Integer {
     fn to_finite_field(
         &self,
         _field: &FiniteField<Mersenne64>,
-    ) -> <FiniteField<Mersenne64> as Ring>::Element {
+    ) -> <FiniteField<Mersenne64> as Set>::Element {
         match self {
             &Integer::Single(n) => n.rem_euclid(Mersenne64::PRIME as i64) as u64,
             &Integer::Double(n) => n.rem_euclid(Mersenne64::PRIME as i128) as u64,
@@ -562,13 +563,13 @@ where
 {
     fn from_finite_field(
         field: &FiniteField<UField>,
-        element: <FiniteField<UField> as Ring>::Element,
+        element: <FiniteField<UField> as Set>::Element,
     ) -> Self;
     fn from_prime(field: &FiniteField<UField>) -> Self;
 }
 
 impl FromFiniteField<u32> for Integer {
-    fn from_finite_field(field: &Zp, element: <Zp as Ring>::Element) -> Self {
+    fn from_finite_field(field: &Zp, element: <Zp as Set>::Element) -> Self {
         Integer::Single(field.from_element(&element) as i64)
     }
 
@@ -578,7 +579,7 @@ impl FromFiniteField<u32> for Integer {
 }
 
 impl FromFiniteField<u64> for Integer {
-    fn from_finite_field(field: &Zp64, element: <Zp64 as Ring>::Element) -> Self {
+    fn from_finite_field(field: &Zp64, element: <Zp64 as Set>::Element) -> Self {
         let r = field.from_element(&element);
         if r <= i64::MAX as u64 {
             Integer::Single(r as i64)
@@ -1357,22 +1358,75 @@ impl Ord for Integer {
     }
 }
 
-impl Ring for IntegerRing {
+impl Set for IntegerRing {
     type Element = Integer;
 
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl RingOps<<Self as Set>::Element> for IntegerRing {
     #[inline]
-    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
         a + b
     }
 
     #[inline]
-    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
         a - b
     }
 
     #[inline]
-    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
         a * b
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a += b;
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a -= b;
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a *= b;
+    }
+
+    #[inline(always)]
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        a.add_assign(b * c)
+    }
+
+    #[inline(always)]
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        a.sub_assign(b * c)
+    }
+
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl RingOps<&<Self as Set>::Element> for IntegerRing {
+    #[inline]
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() + b
+    }
+
+    #[inline]
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() - b
+    }
+
+    #[inline]
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() * b
     }
 
     #[inline]
@@ -1435,9 +1489,11 @@ impl Ring for IntegerRing {
 
     #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        -a
+        a.clone().neg()
     }
+}
 
+impl Ring for IntegerRing {
     #[inline]
     fn zero(&self) -> Self::Element {
         Integer::zero()
@@ -1481,10 +1537,6 @@ impl Ring for IntegerRing {
     }
 
     fn characteristic(&self) -> Integer {
-        0.into()
-    }
-
-    fn size(&self) -> Integer {
         0.into()
     }
 
@@ -2491,9 +2543,62 @@ impl InternalOrdering for MultiPrecisionInteger {
     }
 }
 
-impl Ring for MultiPrecisionIntegerRing {
+impl Set for MultiPrecisionIntegerRing {
     type Element = MultiPrecisionInteger;
 
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl RingOps<<Self as Set>::Element> for MultiPrecisionIntegerRing {
+    #[inline]
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a + b
+    }
+
+    #[inline]
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a - b
+    }
+
+    #[inline]
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a * b
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a += b;
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a -= b;
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a *= b;
+    }
+
+    #[inline(always)]
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        a.add_assign(b * c)
+    }
+
+    #[inline(always)]
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        a.sub_assign(b * c)
+    }
+
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl RingOps<&<Self as Set>::Element> for MultiPrecisionIntegerRing {
     #[inline]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a.clone() + b
@@ -2538,7 +2643,9 @@ impl Ring for MultiPrecisionIntegerRing {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }
+}
 
+impl Ring for MultiPrecisionIntegerRing {
     #[inline]
     fn zero(&self) -> Self::Element {
         MultiPrecisionInteger::new()
@@ -2577,10 +2684,6 @@ impl Ring for MultiPrecisionIntegerRing {
     }
 
     fn characteristic(&self) -> Integer {
-        0.into()
-    }
-
-    fn size(&self) -> Integer {
         0.into()
     }
 

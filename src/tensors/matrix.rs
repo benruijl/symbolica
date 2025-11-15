@@ -673,7 +673,7 @@ impl<F: Ring> Neg for Vector<F> {
     /// Negate each entry of the vector.
     fn neg(mut self) -> Self::Output {
         for e in &mut self.data {
-            *e = self.field.neg(e);
+            *e = self.field.neg(&*e);
         }
 
         self
@@ -1301,7 +1301,7 @@ impl<F: Ring> Neg for Matrix<F> {
     /// Negate each entry of the matrix.
     fn neg(mut self) -> Self::Output {
         for e in &mut self.data {
-            *e = self.field.neg(e);
+            *e = self.field.neg(&*e);
         }
 
         self
@@ -1479,7 +1479,7 @@ impl<F: Field> Matrix<F> {
 
             let d_inv = self.field.inv(&d);
             for e in &mut m.data {
-                *e = f.mul(e, &d_inv);
+                *e = f.mul(&*e, &d_inv);
             }
             return Ok(m);
         }

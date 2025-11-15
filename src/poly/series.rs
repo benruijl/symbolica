@@ -819,7 +819,7 @@ impl<F: Ring> Neg for Series<F> {
     fn neg(mut self) -> Self::Output {
         // Negate coefficients of all terms.
         for c in &mut self.coefficients {
-            *c = self.field.neg(c);
+            *c = self.field.neg(&*c);
         }
         self
     }

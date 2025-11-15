@@ -6,6 +6,7 @@ use std::hash::Hash;
 use std::ops::{Deref, Neg};
 
 use crate::domains::integer::{Integer, gcd_unsigned};
+use crate::domains::{RingOps, Set};
 use crate::poly::Variable::Temporary;
 use crate::poly::gcd::PolynomialGCD;
 use crate::printer::{PrintOptions, PrintState};
@@ -33,32 +34,30 @@ pub trait ToFiniteField<UField: FiniteFieldWorkspace>
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
 {
-    fn to_finite_field(
-        &self,
-        field: &FiniteField<UField>,
-    ) -> <FiniteField<UField> as Ring>::Element;
+    fn to_finite_field(&self, field: &FiniteField<UField>)
+    -> <FiniteField<UField> as Set>::Element;
 }
 
 impl ToFiniteField<u32> for u32 {
-    fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
+    fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Set>::Element {
         field.to_element(*self)
     }
 }
 
 impl ToFiniteField<u64> for u64 {
-    fn to_finite_field(&self, field: &FiniteField<u64>) -> <FiniteField<u64> as Ring>::Element {
+    fn to_finite_field(&self, field: &FiniteField<u64>) -> <FiniteField<u64> as Set>::Element {
         field.to_element(*self)
     }
 }
 
 impl ToFiniteField<Two> for u32 {
-    fn to_finite_field(&self, field: &FiniteField<Two>) -> <FiniteField<Two> as Ring>::Element {
+    fn to_finite_field(&self, field: &FiniteField<Two>) -> <FiniteField<Two> as Set>::Element {
         field.to_element(Two((*self % 2) as u8))
     }
 }
 
 impl ToFiniteField<Two> for u64 {
-    fn to_finite_field(&self, field: &FiniteField<Two>) -> <FiniteField<Two> as Ring>::Element {
+    fn to_finite_field(&self, field: &FiniteField<Two>) -> <FiniteField<Two> as Set>::Element {
         field.to_element(Two((*self % 2) as u8))
     }
 }
@@ -79,17 +78,17 @@ pub trait GaloisField: Field {
     fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>
     where
         Self::Base: PolynomialGCD<u16>,
-        <Self::Base as Ring>::Element: Copy;
+        <Self::Base as Set>::Element: Copy;
 
     fn upgrade_element(
         &self,
         e: &Self::Element,
         larger_field: &AlgebraicExtension<Self::Base>,
-    ) -> <AlgebraicExtension<Self::Base> as Ring>::Element;
+    ) -> <AlgebraicExtension<Self::Base> as Set>::Element;
 
     fn downgrade_element(
         &self,
-        e: &<AlgebraicExtension<Self::Base> as Ring>::Element,
+        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
     ) -> Self::Element;
 }
 
@@ -118,7 +117,7 @@ where
     fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<FiniteField<UField>>
     where
         Self::Base: PolynomialGCD<u16>,
-        <Self::Base as Ring>::Element: Copy,
+        <Self::Base as Set>::Element: Copy,
     {
         AlgebraicExtension::galois_field(self.clone(), new_pow, Temporary(0))
     }
@@ -127,13 +126,13 @@ where
         &self,
         e: &Self::Element,
         larger_field: &AlgebraicExtension<Self::Base>,
-    ) -> <AlgebraicExtension<Self::Base> as Ring>::Element {
+    ) -> <AlgebraicExtension<Self::Base> as Set>::Element {
         larger_field.constant(e.clone())
     }
 
     fn downgrade_element(
         &self,
-        e: &<AlgebraicExtension<Self::Base> as Ring>::Element,
+        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
     ) -> Self::Element {
         e.poly.get_constant()
     }
@@ -304,9 +303,89 @@ impl FiniteFieldCore<u32> for Zp {
     }
 }
 
-impl Ring for Zp {
+impl Set for Zp {
     type Element = FiniteFieldElement<u32>;
 
+    fn size(&self) -> Option<Integer> {
+        Some(self.get_prime().into())
+    }
+}
+
+impl RingOps<FiniteFieldElement<u32>> for Zp {
+    /// Add two numbers in Montgomory form.
+    #[inline(always)]
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        let mut t = a.0 as u64 + b.0 as u64;
+
+        if t >= self.p as u64 {
+            t -= self.p as u64;
+        }
+
+        FiniteFieldElement(t as u32)
+    }
+
+    /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
+    #[inline(always)]
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        if a.0 >= b.0 {
+            FiniteFieldElement(a.0 - b.0)
+        } else {
+            FiniteFieldElement(a.0 + (self.p - b.0))
+        }
+    }
+
+    /// Multiply two numbers in Montgomory form.
+    #[inline(always)]
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        let t = a.0 as u64 * b.0 as u64;
+        let m = (t as u32).wrapping_mul(self.m);
+        let (t, overflow) = t.overflowing_add(m as u64 * self.p as u64);
+        let u = (t >> 32) as u32;
+
+        if overflow {
+            FiniteFieldElement(u.wrapping_sub(self.p))
+        } else if u >= self.p {
+            FiniteFieldElement(u - self.p)
+        } else {
+            FiniteFieldElement(u)
+        }
+    }
+
+    #[inline(always)]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.add(*a, b);
+    }
+
+    #[inline(always)]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(*a, b);
+    }
+
+    #[inline(always)]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(*a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.add_assign(a, self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.sub_assign(a, self.mul(b, c));
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        if a.0 == 0 {
+            a
+        } else {
+            FiniteFieldElement(self.p - a.0)
+        }
+    }
+}
+
+impl RingOps<&FiniteFieldElement<u32>> for Zp {
     /// Add two numbers in Montgomory form.
     #[inline(always)]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -348,17 +427,17 @@ impl Ring for Zp {
 
     #[inline(always)]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.add(a, b);
+        *a = self.add(&*a, b);
     }
 
     #[inline(always)]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(&*a, b);
     }
 
     #[inline(always)]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
@@ -378,7 +457,9 @@ impl Ring for Zp {
             FiniteFieldElement(self.p - a.0)
         }
     }
+}
 
+impl Ring for Zp {
     #[inline]
     fn zero(&self) -> Self::Element {
         FiniteFieldElement(0)
@@ -435,10 +516,6 @@ impl Ring for Zp {
     }
 
     fn characteristic(&self) -> Integer {
-        self.get_prime().into()
-    }
-
-    fn size(&self) -> Integer {
         self.get_prime().into()
     }
 
@@ -535,7 +612,7 @@ impl Field for Zp {
 
     #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, &self.inv(b));
+        *a = self.mul(&*a, &self.inv(b));
     }
 
     /// Computes x^-1 mod n.
@@ -731,8 +808,88 @@ impl<UField: Display> Display for FiniteField<UField> {
     }
 }
 
-impl Ring for Zp64 {
+impl Set for Zp64 {
     type Element = FiniteFieldElement<u64>;
+
+    fn size(&self) -> Option<Integer> {
+        Some(self.get_prime().into())
+    }
+}
+
+impl RingOps<FiniteFieldElement<u64>> for Zp64 {
+    /// Add two numbers in Montgomory form.
+    #[inline(always)]
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        // avoid f128 arithmetic
+        let (r, overflow) = a.0.overflowing_add(b.0);
+        if overflow || r >= self.p {
+            FiniteFieldElement(r.wrapping_sub(self.p))
+        } else {
+            FiniteFieldElement(r)
+        }
+    }
+    /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
+    #[inline(always)]
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        if a.0 >= b.0 {
+            FiniteFieldElement(a.0 - b.0)
+        } else {
+            FiniteFieldElement(a.0 + (self.p - b.0))
+        }
+    }
+
+    /// Multiply two numbers in Montgomory form.
+    #[inline(always)]
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        let t = a.0 as u128 * b.0 as u128;
+        let m = (t as u64).wrapping_mul(self.m);
+        let (t, overflow) = t.overflowing_add(m as u128 * self.p as u128);
+        let u = (t >> 64) as u64;
+
+        if overflow {
+            FiniteFieldElement(u.wrapping_sub(self.p))
+        } else if u >= self.p {
+            FiniteFieldElement(u - self.p)
+        } else {
+            FiniteFieldElement(u)
+        }
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.add(*a, b);
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(*a, b);
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(*a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        if a.0 == 0 {
+            a
+        } else {
+            FiniteFieldElement(self.p - a.0)
+        }
+    }
+}
+
+impl RingOps<&FiniteFieldElement<u64>> for Zp64 {
     /// Add two numbers in Montgomory form.
     #[inline(always)]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -773,17 +930,17 @@ impl Ring for Zp64 {
 
     #[inline]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.add(a, b);
+        *a = self.add(&*a, b);
     }
 
     #[inline]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(&*a, b);
     }
 
     #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
@@ -803,7 +960,9 @@ impl Ring for Zp64 {
             FiniteFieldElement(self.p - a.0)
         }
     }
+}
 
+impl Ring for Zp64 {
     #[inline]
     fn zero(&self) -> Self::Element {
         FiniteFieldElement(0)
@@ -860,10 +1019,6 @@ impl Ring for Zp64 {
     }
 
     fn characteristic(&self) -> Integer {
-        self.get_prime().into()
-    }
-
-    fn size(&self) -> Integer {
         self.get_prime().into()
     }
 
@@ -943,7 +1098,7 @@ impl EuclideanDomain for Zp64 {
 
     #[inline]
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
-        (self.mul(a, &self.inv(b)), FiniteFieldElement(0))
+        (self.mul(*a, self.inv(b)), FiniteFieldElement(0))
     }
 
     #[inline]
@@ -955,12 +1110,12 @@ impl EuclideanDomain for Zp64 {
 impl Field for Zp64 {
     #[inline]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        self.mul(a, &self.inv(b))
+        self.mul(*a, self.inv(b))
     }
 
     #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, &self.inv(b));
+        *a = self.mul(*a, self.inv(b));
     }
 
     /// Computes x^-1 mod n.
@@ -1079,9 +1234,61 @@ impl FiniteFieldCore<Two> for FiniteField<Two> {
     }
 }
 
-impl Ring for FiniteField<Two> {
+impl Set for FiniteField<Two> {
     type Element = u8;
 
+    fn size(&self) -> Option<Integer> {
+        Some(2.into())
+    }
+}
+
+impl RingOps<u8> for FiniteField<Two> {
+    #[inline(always)]
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a ^ b
+    }
+
+    #[inline(always)]
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a ^ b
+    }
+
+    #[inline(always)]
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a * b
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.add(*a, b);
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(*a, b);
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(*a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a
+    }
+}
+
+impl RingOps<&u8> for FiniteField<Two> {
     #[inline(always)]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a ^ b
@@ -1099,17 +1306,17 @@ impl Ring for FiniteField<Two> {
 
     #[inline]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.add(a, b);
+        *a = self.add(&*a, b);
     }
 
     #[inline]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(&*a, b);
     }
 
     #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
@@ -1125,7 +1332,9 @@ impl Ring for FiniteField<Two> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         *a
     }
+}
 
+impl Ring for FiniteField<Two> {
     #[inline]
     fn zero(&self) -> Self::Element {
         0
@@ -1166,10 +1375,6 @@ impl Ring for FiniteField<Two> {
         2.into()
     }
 
-    fn size(&self) -> Integer {
-        2.into()
-    }
-
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
         if *a == 0 { None } else { Some(self.inv(a)) }
     }
@@ -1205,7 +1410,7 @@ impl EuclideanDomain for FiniteField<Two> {
 
     #[inline]
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
-        (self.mul(a, &self.inv(b)), 0)
+        (self.mul(*a, self.inv(b)), 0)
     }
 
     #[inline]
@@ -1222,7 +1427,7 @@ impl Field for FiniteField<Two> {
 
     #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, &self.inv(b));
+        *a = self.mul(*a, self.inv(b));
     }
 
     /// Computes x^-1 mod n.
@@ -1327,9 +1532,77 @@ impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
     }
 }
 
-impl Ring for FiniteField<Mersenne64> {
+impl Set for FiniteField<Mersenne64> {
     type Element = u64;
 
+    fn size(&self) -> Option<Integer> {
+        Some(Mersenne64::PRIME.into())
+    }
+}
+
+impl RingOps<u64> for FiniteField<Mersenne64> {
+    #[inline(always)]
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        let mut sum = a + b; // cannot overflow
+        if sum >= Mersenne64::PRIME {
+            sum -= Mersenne64::PRIME;
+        }
+        sum
+    }
+
+    #[inline(always)]
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        if a >= b {
+            a - b
+        } else {
+            a + (Mersenne64::PRIME - b)
+        }
+    }
+
+    #[inline(always)]
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        let v = a as u128 * b as u128;
+        let q = (v >> Mersenne64::SHIFT) as u64;
+        let r = (v as u64 & Mersenne64::PRIME) + (q & Mersenne64::PRIME);
+
+        if r >= Mersenne64::PRIME {
+            r - Mersenne64::PRIME
+        } else {
+            r
+        }
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.add(*a, b);
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.sub(*a, b);
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = self.mul(*a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        if a == 0 { a } else { Mersenne64::PRIME - a }
+    }
+}
+
+impl RingOps<&u64> for FiniteField<Mersenne64> {
     #[inline(always)]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let mut sum = a + b; // cannot overflow
@@ -1363,25 +1636,25 @@ impl Ring for FiniteField<Mersenne64> {
 
     #[inline]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.add(a, b);
+        *a = self.add(*a, *b);
     }
 
     #[inline]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a = self.sub(*a, *b);
     }
 
     #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(*a, *b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        self.add_assign(a, &self.mul(b, c));
+        self.add_assign(a, self.mul(b, c));
     }
 
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        self.sub_assign(a, &self.mul(b, c));
+        self.sub_assign(a, self.mul(b, c));
     }
 
     /// Computes -x mod n.
@@ -1389,7 +1662,9 @@ impl Ring for FiniteField<Mersenne64> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         if *a == 0 { *a } else { Mersenne64::PRIME - a }
     }
+}
 
+impl Ring for FiniteField<Mersenne64> {
     #[inline]
     fn zero(&self) -> Self::Element {
         0
@@ -1446,10 +1721,6 @@ impl Ring for FiniteField<Mersenne64> {
     }
 
     fn characteristic(&self) -> Integer {
-        Mersenne64::PRIME.into()
-    }
-
-    fn size(&self) -> Integer {
         Mersenne64::PRIME.into()
     }
 
@@ -1512,7 +1783,7 @@ impl Field for FiniteField<Mersenne64> {
 
     #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, &self.inv(b));
+        *a = self.mul(*a, self.inv(b));
     }
 
     /// Computes x^-1 mod n.
@@ -1611,9 +1882,58 @@ impl FiniteField<Integer> {
     }
 }
 
-impl Ring for FiniteField<Integer> {
+impl Set for FiniteField<Integer> {
     type Element = Integer;
 
+    fn size(&self) -> Option<Integer> {
+        Some(self.get_prime())
+    }
+}
+
+impl RingOps<Integer> for FiniteField<Integer> {
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        self.normalize(a + b)
+    }
+
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        self.normalize(a - b)
+    }
+
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        (a * b).symmetric_mod(&self.p)
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a += b;
+        self.normalize_mut(a);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a -= b;
+        self.normalize_mut(a);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a *= b;
+        self.normalize_mut(a);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a += b * c;
+        self.normalize_mut(a);
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a -= b * c;
+        self.normalize_mut(a);
+    }
+
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl RingOps<&Integer> for FiniteField<Integer> {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.normalize(a + b)
     }
@@ -1637,7 +1957,7 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
+        *a = self.mul(&*a, b);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
@@ -1651,7 +1971,9 @@ impl Ring for FiniteField<Integer> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.neg()
     }
+}
 
+impl Ring for FiniteField<Integer> {
     fn zero(&self) -> Self::Element {
         Integer::zero()
     }
@@ -1683,10 +2005,6 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn characteristic(&self) -> Integer {
-        self.get_prime()
-    }
-
-    fn size(&self) -> Integer {
         self.get_prime()
     }
 
@@ -1767,7 +2085,7 @@ impl Field for FiniteField<Integer> {
 
     #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, &self.inv(b));
+        *a = self.mul(&*a, &self.inv(b));
     }
 
     /// Compute the inverse when `a` and the modulus are coprime,
@@ -2497,7 +2815,7 @@ pub const SMOOTH_PRIMES: [(u64, u8, [u8; 4]); 323] = [
 mod test {
     use super::{FiniteFieldCore, Zp};
     use crate::domains::{
-        Ring,
+        Ring, RingOps,
         finite_field::{PrimitiveRootIterator, Zp64},
     };
 
@@ -2516,7 +2834,7 @@ mod test {
         for i in 0..100 {
             let r = field.pow(&x, i);
             assert_eq!(r, q);
-            q = field.mul(&q, &x);
+            q = field.mul(q, x);
         }
     }
 

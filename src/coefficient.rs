@@ -24,7 +24,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::{
     atom::{Atom, AtomView, Symbol},
     domains::{
-        EuclideanDomain, Field, InternalOrdering, Ring,
+        EuclideanDomain, Field, InternalOrdering, Ring, RingOps, Set,
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
         finite_field::{
@@ -468,7 +468,7 @@ impl Neg for Coefficient {
             Coefficient::Float(f) => Coefficient::Float(-f),
             Coefficient::FiniteField(n, i) => {
                 let f = State::get_finite_field(i);
-                Coefficient::FiniteField(f.neg(&n), i)
+                Coefficient::FiniteField(f.neg(n), i)
             }
             Coefficient::RationalPolynomial(p) => Coefficient::RationalPolynomial(-p),
         }
@@ -931,7 +931,7 @@ where
     fn try_element_from_coefficient(
         &self,
         number: Coefficient,
-    ) -> Result<<FiniteField<UField> as Ring>::Element, String> {
+    ) -> Result<<FiniteField<UField> as Set>::Element, String> {
         match number {
             Coefficient::Indeterminate => {
                 Err("Cannot convert indeterminate to finite field".to_owned())
@@ -961,7 +961,7 @@ where
     fn try_element_from_coefficient_view(
         &self,
         number: CoefficientView<'_>,
-    ) -> Result<<FiniteField<UField> as Ring>::Element, String> {
+    ) -> Result<<FiniteField<UField> as Set>::Element, String> {
         match number {
             CoefficientView::Indeterminate => {
                 Err("Cannot convert indeterminate to finite field".to_owned())

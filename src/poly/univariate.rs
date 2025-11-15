@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     domains::{
-        EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+        EuclideanDomain, Field, InternalOrdering, Ring, RingOps, SelfRing, Set,
         float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Q, Rational, RationalField},
@@ -51,9 +51,53 @@ impl<R: Ring> std::fmt::Display for UnivariatePolynomialRing<R> {
     }
 }
 
-impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
+impl<R: Ring> Set for UnivariatePolynomialRing<R> {
     type Element = UnivariatePolynomial<R>;
 
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl<R: Ring> RingOps<UnivariatePolynomial<R>> for UnivariatePolynomialRing<R> {
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a + b
+    }
+
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a - b
+    }
+
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a * &b
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) + b;
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) - b;
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) * &b;
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) + b * &c
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) - b * &c
+    }
+
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl<R: Ring> RingOps<&UnivariatePolynomial<R>> for UnivariatePolynomialRing<R> {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
     }
@@ -89,7 +133,9 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }
+}
 
+impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
     fn zero(&self) -> Self::Element {
         UnivariatePolynomial::new(&self.ring, None, self.variable.clone())
     }
@@ -120,10 +166,6 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
 
     fn characteristic(&self) -> Integer {
         self.ring.characteristic()
-    }
-
-    fn size(&self) -> Integer {
-        0.into()
     }
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
@@ -1416,7 +1458,7 @@ impl<F: Ring> Neg for UnivariatePolynomial<F> {
     fn neg(mut self) -> Self::Output {
         // Negate coefficients of all terms.
         for c in &mut self.coefficients {
-            *c = self.ring.neg(c);
+            *c = self.ring.neg(&*c);
         }
         self
     }

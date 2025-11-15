@@ -18,7 +18,7 @@ use crate::domains::finite_field::{
 use crate::domains::float::{FloatField, SingleFloat};
 use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES, Z};
 use crate::domains::rational::{Q, Rational, RationalField};
-use crate::domains::{EuclideanDomain, Field, InternalOrdering, Ring};
+use crate::domains::{EuclideanDomain, Field, InternalOrdering, Ring, RingOps, Set};
 use crate::poly::INLINED_EXPONENTS;
 use crate::poly::factor::Factorize;
 use crate::tensors::matrix::{Matrix, MatrixError};
@@ -231,7 +231,9 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                 break (r, a1, b1);
             }
 
-            if !ap.ring.size().is_zero() && fail_count * 2 > ap.ring.size() {
+            if let Some(size) = ap.ring.size()
+                && fail_count * 2 > size
+            {
                 debug!("Field is too small to find a good sample point");
                 // TODO: upgrade to larger field?
                 return ap.degree(var).min(bp.degree(var));
@@ -1075,7 +1077,9 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
             }
             failure_count += 1;
 
-            if !a.ring.size().is_zero() && failure_count * 2 > a.ring.size() {
+            if let Some(size) = a.ring.size()
+                && failure_count * 2 > size
+            {
                 debug!("Cannot find unique sampling points: prime field is likely too small");
                 return None;
             }
@@ -1088,7 +1092,9 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
                 }
 
                 sample_fail_count += 1;
-                if !a.ring.size().is_zero() && sample_fail_count * 2 > a.ring.size() {
+                if let Some(size) = a.ring.size()
+                    && sample_fail_count * 2 > size
+                {
                     debug!("Cannot find unique sampling points: prime field is likely too small");
                     continue 'newfirstnum;
                 }
@@ -1186,7 +1192,9 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
                     }
 
                     sample_fail_count += 1;
-                    if !a.ring.size().is_zero() && sample_fail_count * 2 > a.ring.size() {
+                    if let Some(size) = a.ring.size()
+                        && sample_fail_count * 2 > size
+                    {
                         debug!(
                             "Cannot find unique sampling points: prime field is likely too small"
                         );
@@ -1239,7 +1247,9 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
                         debug!("Bad current image");
                         sample_fail_count += 1;
 
-                        if !a.ring.size().is_zero() && sample_fail_count * 2 > a.ring.size() {
+                        if let Some(size) = a.ring.size()
+                            && sample_fail_count * 2 > size
+                        {
                             debug!("Too many bad current images: prime field is likely too small");
                             continue 'newfirstnum;
                         }
@@ -2112,7 +2122,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
     ) -> Self
     where
         FiniteField<UField>: FiniteFieldCore<UField>,
-        <FiniteField<UField> as Ring>::Element: Copy,
+        <FiniteField<UField> as Set>::Element: Copy,
         Integer: ToFiniteField<UField> + FromFiniteField<UField>,
     {
         debug!("Zippel gcd of {} and {}", self, b);
@@ -2340,7 +2350,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                     let gmc = &mut gm.coefficients[t];
                     let coeff = if gmc.is_negative() {
-                        self.ring.add(gmc, &m)
+                        self.ring.add(&*gmc, &m)
                     } else {
                         gmc.clone()
                     };
@@ -2575,7 +2585,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                         exp[0] = ee[0];
 
                         let c = p.mul(c, ss);
-                        *ss = p.mul(ss, aa);
+                        *ss = p.mul(&*ss, aa);
 
                         res.append_monomial(c, &exp);
                     }
@@ -2776,7 +2786,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                         let gmc = &mut h.coefficients[t];
                         let coeff = if gmc.is_negative() {
-                            self.ring.add(gmc, &m)
+                            self.ring.add(&*gmc, &m)
                         } else {
                             gmc.clone()
                         };
@@ -3037,7 +3047,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                         exp[1] = ee[1];
 
                         let c = p.mul(c, ss);
-                        *ss = p.mul(ss, aa);
+                        *ss = p.mul(&*ss, aa);
 
                         res.append_monomial(c, &exp);
                     }
@@ -3275,7 +3285,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                         let gmc = &mut h.coefficients[t];
                         let coeff = if gmc.is_negative() {
-                            self.ring.add(gmc, &m)
+                            self.ring.add(&*gmc, &m)
                         } else {
                             gmc.clone()
                         };
@@ -3556,7 +3566,7 @@ impl<UField: FiniteFieldWorkspace, F: GaloisField<Base = FiniteField<UField>>, E
     PolynomialGCD<E> for F
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
-    <FiniteField<UField> as Ring>::Element: Copy,
+    <FiniteField<UField> as Set>::Element: Copy,
 {
     fn heuristic_gcd(
         _a: &MultivariatePolynomial<Self, E>,

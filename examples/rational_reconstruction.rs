@@ -1,11 +1,11 @@
 use symbolica::domains::{
-    Field, Ring,
+    Field, RingOps, Set,
     finite_field::{FiniteFieldCore, Zp},
     rational::{Q, Rational},
 };
 
 /// An arbitrarily complicated black-box function.
-fn black_box(field: &Zp, eval: &[<Zp as Ring>::Element]) -> <Zp as Ring>::Element {
+fn black_box(field: &Zp, eval: &[<Zp as Set>::Element]) -> <Zp as Set>::Element {
     // eval -(x^2+y/3)
     field.neg(&field.add(
         &field.mul(&eval[0], &eval[0]),

@@ -59,7 +59,7 @@ use crate::{
     },
     coefficient::{Coefficient, CoefficientView, ConvertToRing},
     domains::{
-        Ring, SelfRing,
+        Ring, RingOps, SelfRing,
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
         finite_field::{

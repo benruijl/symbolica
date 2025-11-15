@@ -1815,7 +1815,7 @@ impl Token {
                         Err("Wrong args for neg")?;
                     }
 
-                    *coefficient = field.neg(coefficient);
+                    *coefficient = field.neg(&*coefficient);
                     parse_factor(&args[0], var_name_map, coefficient, exponents, field)?;
                 }
                 Token::Op(_, _, Operator::Pow, args) => {

@@ -14,7 +14,9 @@ use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::float::NumericalFloatLike;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::{FractionField, FractionNormalization, Q, RationalField};
-use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
+use crate::domains::{
+    Derivable, EuclideanDomain, Field, InternalOrdering, Ring, RingOps, SelfRing, Set,
+};
 use crate::printer::{PrintOptions, PrintState};
 
 use super::gcd::PolynomialGCD;
@@ -59,9 +61,62 @@ impl<R: Ring, E: Exponent> std::fmt::Display for PolynomialRing<R, E> {
     }
 }
 
-impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
+impl<R: Ring, E: Exponent> Set for PolynomialRing<R, E> {
     type Element = MultivariatePolynomial<R, E>;
 
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl<R: Ring, E: Exponent> RingOps<MultivariatePolynomial<R, E>> for PolynomialRing<R, E> {
+    #[inline]
+    fn add(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a + b
+    }
+
+    #[inline]
+    fn sub(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a - b
+    }
+
+    #[inline]
+    fn mul(&self, a: Self::Element, b: Self::Element) -> Self::Element {
+        a * &b
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) + b;
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) - b;
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: Self::Element) {
+        *a = &*a * &b;
+    }
+
+    #[inline]
+    fn add_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) + b * &c
+    }
+
+    #[inline]
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: Self::Element, c: Self::Element) {
+        *a = std::mem::replace(a, b.zero()) - b * &c
+    }
+
+    #[inline]
+    fn neg(&self, a: Self::Element) -> Self::Element {
+        a.neg()
+    }
+}
+
+impl<R: Ring, E: Exponent> RingOps<&MultivariatePolynomial<R, E>> for PolynomialRing<R, E> {
     #[inline]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
@@ -106,7 +161,9 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }
+}
 
+impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
     #[inline]
     fn zero(&self) -> Self::Element {
         MultivariatePolynomial::new(&self.ring, None, Arc::new(vec![]))
@@ -143,10 +200,6 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
 
     fn characteristic(&self) -> Integer {
         self.ring.characteristic()
-    }
-
-    fn size(&self) -> Integer {
-        0.into()
     }
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
@@ -1185,7 +1238,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> Neg for MultivariatePolynomial<F, E
     fn neg(mut self) -> Self::Output {
         // Negate coefficients of all terms.
         for c in &mut self.coefficients {
-            *c = self.ring.neg(c);
+            *c = self.ring.neg(&*c);
         }
         self
     }
@@ -4419,7 +4472,7 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 }
 
 // General implementation for F::Element blocked on https://github.com/rust-lang/rust/issues/20400
-impl<E: Exponent, O: MonomialOrder> PartialEq<<IntegerRing as Ring>::Element>
+impl<E: Exponent, O: MonomialOrder> PartialEq<<IntegerRing as Set>::Element>
     for MultivariatePolynomial<IntegerRing, E, O>
 {
     #[inline]
@@ -4429,11 +4482,11 @@ impl<E: Exponent, O: MonomialOrder> PartialEq<<IntegerRing as Ring>::Element>
 }
 
 impl<R: Ring + FractionNormalization + EuclideanDomain, E: Exponent, O: MonomialOrder>
-    PartialEq<<FractionField<R> as Ring>::Element>
+    PartialEq<<FractionField<R> as Set>::Element>
     for MultivariatePolynomial<FractionField<R>, E, O>
 {
     #[inline]
-    fn eq(&self, other: &<FractionField<R> as Ring>::Element) -> bool {
+    fn eq(&self, other: &<FractionField<R> as Set>::Element) -> bool {
         self.is_constant() && self.get_constant() == *other
     }
 }

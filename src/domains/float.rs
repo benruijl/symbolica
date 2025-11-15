@@ -10,7 +10,10 @@ use std::{
 use rand::Rng;
 use wide::{f64x2, f64x4};
 
-use crate::{coefficient::ConvertToRing, domains::integer::Integer};
+use crate::{
+    coefficient::ConvertToRing,
+    domains::{RingOps, Set, integer::Integer},
+};
 
 use super::{EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, rational::Rational};
 use rug::{
@@ -201,47 +204,107 @@ impl<T> Display for FloatField<T> {
     }
 }
 
-impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring for FloatField<T> {
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Set for FloatField<T> {
     type Element = T;
 
     #[inline(always)]
-    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a.clone() + b.clone()
+    fn size(&self) -> Option<Integer> {
+        None
+    }
+}
+
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> RingOps<T>
+    for FloatField<T>
+{
+    #[inline(always)]
+    fn add(&self, a: T, b: T) -> Self::Element {
+        a + b
     }
 
     #[inline(always)]
-    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a.clone() - b.clone()
+    fn sub(&self, a: T, b: T) -> Self::Element {
+        a - b
     }
 
     #[inline(always)]
-    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a.clone() * b.clone()
+    fn mul(&self, a: T, b: T) -> Self::Element {
+        a * b
     }
 
     #[inline(always)]
-    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+    fn add_assign(&self, a: &mut Self::Element, b: T) {
         *a += b;
     }
 
     #[inline(always)]
-    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+    fn sub_assign(&self, a: &mut Self::Element, b: T) {
         *a -= b;
     }
 
     #[inline(always)]
-    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+    fn mul_assign(&self, a: &mut Self::Element, b: T) {
         *a *= b;
     }
 
     #[inline(always)]
-    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+    fn add_mul_assign(&self, a: &mut Self::Element, b: T, c: T) {
+        // a += b * c
+        *a = b.mul_add(&c, a);
+    }
+
+    #[inline(always)]
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: T, c: T) {
+        // a -= b * c
+        *a = b.mul_add(&(-c), a);
+    }
+
+    #[inline(always)]
+    fn neg(&self, a: T) -> Self::Element {
+        -a
+    }
+}
+
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> RingOps<&T>
+    for FloatField<T>
+{
+    #[inline(always)]
+    fn add(&self, a: &T, b: &T) -> Self::Element {
+        a.clone() + b.clone()
+    }
+
+    #[inline(always)]
+    fn sub(&self, a: &T, b: &T) -> Self::Element {
+        a.clone() - b.clone()
+    }
+
+    #[inline(always)]
+    fn mul(&self, a: &Self::Element, b: &T) -> Self::Element {
+        a.clone() * b.clone()
+    }
+
+    #[inline(always)]
+    fn add_assign(&self, a: &mut Self::Element, b: &T) {
+        *a += b;
+    }
+
+    #[inline(always)]
+    fn sub_assign(&self, a: &mut Self::Element, b: &T) {
+        *a -= b;
+    }
+
+    #[inline(always)]
+    fn mul_assign(&self, a: &mut Self::Element, b: &T) {
+        *a *= b;
+    }
+
+    #[inline(always)]
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &T, c: &T) {
         // a += b * c
         *a = b.mul_add(c, a);
     }
 
     #[inline(always)]
-    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &T, c: &T) {
         // a -= b * c
         *a = b.mul_add(&-c.clone(), a);
     }
@@ -250,7 +313,9 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     fn neg(&self, a: &Self::Element) -> Self::Element {
         -a.clone()
     }
+}
 
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring for FloatField<T> {
     #[inline(always)]
     fn zero(&self) -> Self::Element {
         self.rep.zero()
@@ -288,11 +353,6 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
 
     #[inline(always)]
     fn characteristic(&self) -> Integer {
-        0.into()
-    }
-
-    #[inline(always)]
-    fn size(&self) -> Integer {
         0.into()
     }
 

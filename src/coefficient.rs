@@ -37,7 +37,7 @@ use crate::{
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
     error,
-    poly::{INLINED_EXPONENTS, Variable, polynomial::MultivariatePolynomial},
+    poly::{INLINED_EXPONENTS, PolyVariable, polynomial::MultivariatePolynomial},
     state::{FiniteFieldIndex, State, Workspace},
     warn,
 };
@@ -2519,7 +2519,7 @@ impl<'a> TryFrom<AtomView<'a>> for Coefficient {
 
 impl AtomView<'_> {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
-    pub(crate) fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+    pub(crate) fn set_coefficient_ring(&self, vars: &Arc<Vec<PolyVariable>>) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
             self.set_coefficient_ring_with_ws_into(vars, ws, &mut out);
@@ -2530,7 +2530,7 @@ impl AtomView<'_> {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub(crate) fn set_coefficient_ring_with_ws_into(
         &self,
-        vars: &Arc<Vec<Variable>>,
+        vars: &Arc<Vec<PolyVariable>>,
         workspace: &Workspace,
         out: &mut Atom,
     ) -> bool {
@@ -2606,7 +2606,7 @@ impl AtomView<'_> {
                     // change variable into coefficient
                     let mut poly = MultivariatePolynomial::new(&Z, None, vars.clone());
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
-                    e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;
+                    e[vars.iter().position(|x| *x == id).unwrap()] = 1;
                     poly.append_monomial(Integer::one(), &e);
                     let den = poly.one();
 

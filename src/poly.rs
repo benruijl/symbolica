@@ -21,7 +21,7 @@ use ahash::HashMap;
 use smallvec::{SmallVec, smallvec};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::atom::{Atom, AtomCore, AtomView, Symbol};
+use crate::atom::{Atom, AtomCore, AtomView, Indeterminate, Symbol};
 use crate::coefficient::{Coefficient, CoefficientView, ConvertToRing};
 use crate::domains::atom::AtomField;
 use crate::domains::factorized_rational_polynomial::{
@@ -657,40 +657,74 @@ impl MonomialOrder for LexOrder {
     derive(bincode_trait_derive::BorrowDecodeFromDecode),
     trait_decode(trait = crate::state::HasStateMap)
 )]
-pub enum Variable {
+pub enum PolyVariable {
     /// A symbol, for example x, y, z, etc.
     Symbol(Symbol),
-    /// A temporary variable, for internal use
-    Temporary(usize),
     /// A function, for example f(x), sin(x), etc.
-    Function(Symbol, Arc<Atom>),
+    Function(Symbol, Atom),
     /// A non-polynomial power, for example x^-1, x^y, etc.
-    Power(Arc<Atom>),
+    Power(Atom),
+    /// A temporary variable, for internal use.
+    #[doc(hidden)]
+    Temporary(usize),
 }
 
-impl std::fmt::Display for Variable {
+impl std::fmt::Display for PolyVariable {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Variable::Symbol(v) => f.write_str(v.get_stripped_name()),
-            Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
-            Variable::Function(_, a) | Variable::Power(a) => std::fmt::Display::fmt(a, f),
+            PolyVariable::Symbol(v) => f.write_str(v.get_stripped_name()),
+            PolyVariable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
+            PolyVariable::Function(_, a) | PolyVariable::Power(a) => std::fmt::Display::fmt(a, f),
         }
     }
 }
 
-impl From<Symbol> for Variable {
-    fn from(i: Symbol) -> Variable {
-        Variable::Symbol(i)
+impl From<Symbol> for PolyVariable {
+    fn from(i: Symbol) -> PolyVariable {
+        PolyVariable::Symbol(i)
     }
 }
 
-impl TryFrom<Atom> for Variable {
+impl From<Indeterminate> for PolyVariable {
+    fn from(i: Indeterminate) -> PolyVariable {
+        match i {
+            Indeterminate::Symbol(s, _) => PolyVariable::Symbol(s),
+            Indeterminate::Function(_, a) => PolyVariable::Function(a.get_symbol().unwrap(), a),
+        }
+    }
+}
+
+impl PartialEq<Symbol> for PolyVariable {
+    fn eq(&self, other: &Symbol) -> bool {
+        match self {
+            PolyVariable::Symbol(s) => *s == *other,
+            _ => false,
+        }
+    }
+}
+
+impl<T: AtomCore> PartialEq<T> for PolyVariable {
+    fn eq(&self, other: &T) -> bool {
+        match self {
+            PolyVariable::Symbol(s) => match other.as_atom_view() {
+                AtomView::Var(v) => *s == v.get_symbol(),
+                _ => false,
+            },
+            PolyVariable::Function(_, a) | PolyVariable::Power(a) => {
+                a.as_view() == other.as_atom_view()
+            }
+            PolyVariable::Temporary(_) => false,
+        }
+    }
+}
+
+impl TryFrom<Atom> for PolyVariable {
     type Error = String;
 
-    fn try_from(a: Atom) -> Result<Variable, Self::Error> {
+    fn try_from(a: Atom) -> Result<PolyVariable, Self::Error> {
         match a {
-            Atom::Var(v) => Ok(Variable::Symbol(v.get_symbol())),
-            Atom::Fun(f) => Ok(Variable::Function(f.get_symbol(), Arc::new(Atom::Fun(f)))),
+            Atom::Var(v) => Ok(PolyVariable::Symbol(v.get_symbol())),
+            Atom::Fun(f) => Ok(PolyVariable::Function(f.get_symbol(), Atom::Fun(f))),
             Atom::Pow(p) => {
                 let (_, exp) = p.to_pow_view().get_base_exp();
                 if exp.is_positive() {
@@ -699,7 +733,7 @@ impl TryFrom<Atom> for Variable {
                         Atom::Pow(p)
                     ))
                 } else {
-                    Ok(Variable::Power(Arc::new(Atom::Pow(p))))
+                    Ok(PolyVariable::Power(Atom::Pow(p)))
                 }
             }
             _ => Err(format!(
@@ -709,49 +743,51 @@ impl TryFrom<Atom> for Variable {
     }
 }
 
-impl Into<Atom> for Variable {
+impl Into<Atom> for PolyVariable {
     fn into(self) -> Atom {
         match self {
-            Variable::Symbol(s) => Atom::var(s),
-            Variable::Function(_, a) | Variable::Power(a) => a.as_ref().clone(),
-            Variable::Temporary(x) => panic!("Cannot convert a temporary variable {x} to an atom"),
+            PolyVariable::Symbol(s) => Atom::var(s),
+            PolyVariable::Function(_, a) | PolyVariable::Power(a) => a.as_ref().clone(),
+            PolyVariable::Temporary(x) => {
+                panic!("Cannot convert a temporary variable {x} to an atom")
+            }
         }
     }
 }
 
-impl Variable {
+impl PolyVariable {
     /// Get the symbol if this variable is a symbol.
     pub fn get_id(&self) -> Option<Symbol> {
         match self {
-            Variable::Symbol(s) => Some(*s),
+            PolyVariable::Symbol(s) => Some(*s),
             _ => None,
         }
     }
 
     fn format_string(&self, opts: &PrintOptions, state: PrintState) -> String {
         match self {
-            Variable::Symbol(v) => v.get_stripped_name().to_string(),
-            Variable::Temporary(t) => format!("_TMP_{}", *t),
-            Variable::Function(_, a) | Variable::Power(a) => a.format_string(opts, state),
+            PolyVariable::Symbol(v) => v.get_stripped_name().to_string(),
+            PolyVariable::Temporary(t) => format!("_TMP_{}", *t),
+            PolyVariable::Function(_, a) | PolyVariable::Power(a) => a.format_string(opts, state),
         }
     }
 
     pub fn to_atom(&self) -> Atom {
         match self {
-            Variable::Symbol(s) => Atom::var(*s),
-            Variable::Function(_, a) | Variable::Power(a) => a.as_ref().clone(),
-            Variable::Temporary(_) => panic!("Cannot convert a temporary variable to an atom"),
+            PolyVariable::Symbol(s) => Atom::var(*s),
+            PolyVariable::Function(_, a) | PolyVariable::Power(a) => a.as_ref().clone(),
+            PolyVariable::Temporary(_) => panic!("Cannot convert a temporary variable to an atom"),
         }
     }
 
     /// Check if the symbol `symbol` appears at most once in the variable map.
     /// For example, `[x,f(x)]` is not independent in `x`, but `[x,y]` is.
-    pub fn is_independent_symbol(variables: &[Variable], symbol: Symbol) -> bool {
+    pub fn is_independent_symbol(variables: &[PolyVariable], symbol: Symbol) -> bool {
         let mut seen = false;
 
         for v in variables {
             match v {
-                Variable::Symbol(s) => {
+                PolyVariable::Symbol(s) => {
                     if *s == symbol {
                         if seen {
                             return false;
@@ -759,7 +795,7 @@ impl Variable {
                         seen = true;
                     }
                 }
-                Variable::Function(_, f) | Variable::Power(f) => {
+                PolyVariable::Function(_, f) | PolyVariable::Power(f) => {
                     if f.contains_symbol(symbol) {
                         if seen {
                             return false;
@@ -767,7 +803,7 @@ impl Variable {
                         seen = true;
                     }
                 }
-                Variable::Temporary(_) => {}
+                PolyVariable::Temporary(_) => {}
             }
         }
 
@@ -780,12 +816,12 @@ impl AtomView<'_> {
     fn to_polynomial_expanded<R: Ring + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        var_map: Option<&Arc<Vec<Variable>>>,
+        var_map: Option<&Arc<Vec<PolyVariable>>>,
         allow_new_vars: bool,
     ) -> Result<MultivariatePolynomial<R, E>, &'static str> {
         fn check_factor(
             factor: &AtomView<'_>,
-            vars: &mut Vec<Variable>,
+            vars: &mut Vec<PolyVariable>,
             allow_new_vars: bool,
         ) -> Result<(), &'static str> {
             match factor {
@@ -868,7 +904,7 @@ impl AtomView<'_> {
 
         fn check_term(
             term: &AtomView<'_>,
-            vars: &mut Vec<Variable>,
+            vars: &mut Vec<PolyVariable>,
             allow_new_vars: bool,
         ) -> Result<(), &'static str> {
             match term {
@@ -900,7 +936,7 @@ impl AtomView<'_> {
 
         fn parse_factor<R: Ring + ConvertToRing, E: Exponent>(
             factor: &AtomView<'_>,
-            vars: &[Variable],
+            vars: &[PolyVariable],
             coefficient: &mut R::Element,
             exponents: &mut SmallVec<[E; INLINED_EXPONENTS]>,
             field: &R,
@@ -914,7 +950,7 @@ impl AtomView<'_> {
                 }
                 AtomView::Var(v) => {
                     let id = v.get_symbol();
-                    exponents[vars.iter().position(|v| *v == id.into()).unwrap()] += E::one();
+                    exponents[vars.iter().position(|v| *v == id).unwrap()] += E::one();
                 }
                 AtomView::Pow(p) => {
                     let (base, exp) = p.get_base_exp();
@@ -922,7 +958,7 @@ impl AtomView<'_> {
                     let var_index = match base {
                         AtomView::Var(v) => {
                             let id = v.get_symbol();
-                            vars.iter().position(|v| *v == id.into()).unwrap()
+                            vars.iter().position(|v| *v == id).unwrap()
                         }
                         _ => unreachable!(),
                     };
@@ -947,7 +983,7 @@ impl AtomView<'_> {
 
         fn parse_term<R: Ring + ConvertToRing, E: Exponent>(
             term: &AtomView<'_>,
-            vars: &[Variable],
+            vars: &[PolyVariable],
             poly: &mut MultivariatePolynomial<R, E>,
             field: &R,
         ) {
@@ -988,7 +1024,7 @@ impl AtomView<'_> {
     pub(crate) fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: Option<Arc<Vec<PolyVariable>>>,
     ) -> MultivariatePolynomial<R, E> {
         self.to_polynomial_impl(field, var_map.as_ref().unwrap_or(&Arc::new(Vec::new())))
     }
@@ -996,7 +1032,7 @@ impl AtomView<'_> {
     pub(crate) fn to_polynomial_impl<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
     ) -> MultivariatePolynomial<R, E> {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial_expanded(field, Some(var_map), true) {
@@ -1026,7 +1062,7 @@ impl AtomView<'_> {
                                 // allow x^-2 as a term if supported by the exponent
                                 if let Ok(e) = (nn as i32).try_into() {
                                     if let AtomView::Var(v) = base {
-                                        let s = Variable::Symbol(v.get_symbol());
+                                        let s = PolyVariable::Symbol(v.get_symbol());
                                         if let Some(id) = var_map.iter().position(|v| v == &s) {
                                             let mut exp = vec![E::zero(); var_map.len()];
                                             exp[id] = e;
@@ -1058,7 +1094,7 @@ impl AtomView<'_> {
 
                 // check if we have seen this variable before
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Power(vv) => vv.as_view() == *self,
+                    PolyVariable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1067,7 +1103,7 @@ impl AtomView<'_> {
                         .monomial(field.one(), exp)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Power(Arc::new(self.to_owned())));
+                    var_map.push(PolyVariable::Power(self.to_owned()));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1080,7 +1116,7 @@ impl AtomView<'_> {
 
                 // check if we have seen this variable before
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Function(_, vv) => vv.as_view() == *self,
+                    PolyVariable::Function(_, vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1089,10 +1125,7 @@ impl AtomView<'_> {
                         .monomial(field.one(), exp)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Function(
-                        f.get_symbol(),
-                        Arc::new(self.to_owned()),
-                    ));
+                    var_map.push(PolyVariable::Function(f.get_symbol(), self.to_owned()));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1129,7 +1162,7 @@ impl AtomView<'_> {
     /// This routine does not perform expansions.
     pub(crate) fn to_polynomial_in_vars<E: Exponent>(
         &self,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
     ) -> MultivariatePolynomial<AtomField, E> {
         let poly = MultivariatePolynomial::<_, E>::new(&AtomField::new(), None, var_map.clone());
         self.to_polynomial_in_vars_impl(var_map, &poly)
@@ -1142,7 +1175,7 @@ impl AtomView<'_> {
     /// This routine does not perform expansions.
     fn to_polynomial_in_vars_impl<E: Exponent>(
         &self,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
         poly: &MultivariatePolynomial<AtomField, E>,
     ) -> MultivariatePolynomial<AtomField, E> {
         let field = AtomField::new();
@@ -1167,7 +1200,7 @@ impl AtomView<'_> {
                             // allow x^-2 as a term if supported by the exponent
                             if let Ok(e) = (nn as i32).try_into() {
                                 if let AtomView::Var(v) = base {
-                                    let s = Variable::Symbol(v.get_symbol());
+                                    let s = PolyVariable::Symbol(v.get_symbol());
                                     if let Some(id) = var_map.iter().position(|v| v == &s) {
                                         let mut exp = vec![E::zero(); var_map.len()];
                                         exp[id] = e;
@@ -1182,7 +1215,7 @@ impl AtomView<'_> {
                 }
 
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Power(vv) => vv.as_view() == *self,
+                    PolyVariable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1194,7 +1227,7 @@ impl AtomView<'_> {
             }
             AtomView::Fun(_) => {
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Function(_, vv) => vv.as_view() == *self,
+                    PolyVariable::Function(_, vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1235,7 +1268,7 @@ impl AtomView<'_> {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: Option<Arc<Vec<PolyVariable>>>,
     ) -> RationalPolynomial<RO, E>
     where
         RationalPolynomial<RO, E>:
@@ -1256,7 +1289,7 @@ impl AtomView<'_> {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
     ) -> RationalPolynomial<RO, E>
     where
         RationalPolynomial<RO, E>:
@@ -1293,7 +1326,7 @@ impl AtomView<'_> {
 
                 // non-integer exponent, convert to new variable
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Power(vv) => vv.as_view() == *self,
+                    PolyVariable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1304,7 +1337,7 @@ impl AtomView<'_> {
                     RationalPolynomial::from_num_den(r, den, out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Power(Arc::new(self.to_owned())));
+                    var_map.push(PolyVariable::Power(self.to_owned()));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1317,7 +1350,7 @@ impl AtomView<'_> {
             AtomView::Fun(f) => {
                 // check if we have seen this variable before
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Function(_, vv) => vv.as_view() == *self,
+                    PolyVariable::Function(_, vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1328,10 +1361,7 @@ impl AtomView<'_> {
                     RationalPolynomial::from_num_den(r, den, out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Function(
-                        f.get_symbol(),
-                        Arc::new(self.to_owned()),
-                    ));
+                    var_map.push(PolyVariable::Function(f.get_symbol(), self.to_owned()));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1378,7 +1408,7 @@ impl AtomView<'_> {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: Option<Arc<Vec<PolyVariable>>>,
     ) -> FactorizedRationalPolynomial<RO, E>
     where
         FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
@@ -1400,7 +1430,7 @@ impl AtomView<'_> {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
     ) -> FactorizedRationalPolynomial<RO, E>
     where
         FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
@@ -1439,7 +1469,7 @@ impl AtomView<'_> {
 
                 // non-integer exponent, convert to new variable
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Power(vv) => vv.as_view() == *self,
+                    PolyVariable::Power(vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1449,7 +1479,7 @@ impl AtomView<'_> {
                     FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Power(Arc::new(self.to_owned())));
+                    var_map.push(PolyVariable::Power(self.to_owned()));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1461,7 +1491,7 @@ impl AtomView<'_> {
             AtomView::Fun(f) => {
                 // check if we have seen this variable before
                 if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Function(_, vv) => vv.as_view() == *self,
+                    PolyVariable::Function(_, vv) => vv.as_view() == *self,
                     _ => false,
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
@@ -1471,10 +1501,7 @@ impl AtomView<'_> {
                     FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Function(
-                        f.get_symbol(),
-                        Arc::new(self.to_owned()),
-                    ));
+                    var_map.push(PolyVariable::Function(f.get_symbol(), self.to_owned()));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
@@ -1600,7 +1627,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
     pub(crate) fn to_expression_with_map(
         &self,
         workspace: &Workspace,
-        map: &HashMap<Variable, AtomView>,
+        map: &HashMap<PolyVariable, AtomView>,
         out: &mut Atom,
     ) where
         R::Element: Into<Coefficient>,
@@ -1620,7 +1647,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
             .variables
             .iter()
             .map(|v| {
-                if let Variable::Temporary(_) = v {
+                if let PolyVariable::Temporary(_) = v {
                     let a = map.get(v).expect("Variable missing from map");
                     a.to_owned()
                 } else {
@@ -1699,13 +1726,13 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
             for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
                 if pow != E::zero() {
                     match var_id {
-                        Variable::Symbol(v) => {
+                        PolyVariable::Symbol(v) => {
                             var_h.to_var(*v);
                         }
-                        Variable::Temporary(_) => {
+                        PolyVariable::Temporary(_) => {
                             unreachable!("Temporary variables not supported");
                         }
-                        Variable::Function(_, a) | Variable::Power(a) => {
+                        PolyVariable::Function(_, a) | PolyVariable::Power(a) => {
                             var_h.set_from_view(&a.as_view());
                         }
                     }
@@ -1753,7 +1780,7 @@ impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
     pub(crate) fn to_expression_with_map(
         &self,
         workspace: &Workspace,
-        map: &HashMap<Variable, AtomView>,
+        map: &HashMap<PolyVariable, AtomView>,
         out: &mut Atom,
     ) where
         R::Element: Into<Coefficient>,
@@ -1787,7 +1814,7 @@ impl Token {
     pub fn to_polynomial<R: Ring + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
         var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<MultivariatePolynomial<R, E>, Cow<'static, str>> {
         fn parse_factor<R: Ring + ConvertToRing, E: Exponent>(
@@ -1934,7 +1961,7 @@ impl Token {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
         var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
     where
@@ -2042,7 +2069,7 @@ impl Token {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
         var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<FactorizedRationalPolynomial<RO, E>, Cow<'static, str>>
     where

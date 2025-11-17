@@ -24,7 +24,7 @@ use crate::{
         integer::Integer,
         rational::Rational,
     },
-    poly::{PositiveExponent, Variable, polynomial::MultivariatePolynomial},
+    poly::{PositiveExponent, PolyVariable, polynomial::MultivariatePolynomial},
     state::{State, Workspace},
 };
 
@@ -719,7 +719,7 @@ impl Token {
     pub fn to_atom_with_output_and_var_map(
         &self,
         workspace: &Workspace,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
         var_name_map: &[SmartString<LazyCompact>],
         out: &mut Atom,
     ) -> Result<(), String> {
@@ -749,7 +749,7 @@ impl Token {
                     .iter()
                     .position(|x| x == name)
                     .ok_or_else(|| format!("Undefined variable {name}"))?;
-                if let Variable::Symbol(id) = var_map[index] {
+                if let PolyVariable::Symbol(id) = var_map[index] {
                     out.to_var(id);
                 } else {
                     Err(format!("Undefined variable {name}"))?;
@@ -859,7 +859,7 @@ impl Token {
                     .iter()
                     .position(|x| x == name)
                     .ok_or_else(|| format!("Undefined variable {name}"))?;
-                if let Variable::Symbol(id) = var_map[index] {
+                if let PolyVariable::Symbol(id) = var_map[index] {
                     let mut fun_h = workspace.new_atom();
                     let fun = fun_h.to_fun(id);
                     let mut atom = workspace.new_atom();
@@ -1697,7 +1697,7 @@ impl Token {
     /// where the coefficient comes first.
     pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: PositiveExponent>(
         mut input: &'a [u8],
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
         var_name_map: &[SmartString<LazyCompact>],
         field: &R,
     ) -> (&'a [u8], MultivariatePolynomial<R, E>) {

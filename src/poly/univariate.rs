@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    PositiveExponent, Variable,
+    PositiveExponent, PolyVariable,
     factor::Factorize,
     polynomial::{MultivariatePolynomial, PolynomialRing},
 };
@@ -26,11 +26,11 @@ use super::{
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct UnivariatePolynomialRing<R: Ring> {
     ring: R,
-    variable: Arc<Variable>,
+    variable: Arc<PolyVariable>,
 }
 
 impl<R: Ring> UnivariatePolynomialRing<R> {
-    pub fn new(coeff_ring: R, var_map: Arc<Variable>) -> UnivariatePolynomialRing<R> {
+    pub fn new(coeff_ring: R, var_map: Arc<PolyVariable>) -> UnivariatePolynomialRing<R> {
         UnivariatePolynomialRing {
             ring: coeff_ring,
             variable: var_map,
@@ -218,7 +218,7 @@ impl<R: EuclideanDomain> EuclideanDomain for UnivariatePolynomialRing<R> {
 #[derive(Clone)]
 pub struct UnivariatePolynomial<F: Ring> {
     pub coefficients: Vec<F::Element>,
-    pub variable: Arc<Variable>,
+    pub variable: Arc<PolyVariable>,
     pub ring: F,
 }
 
@@ -260,7 +260,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     /// prefer to create new polynomials from existing ones, so that the
     /// variable map and field are inherited.
     #[inline]
-    pub fn new(field: &F, cap: Option<usize>, variable: Arc<Variable>) -> Self {
+    pub fn new(field: &F, cap: Option<usize>, variable: Arc<PolyVariable>) -> Self {
         Self {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
             ring: field.clone(),
@@ -358,12 +358,12 @@ impl<F: Ring> UnivariatePolynomial<F> {
     }
 
     /// Get a copy of the variable/
-    pub fn get_vars(&self) -> Arc<Variable> {
+    pub fn get_vars(&self) -> Arc<PolyVariable> {
         self.variable.clone()
     }
 
     /// Get a reference to the variables
-    pub fn get_vars_ref(&self) -> &Variable {
+    pub fn get_vars_ref(&self) -> &PolyVariable {
         self.variable.as_ref()
     }
 

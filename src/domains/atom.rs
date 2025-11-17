@@ -3,7 +3,7 @@
 use crate::{
     atom::{Atom, AtomCore, AtomView},
     domains::{RingOps, Set},
-    poly::Variable,
+    poly::PolyVariable,
 };
 
 use super::{
@@ -346,9 +346,9 @@ impl Field for AtomField {
 }
 
 impl Derivable for AtomField {
-    fn derivative(&self, e: &Atom, x: &Variable) -> Atom {
+    fn derivative(&self, e: &Atom, x: &PolyVariable) -> Atom {
         match x {
-            Variable::Symbol(s) => e.derivative(*s),
+            PolyVariable::Symbol(s) => e.derivative(*s),
             _ => panic!("Cannot take derivative of non-symbol"),
         }
     }

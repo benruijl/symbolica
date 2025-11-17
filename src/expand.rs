@@ -7,7 +7,7 @@ use crate::{
     coefficient::CoefficientView,
     combinatorics::CombinationWithReplacementIterator,
     domains::{integer::Integer, rational::Q},
-    poly::{Exponent, Variable},
+    poly::{Exponent, PolyVariable},
     state::{RecycledAtom, Workspace},
 };
 
@@ -118,7 +118,7 @@ impl AtomView<'_> {
         &self,
         ws: &Workspace,
         var: Option<AtomView>,
-        var_map: &Option<Arc<Vec<Variable>>>,
+        var_map: &Option<Arc<Vec<PolyVariable>>>,
         out: &mut Atom,
     ) {
         if self.is_expanded(var) {

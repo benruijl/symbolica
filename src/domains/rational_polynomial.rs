@@ -18,7 +18,7 @@ use crate::{
         float::{FloatField, SingleFloat},
     },
     poly::{
-        GrevLexOrder, LexOrder, PositiveExponent, Variable,
+        GrevLexOrder, LexOrder, PositiveExponent, PolyVariable,
         factor::Factorize,
         gcd::PolynomialGCD,
         groebner::{Echelonize, GroebnerBasis},
@@ -153,7 +153,7 @@ where
 }
 
 impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
-    pub fn new(field: &R, var_map: Arc<Vec<Variable>>) -> RationalPolynomial<R, E> {
+    pub fn new(field: &R, var_map: Arc<Vec<PolyVariable>>) -> RationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(field, None, var_map);
         let den = num.one();
 
@@ -163,7 +163,7 @@ impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
         }
     }
 
-    pub fn get_variables(&self) -> &Arc<Vec<Variable>> {
+    pub fn get_variables(&self) -> &Arc<Vec<PolyVariable>> {
         &self.numerator.variables
     }
 
@@ -539,7 +539,7 @@ where
     /// after the variable check.
     pub fn to_polynomial(
         &self,
-        variables: &[Variable],
+        variables: &[PolyVariable],
         ignore_denominator: bool,
     ) -> Result<MultivariatePolynomial<RationalPolynomialField<R, E>, E>, &'static str> {
         let index_mask: Vec<_> = self
@@ -1112,7 +1112,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Derivable
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
-    fn derivative(&self, p: &RationalPolynomial<R, E>, x: &Variable) -> RationalPolynomial<R, E> {
+    fn derivative(&self, p: &RationalPolynomial<R, E>, x: &PolyVariable) -> RationalPolynomial<R, E> {
         if let Some(pos) = p.get_variables().iter().position(|v| v == x) {
             p.derivative(pos)
         } else {
@@ -1229,7 +1229,7 @@ where
             std::cmp::Reverse((0..f.nvars()).filter(|v| f.contains(*v)).count())
         });
 
-        let mut vars = (0..fs.len()).map(Variable::Temporary).collect::<Vec<_>>();
+        let mut vars = (0..fs.len()).map(PolyVariable::Temporary).collect::<Vec<_>>();
         for v in self.numerator.get_vars_ref() {
             vars.push(v.clone());
         }
@@ -1431,7 +1431,7 @@ where
         let mut t = MultivariatePolynomial::new(
             &self.numerator.ring,
             None,
-            Arc::new(vec![Variable::Temporary(0)]),
+            Arc::new(vec![PolyVariable::Temporary(0)]),
         )
         .monomial(self.numerator.ring.one(), vec![E::one()])
         .into();

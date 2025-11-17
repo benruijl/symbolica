@@ -5,18 +5,18 @@ use symbolica::{
     domains::integer::Z,
     parse,
     parser::{ParseMode, ParseSettings, Token},
-    poly::Variable,
+    poly::PolyVariable,
     symbol,
 };
 
 #[test]
 fn large_gcd_single_scale() {
     let order = Arc::new(vec![
-        Variable::Symbol(symbol!("x0")),
-        Variable::Symbol(symbol!("x1")),
-        Variable::Symbol(symbol!("x2")),
-        Variable::Symbol(symbol!("x3")),
-        Variable::Symbol(symbol!("x4")),
+        PolyVariable::Symbol(symbol!("x0")),
+        PolyVariable::Symbol(symbol!("x1")),
+        PolyVariable::Symbol(symbol!("x2")),
+        PolyVariable::Symbol(symbol!("x3")),
+        PolyVariable::Symbol(symbol!("x4")),
     ]);
 
     let a = parse!("(x0+2*x1+x2+x3-x4^2)^10").to_polynomial::<_, u8>(&Z, Some(order.clone()));
@@ -33,11 +33,11 @@ fn large_gcd_single_scale() {
 #[test]
 fn large_gcd_multiple_scales() {
     let order = Arc::new(vec![
-        Variable::Symbol(symbol!("x0")),
-        Variable::Symbol(symbol!("x1")),
-        Variable::Symbol(symbol!("x2")),
-        Variable::Symbol(symbol!("x3")),
-        Variable::Symbol(symbol!("x4")),
+        PolyVariable::Symbol(symbol!("x0")),
+        PolyVariable::Symbol(symbol!("x1")),
+        PolyVariable::Symbol(symbol!("x2")),
+        PolyVariable::Symbol(symbol!("x3")),
+        PolyVariable::Symbol(symbol!("x4")),
     ]);
 
     let expr = parse!(

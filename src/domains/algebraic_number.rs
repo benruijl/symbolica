@@ -10,7 +10,7 @@ use crate::{
     combinatorics::CombinationIterator,
     domains::{RingOps, Set, rational::Q},
     poly::{
-        PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
+        PositiveExponent, PolyVariable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial, univariate::UnivariatePolynomial,
     },
     symbol,
@@ -332,7 +332,7 @@ where
 {
     /// Construct the Galois field GF(prime^exp).
     /// The irreducible polynomial is determined automatically.
-    pub fn galois_field(prime: FiniteField<UField>, exp: usize, var: Variable) -> Self {
+    pub fn galois_field(prime: FiniteField<UField>, exp: usize, var: PolyVariable) -> Self {
         assert!(exp > 0);
 
         if exp == 1 {
@@ -979,7 +979,7 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
     pub fn adjoin(
         &self,
         b: &MultivariatePolynomial<AlgebraicExtension<R>>,
-        new_symbol: Option<Variable>,
+        new_symbol: Option<PolyVariable>,
     ) -> (
         AlgebraicExtension<R>,
         <AlgebraicExtension<R> as Set>::Element,

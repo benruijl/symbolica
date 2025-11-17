@@ -32,7 +32,7 @@ use crate::{
         integer::Z,
         rational::{Q, Rational},
     },
-    poly::Variable,
+    poly::PolyVariable,
     printer::{PrintOptions, PrintState},
 };
 
@@ -218,12 +218,12 @@ impl<F: Ring> InternalOrdering for Vector<F> {
 
 impl<F: Derivable> Vector<F> {
     /// Compute the derivative in the variable `x`.
-    pub fn derivative(&self, x: &Variable) -> Vector<F> {
+    pub fn derivative(&self, x: &PolyVariable) -> Vector<F> {
         self.map(|e| self.field.derivative(e, x), self.field.clone())
     }
 
     /// Compute the gradient in the variables `x`.
-    pub fn grad(&self, x: &[Variable]) -> Vector<F> {
+    pub fn grad(&self, x: &[PolyVariable]) -> Vector<F> {
         if self.len() != x.len() {
             panic!(
                 "The number of variables ({}) does not match the number of entries ({})",
@@ -243,7 +243,7 @@ impl<F: Derivable> Vector<F> {
     }
 
     /// Compute the curl of the vector in the variables `x`.
-    pub fn curl(&self, x: &[Variable]) -> Vector<F> {
+    pub fn curl(&self, x: &[PolyVariable]) -> Vector<F> {
         if self.len() != 3 || x.len() != 3 {
             panic!("Vector and variable list must be three-dimensional");
         }
@@ -268,7 +268,7 @@ impl<F: Derivable> Vector<F> {
     }
 
     /// Compute the Jacobian matrix of the vector of functions in the variables `x`.
-    pub fn jacobian(&self, x: &[Variable]) -> Matrix<F> {
+    pub fn jacobian(&self, x: &[PolyVariable]) -> Matrix<F> {
         let mut jacobian = Vec::with_capacity(self.data.len());
 
         for e in &self.data {
@@ -288,7 +288,7 @@ impl<F: Derivable> Vector<F> {
 
 impl<F: Derivable> Matrix<F> {
     /// Compute the derivative in the variable `x`.
-    pub fn derivative(&self, x: &Variable) -> Matrix<F> {
+    pub fn derivative(&self, x: &PolyVariable) -> Matrix<F> {
         self.map(|e| self.field.derivative(e, x), self.field.clone())
     }
 }

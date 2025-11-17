@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomCore, AtomView, Fun, Symbol, representation::FunView},
+    atom::{Atom, AtomCore, AtomView, Fun, Indeterminate, Symbol, representation::FunView},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
@@ -189,9 +189,9 @@ pub enum Transformer {
     /// Distribute numbers.
     ExpandNum,
     /// Derive the rhs w.r.t a variable.
-    Derivative(Symbol),
+    Derivative(Indeterminate),
     /// Perform a series expansion.
-    Series(Symbol, Atom, Rational, bool),
+    Series(Indeterminate, Atom, Rational, bool),
     ///Collect all terms in powers of a variable.
     Collect(Vec<Atom>, Vec<Transformer>, Vec<Transformer>),
     ///Collect all terms in powers of a variable name.
@@ -627,7 +627,7 @@ impl Transformer {
                     cur_input.expand_num_into(out);
                 }
                 Transformer::Derivative(x) => {
-                    cur_input.derivative_with_ws_into(*x, workspace, out);
+                    cur_input.derivative_with_ws_into(x, workspace, out);
                 }
                 Transformer::Collect(x, key_map, coeff_map) => cur_input
                     .collect_multiple_impl::<i16, _>(
@@ -697,7 +697,7 @@ impl Transformer {
                 }
                 Transformer::Series(x, expansion_point, depth, depth_is_absolute) => {
                     if let Ok(s) = cur_input.series(
-                        *x,
+                        x,
                         expansion_point.as_view(),
                         depth.clone(),
                         *depth_is_absolute,
@@ -1040,7 +1040,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Expand(Some(Atom::var(symbol!("v1"))), false),
-                    Transformer::Derivative(symbol!("v1")),
+                    Transformer::Derivative(symbol!("v1").into()),
                 ],
                 ws,
                 &TransformerState::default(),
@@ -1083,7 +1083,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::Series(symbol!("v1"), Atom::num(1), 3.into(), true),
+                    Transformer::Series(symbol!("v1").into(), Atom::num(1), 3.into(), true),
                 ],
                 ws,
                 &TransformerState::default(),

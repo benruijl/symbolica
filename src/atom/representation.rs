@@ -148,9 +148,34 @@ impl Symbol {
 
 /// An inline variable.
 #[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
 pub struct InlineVar {
     data: [u8; 16],
     size: u8,
+}
+
+impl Hash for InlineVar {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_view().hash(state);
+    }
+}
+
+impl PartialOrd for InlineVar {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.as_view().cmp(&other.as_view()))
+    }
+}
+
+impl Ord for InlineVar {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_view().cmp(&other.as_view())
+    }
 }
 
 impl std::fmt::Display for InlineVar {
@@ -202,9 +227,34 @@ impl From<Symbol> for InlineVar {
 
 /// An inline rational number that has 64-bit components.
 #[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
 pub struct InlineNum {
     data: [u8; 24],
     size: u8,
+}
+
+impl Hash for InlineNum {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_view().hash(state);
+    }
+}
+
+impl PartialOrd for InlineNum {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.as_view().cmp(&other.as_view()))
+    }
+}
+
+impl Ord for InlineNum {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_view().cmp(&other.as_view())
+    }
 }
 
 impl std::fmt::Display for InlineNum {

@@ -19,7 +19,7 @@ use crate::{
         integer::{Integer, IntegerRing, Z, gcd_unsigned},
         rational::{Q, RationalField},
     },
-    poly::Variable,
+    poly::PolyVariable,
 };
 
 use super::{LexOrder, PositiveExponent, gcd::PolynomialGCD, polynomial::MultivariatePolynomial};
@@ -251,7 +251,7 @@ impl<R: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<R, E, LexOr
                     if i < self.nvars() {
                         vm[i].clone()
                     } else {
-                        Variable::Temporary(i)
+                        PolyVariable::Temporary(i)
                     }
                 })
                 .collect(),

@@ -32,7 +32,7 @@ use crate::{
     printer::{PrintOptions, PrintState},
 };
 
-use super::Variable;
+use super::PolyVariable;
 
 /// A Puiseux series. The truncation order is
 /// relative to the lowest degree: i.e., a series in `x` with depth `d` is viewed as
@@ -56,7 +56,7 @@ use super::Variable;
 #[derive(Clone)]
 pub struct Series<F: Ring> {
     coefficients: Vec<F::Element>,
-    variable: Arc<Variable>,
+    variable: Arc<PolyVariable>,
     expansion_point: F::Element,
     field: F,
     shift: isize, // a shift in units of the ramification that indicates the starting power of the series
@@ -98,7 +98,7 @@ impl<F: Ring> Series<F> {
     pub fn new(
         field: &F,
         cap: Option<usize>,
-        variable: Arc<Variable>,
+        variable: Arc<PolyVariable>,
         expansion_point: F::Element,
         order: Rational,
     ) -> Self {
@@ -396,12 +396,12 @@ impl<F: Ring> Series<F> {
     }
 
     /// Get a copy of the variable/
-    pub fn get_variable(&self) -> Arc<Variable> {
+    pub fn get_variable(&self) -> Arc<PolyVariable> {
         self.variable.clone()
     }
 
     /// Get a reference to the variables
-    pub fn get_vars_ref(&self) -> &Variable {
+    pub fn get_vars_ref(&self) -> &PolyVariable {
         self.variable.as_ref()
     }
 
@@ -941,7 +941,7 @@ impl<F: EuclideanDomain> Series<F> {
 impl Series<AtomField> {
     /// Extract powers of `x` from an expression that comes from simplifying an exponential with logs
     /// i.e.: `exp(c + 3 log(x^5)) = exp(c)*x^15`.
-    fn extract_exp_log(&self, e: AtomView, s: AtomView) -> Result<Self, &'static str> {
+    fn extract_exp_log(&self, e: AtomView, s: AtomView) -> Result<Self, String> {
         if !e.contains(s) {
             return Ok(self.constant(e.to_owned()));
         }
@@ -956,16 +956,16 @@ impl Series<AtomField> {
                             if ni == 0 {
                                 Ok(self.monomial(self.field.one(), (n, d).into()))
                             } else {
-                                Err("Cannot series expand with complex exponent")
+                                Err("Cannot series expand with complex exponent".to_owned())
                             }
                         } else {
-                            Err("Cannot series expand with large exponents yet")
+                            Err("Cannot series expand with large exponents yet".to_owned())
                         }
                     } else {
-                        Err("Power of variable must be rational")
+                        Err("Power of variable must be rational".to_owned())
                     }
                 } else {
-                    Err("Unexpected term in exp-log simplification")
+                    Err("Unexpected term in exp-log simplification".to_owned())
                 }
             }
             AtomView::Var(_) => Ok(self.monomial(self.field.one(), (1, 1).into())),
@@ -977,13 +977,13 @@ impl Series<AtomField> {
 
                 Ok(shift_series)
             }
-            _ => Err("Unexpected term in exp-log simplification"),
+            _ => Err("Unexpected term in exp-log simplification".to_owned()),
         }
     }
 
-    pub fn exp(&self) -> Result<Self, &'static str> {
+    pub fn exp(&self) -> Result<Self, String> {
         if self.shift < 0 {
-            return Err("Cannot compute the exponential of a series with poles");
+            return Err("Cannot compute the exponential of a series with poles".to_owned());
         }
 
         if self.order == 0 {
@@ -1027,9 +1027,9 @@ impl Series<AtomField> {
         Ok(r * &shift_series)
     }
 
-    pub fn log(&self) -> Result<Self, &'static str> {
+    pub fn log(&self) -> Result<Self, String> {
         if self.order == 0 {
-            return Err("Log argument needs to have a coefficient");
+            return Err("Log argument needs to have a coefficient".to_owned());
         }
 
         // construct the log argument, which may contain x
@@ -1059,9 +1059,9 @@ impl Series<AtomField> {
         Ok(e)
     }
 
-    pub fn sin(&self) -> Result<Self, &'static str> {
+    pub fn sin(&self) -> Result<Self, String> {
         if self.shift < 0 {
-            return Err("Cannot compute the sine of a series with poles");
+            return Err("Cannot compute the sine of a series with poles".to_owned());
         }
 
         if self.order == 0 {
@@ -1082,7 +1082,8 @@ impl Series<AtomField> {
 
         if c.contains(self.variable.to_atom()) {
             return Err(
-                "Cannot compute the sine of a series with a constant term that depends on x",
+                "Cannot compute the sine of a series with a constant term that depends on x"
+                    .to_owned(),
             );
         }
 
@@ -1114,9 +1115,9 @@ impl Series<AtomField> {
         Ok(e)
     }
 
-    pub fn cos(&self) -> Result<Self, &'static str> {
+    pub fn cos(&self) -> Result<Self, String> {
         if self.shift < 0 {
-            return Err("Cannot compute the sine of a series with poles");
+            return Err("Cannot compute the sine of a series with poles".to_owned());
         }
 
         if self.order == 0 {
@@ -1138,7 +1139,8 @@ impl Series<AtomField> {
 
         if c.contains(self.variable.to_atom()) {
             return Err(
-                "Cannot compute the cosine of a series with a constant term that depends on x",
+                "Cannot compute the cosine of a series with a constant term that depends on x"
+                    .to_owned(),
             );
         }
 
@@ -1171,12 +1173,12 @@ impl Series<AtomField> {
     }
 
     /// Take the series to the power of another series.
-    pub fn pow(&self, pow: &Self) -> Result<Self, &'static str> {
+    pub fn pow(&self, pow: &Self) -> Result<Self, String> {
         (self.log()? * pow).exp()
     }
 
     /// Take the series to the power of a rational number.
-    pub fn rpow(&self, pow: Rational) -> Result<Self, &'static str> {
+    pub fn rpow(&self, pow: Rational) -> Result<Self, String> {
         if pow.is_zero() {
             Err(
                 "Cannot raise series to the power of zero, as this generates infinite precision 1",

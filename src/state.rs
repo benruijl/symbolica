@@ -21,7 +21,7 @@ use smartstring::alias::String;
 
 use crate::atom::{DerivativeFunction, NamespacedSymbol, NormalizationFunction, SymbolAttribute};
 use crate::domains::finite_field::Zp64;
-use crate::poly::Variable;
+use crate::poly::PolyVariable;
 use crate::printer::PrintFunction;
 use crate::wrap_symbol;
 use crate::{
@@ -46,7 +46,7 @@ pub(crate) struct VariableListIndex(pub(crate) usize);
 pub struct StateMap {
     pub(crate) symbols: HashMap<u32, Symbol>,
     pub(crate) finite_fields: HashMap<FiniteFieldIndex, FiniteFieldIndex>,
-    pub(crate) variables_lists: HashMap<u64, Arc<Vec<Variable>>>,
+    pub(crate) variables_lists: HashMap<u64, Arc<Vec<PolyVariable>>>,
 }
 
 ///Trait for anything that contains a StateMap
@@ -80,7 +80,7 @@ pub(crate) struct SymbolData {
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
 static ID_TO_STR: AppendOnlyVec<(Symbol, SymbolData)> = AppendOnlyVec::new();
 static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::new();
-static VARIABLE_LISTS: AppendOnlyVec<Arc<Vec<Variable>>> = AppendOnlyVec::new();
+static VARIABLE_LISTS: AppendOnlyVec<Arc<Vec<PolyVariable>>> = AppendOnlyVec::new();
 static SYMBOL_OFFSET: AtomicUsize = AtomicUsize::new(0);
 
 thread_local!(
@@ -640,17 +640,17 @@ impl State {
         FiniteFieldIndex(index)
     }
 
-    pub(crate) fn get_variable_list(fi: VariableListIndex) -> Arc<Vec<Variable>> {
+    pub(crate) fn get_variable_list(fi: VariableListIndex) -> Arc<Vec<PolyVariable>> {
         VARIABLE_LISTS[fi.0].clone()
     }
 
-    pub(crate) fn get_or_insert_variable_list(f: Arc<Vec<Variable>>) -> VariableListIndex {
+    pub(crate) fn get_or_insert_variable_list(f: Arc<Vec<PolyVariable>>) -> VariableListIndex {
         STATE.write().unwrap().get_or_insert_variable_list_impl(f)
     }
 
     pub(crate) fn get_or_insert_variable_list_impl(
         &mut self,
-        f: Arc<Vec<Variable>>,
+        f: Arc<Vec<PolyVariable>>,
     ) -> VariableListIndex {
         for (i, f2) in VARIABLE_LISTS.iter().enumerate() {
             if f2 == &f {
@@ -705,20 +705,20 @@ impl State {
             dest.write_u64::<LittleEndian>(x.len() as u64)?;
             for y in x.iter() {
                 match y {
-                    Variable::Symbol(s) => {
+                    PolyVariable::Symbol(s) => {
                         dest.write_u8(0)?;
                         dest.write_u32::<LittleEndian>(s.get_id())?;
                     }
-                    Variable::Temporary(u) => {
+                    PolyVariable::Temporary(u) => {
                         dest.write_u8(1)?;
                         dest.write_u64::<LittleEndian>(*u as u64)?;
                     }
-                    Variable::Function(v, t) => {
+                    PolyVariable::Function(v, t) => {
                         dest.write_u8(2)?;
                         dest.write_u32::<LittleEndian>(v.get_id())?;
                         t.as_view().write(dest.by_ref())?;
                     }
-                    Variable::Power(t) => {
+                    PolyVariable::Power(t) => {
                         dest.write_u8(3)?;
                         t.as_view().write(dest.by_ref())?;
                     }
@@ -892,14 +892,14 @@ impl State {
                     0 => {
                         let id = source.read_u32::<LittleEndian>()?;
                         if let Some(new_id) = state_map.symbols.get(&id) {
-                            variables.push(Variable::Symbol(*new_id));
+                            variables.push(PolyVariable::Symbol(*new_id));
                         } else {
-                            variables.push(Variable::Symbol(ID_TO_STR[id as usize].0))
+                            variables.push(PolyVariable::Symbol(ID_TO_STR[id as usize].0))
                         }
                     }
                     1 => {
                         let u = source.read_u64::<LittleEndian>()?;
-                        variables.push(Variable::Temporary(u as usize))
+                        variables.push(PolyVariable::Temporary(u as usize))
                     }
                     2 => {
                         let id = source.read_u32::<LittleEndian>()?;
@@ -913,14 +913,14 @@ impl State {
                         f.read(&mut *source)?;
 
                         let f_r = f.as_view().rename(&state_map);
-                        variables.push(Variable::Function(symb, Arc::new(f_r)));
+                        variables.push(PolyVariable::Function(symb, f_r));
                     }
                     3 => {
                         let mut f = Atom::new();
                         f.read(&mut *source)?;
 
                         let f_r = f.as_view().rename(&state_map);
-                        variables.push(Variable::Power(Arc::new(f_r)));
+                        variables.push(PolyVariable::Power(f_r));
                     }
                     _ => {
                         return Err(std::io::Error::new(

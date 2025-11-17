@@ -5,7 +5,7 @@
 use std::{ops::Neg, sync::Arc};
 
 use crate::{
-    atom::{Atom, AtomCore, AtomView, Symbol},
+    atom::{Atom, AtomCore, AtomView, Indeterminate},
     domains::{
         InternalOrdering, SelfRing,
         float::{FloatField, Real, SingleFloat},
@@ -14,7 +14,7 @@ use crate::{
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     evaluate::{FunctionMap, OptimizationSettings},
-    poly::{PositiveExponent, Variable},
+    poly::{PositiveExponent, PolyVariable},
     tensors::matrix::{Matrix, MatrixError},
 };
 
@@ -54,7 +54,7 @@ impl AtomView<'_> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
     pub(crate) fn nsolve<N: SingleFloat + Real + PartialOrd>(
         &self,
-        x: Symbol,
+        x: &Indeterminate,
         init: N,
         prec: N,
         max_iterations: usize,
@@ -63,7 +63,7 @@ impl AtomView<'_> {
             return Err("Complex coefficients are not supported".to_owned());
         }
 
-        let v = Atom::var(x);
+        let v = x.clone().into();
         let f = self
             .to_evaluation_tree(&FunctionMap::new(), std::slice::from_ref(&v))
             .unwrap()
@@ -116,7 +116,7 @@ impl AtomView<'_> {
         T: AtomCore,
     >(
         system: &[T],
-        vars: &[Symbol],
+        vars: &[Indeterminate],
         init: &[N],
         prec: N,
         max_iterations: usize,
@@ -129,7 +129,7 @@ impl AtomView<'_> {
         N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
     >(
         system: &[AtomView],
-        vars: &[Symbol],
+        vars: &[Indeterminate],
         init: &[N],
         prec: N,
         max_iterations: usize,
@@ -152,14 +152,14 @@ impl AtomView<'_> {
 
         if system.len() == 1 {
             return Ok(vec![system[0].nsolve(
-                vars[0],
+                &vars[0],
                 init[0].clone(),
                 prec,
                 max_iterations,
             )?]);
         }
 
-        let avars = vars.iter().map(|v| Atom::var(*v)).collect::<Vec<_>>();
+        let avars = vars.iter().map(|v| v.clone().into()).collect::<Vec<_>>();
 
         let mut fs = system
             .iter()
@@ -182,7 +182,7 @@ impl AtomView<'_> {
         for a in system {
             let mut row = Vec::with_capacity(vars.len());
             for v in vars {
-                let deriv = a.derivative(*v);
+                let deriv = a.derivative(v);
 
                 let a = deriv
                     .to_evaluation_tree(&FunctionMap::new(), &avars)
@@ -279,7 +279,7 @@ impl AtomView<'_> {
 
     fn system_to_matrix_impl<E: PositiveExponent>(
         system: &[AtomView],
-        vars: &[Variable],
+        vars: &[PolyVariable],
     ) -> Result<
         (
             Matrix<RationalPolynomialField<Z, E>>,
@@ -344,7 +344,7 @@ impl AtomView<'_> {
 
     fn solve_linear_system_impl<E: PositiveExponent>(
         system: &[AtomView],
-        vars: &[Variable],
+        vars: &[PolyVariable],
     ) -> Result<Vec<Atom>, SolveError> {
         let (m, b) = Self::system_to_matrix_impl::<E>(system, vars)
             .map_err(|e| SolveError::Other(e.to_string()))?;
@@ -413,7 +413,7 @@ mod test {
             rational_polynomial::{RationalPolynomial, RationalPolynomialField},
         },
         parse,
-        poly::Variable,
+        poly::PolyVariable,
         solve::SolveError,
         symbol,
         tensors::matrix::Matrix,
@@ -482,7 +482,7 @@ mod test {
         ];
         let rhs = ["1", "2", "-1"];
 
-        let var_map = Arc::new(vec![Variable::Symbol(symbol!("v4"))]);
+        let var_map = Arc::new(vec![PolyVariable::Symbol(symbol!("v4"))]);
 
         let system_rat: Vec<RationalPolynomial<_, u8>> = system
             .iter()
@@ -527,7 +527,7 @@ mod test {
         let a = parse!("x^2 - 2");
         let a = a.as_view();
 
-        let root = a.nsolve(x, 1.0, 1e-10, 1000).unwrap();
+        let root = a.nsolve(&x.into(), 1.0, 1e-10, 1000).unwrap();
         assert!((root - 2f64.sqrt()).abs() < 1e-10);
     }
 
@@ -538,7 +538,7 @@ mod test {
 
         let r = AtomView::nsolve_system(
             &[a.as_view(), b.as_view()],
-            &[symbol!("x"), symbol!("y")],
+            &[symbol!("x").into(), symbol!("y").into()],
             &[F64::from(1.), F64::from(1.)],
             F64::from(1e-10),
             100,

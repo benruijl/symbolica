@@ -10,7 +10,7 @@ use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp,
 use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::Q;
 use crate::parser::{ParseSettings, Token};
-use crate::poly::Variable;
+use crate::poly::PolyVariable;
 use crate::{LicenseManager, symbol};
 use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
@@ -19,7 +19,7 @@ use crate::{
 
 struct LocalState {
     buffer: String,
-    var_map: Arc<Vec<Variable>>,
+    var_map: Arc<Vec<PolyVariable>>,
     var_name_map: Vec<SmartString<LazyCompact>>,
     input_has_rational_numbers: bool,
     exp_fits_in_u8: bool,
@@ -134,7 +134,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let mut var_map = vec![];
 
     for var in cstr.split(',') {
-        var_map.push(Variable::Symbol(symbol!(var)));
+        var_map.push(PolyVariable::Symbol(symbol!(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 

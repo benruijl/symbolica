@@ -1,7 +1,7 @@
 use ahash::HashMap;
 
 use crate::{
-    atom::{Add, Atom, AtomCore, AtomOrView, AtomView, Symbol},
+    atom::{Add, Atom, AtomCore, AtomOrView, AtomView, Indeterminate, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{float::NumericalFloatLike, integer::Z, rational::Q},
     poly::{Exponent, factor::Factorize, polynomial::MultivariatePolynomial},
@@ -216,7 +216,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Write the expression as a sum of terms with minimal denominators.
-    pub fn apart(&self, x: Symbol) -> Atom {
+    pub fn apart(&self, x: &Indeterminate) -> Atom {
         let mut out = Atom::new();
 
         Workspace::get_local().with(|ws| {
@@ -227,9 +227,9 @@ impl<'a> AtomView<'a> {
     }
 
     /// Write the expression as a sum of terms with minimal denominators.
-    pub fn apart_with_ws_into(&self, x: Symbol, ws: &Workspace, out: &mut Atom) {
+    pub fn apart_with_ws_into(&self, x: &Indeterminate, ws: &Workspace, out: &mut Atom) {
         let poly = self.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
-        if let Some(v) = poly.get_variables().iter().position(|v| v == &x.into()) {
+        if let Some(v) = poly.get_variables().iter().position(|v| v == x) {
             let mut a = ws.new_atom();
             let add = a.to_add();
 

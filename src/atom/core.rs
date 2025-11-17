@@ -6,7 +6,7 @@ use ahash::{HashMap, HashSet};
 use rayon::ThreadPool;
 
 use crate::{
-    atom::{FunctionBuilder, KeyLookup},
+    atom::{FunctionBuilder, Indeterminate, KeyLookup},
     coefficient::{Coefficient, CoefficientView, ConvertToRing},
     domains::{
         EuclideanDomain, InternalOrdering,
@@ -27,7 +27,7 @@ use crate::{
         PatternAtomTreeIterator, PatternRestriction, ReplaceBuilder,
     },
     poly::{
-        Exponent, PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
+        Exponent, PolyVariable, PositiveExponent, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial, series::Series,
     },
     printer::{AtomPrinter, CanonicalOrderingSettings, PrintOptions, PrintState},
@@ -239,8 +239,8 @@ pub trait AtomCore: private::Sealed {
     /// let r = parse!("1 / y + 1 / x");
     /// assert_eq!(apart, r);
     /// ```
-    fn apart(&self, x: Symbol) -> Atom {
-        self.as_atom_view().apart(x)
+    fn apart<'a, V: Into<BorrowedOrOwned<'a, Indeterminate>>>(&self, x: V) -> Atom {
+        self.as_atom_view().apart(x.into().borrow())
     }
 
     /// Write the expression as a sum of terms with minimal denominators in all variables.
@@ -434,8 +434,8 @@ pub trait AtomCore: private::Sealed {
     /// let r = parse!("2 * x + 2");
     /// assert_eq!(derivative, r);
     /// ```
-    fn derivative(&self, x: Symbol) -> Atom {
-        self.as_atom_view().derivative(x)
+    fn derivative<'a, V: Into<BorrowedOrOwned<'a, Indeterminate>>>(&self, x: V) -> Atom {
+        self.as_atom_view().derivative(x.into().borrow())
     }
 
     /// Take a derivative of the expression with respect to `x` and
@@ -452,8 +452,12 @@ pub trait AtomCore: private::Sealed {
     /// assert!(non_zero);
     /// assert_eq!(out, parse!("2 * x + 2"));
     /// ```
-    fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
-        self.as_atom_view().derivative_into(x, out)
+    fn derivative_into<'a, V: Into<BorrowedOrOwned<'a, Indeterminate>>>(
+        &self,
+        x: V,
+        out: &mut Atom,
+    ) -> bool {
+        self.as_atom_view().derivative_into(x.into().borrow(), out)
     }
 
     /// Series expand in `x` around `expansion_point` to depth `depth`.
@@ -471,15 +475,19 @@ pub trait AtomCore: private::Sealed {
     ///     parse!("1 + x + x^2 / 2 + x^3 / 6 + x^4 / 24")
     /// );
     /// ```
-    fn series<T: AtomCore>(
+    fn series<'a, T: AtomCore, V: Into<BorrowedOrOwned<'a, Indeterminate>>>(
         &self,
-        x: Symbol,
+        x: V,
         expansion_point: T,
         depth: Rational,
         depth_is_absolute: bool,
-    ) -> Result<Series<AtomField>, &'static str> {
-        self.as_atom_view()
-            .series(x, expansion_point.as_atom_view(), depth, depth_is_absolute)
+    ) -> Result<Series<AtomField>, String> {
+        self.as_atom_view().series(
+            x.into().borrow(),
+            expansion_point.as_atom_view(),
+            depth,
+            depth_is_absolute,
+        )
     }
 
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
@@ -492,14 +500,19 @@ pub trait AtomCore: private::Sealed {
     /// let root = expr.nsolve(symbol!("x"), 1.0, 1e-7, 100).unwrap();
     /// assert!((root - 1.414213562373095).abs() < 1e-7);
     /// ```
-    fn nsolve<N: SingleFloat + Real + PartialOrd>(
+    fn nsolve<
+        'a,
+        N: SingleFloat + Real + PartialOrd,
+        V: Into<BorrowedOrOwned<'a, Indeterminate>>,
+    >(
         &self,
-        x: Symbol,
+        x: V,
         init: N,
         prec: N,
         max_iterations: usize,
     ) -> Result<N, String> {
-        self.as_atom_view().nsolve(x, init, prec, max_iterations)
+        self.as_atom_view()
+            .nsolve(x.into().borrow(), init, prec, max_iterations)
     }
 
     /// Solve a non-linear system numerically over the reals using Newton's method.
@@ -512,7 +525,7 @@ pub trait AtomCore: private::Sealed {
     /// let expr1 = parse!("x^2 + y^2 - 1");
     /// let expr2 = parse!("x^2 - y");
     /// let system = &[expr1, expr2];
-    /// let vars = &[symbol!("x"), symbol!("y")];
+    /// let vars = &[symbol!("x").into(), symbol!("y").into()];
     /// let init = &[F64::from(0.5), F64::from(0.5)];
     /// let roots = Atom::nsolve_system(system, vars, init, 1e-7.into(), 100).unwrap();
     /// assert!((roots[0].into_inner() - 0.786151377757424).abs() < 1e-7);
@@ -523,7 +536,7 @@ pub trait AtomCore: private::Sealed {
         T: AtomCore,
     >(
         system: &[T],
-        vars: &[Symbol],
+        vars: &[Indeterminate],
         init: &[N],
         prec: N,
         max_iterations: usize,
@@ -805,7 +818,7 @@ pub trait AtomCore: private::Sealed {
     /// let r = result.set_coefficient_ring(&Arc::new(vec![]));
     /// assert_eq!(r, parse!("y*(x+1)^-1*(x+2*x^2+x^3+1)"));
     /// ```
-    fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+    fn set_coefficient_ring(&self, vars: &Arc<Vec<PolyVariable>>) -> Atom {
         self.as_atom_view().set_coefficient_ring(vars)
     }
 
@@ -941,7 +954,7 @@ pub trait AtomCore: private::Sealed {
     fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        var_map: impl Into<Option<Arc<Vec<Variable>>>>,
+        var_map: impl Into<Option<Arc<Vec<PolyVariable>>>>,
     ) -> MultivariatePolynomial<R, E> {
         self.as_atom_view().to_polynomial(field, var_map.into())
     }
@@ -967,7 +980,7 @@ pub trait AtomCore: private::Sealed {
     /// ```
     fn to_polynomial_in_vars<E: Exponent>(
         &self,
-        var_map: &Arc<Vec<Variable>>,
+        var_map: &Arc<Vec<PolyVariable>>,
     ) -> MultivariatePolynomial<AtomField, E> {
         self.as_atom_view().to_polynomial_in_vars(var_map)
     }
@@ -995,7 +1008,7 @@ pub trait AtomCore: private::Sealed {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: impl Into<Option<Arc<Vec<Variable>>>>,
+        var_map: impl Into<Option<Arc<Vec<PolyVariable>>>>,
     ) -> RationalPolynomial<RO, E>
     where
         RationalPolynomial<RO, E>:
@@ -1031,7 +1044,7 @@ pub trait AtomCore: private::Sealed {
         &self,
         field: &R,
         out_field: &RO,
-        var_map: impl Into<Option<Arc<Vec<Variable>>>>,
+        var_map: impl Into<Option<Arc<Vec<PolyVariable>>>>,
     ) -> FactorizedRationalPolynomial<RO, E>
     where
         FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
@@ -1700,6 +1713,12 @@ impl AtomCore for InlineNum {
     }
 }
 
+impl AtomCore for Indeterminate {
+    fn as_atom_view(&self) -> AtomView<'_> {
+        self.as_view()
+    }
+}
+
 impl<'a> AtomCore for AtomView<'a> {
     fn as_atom_view(&self) -> AtomView<'a> {
         *self
@@ -1719,12 +1738,13 @@ impl AtomCore for AtomOrView<'_> {
 }
 
 mod private {
-    use crate::atom::{AtomView, InlineNum, InlineVar};
+    use crate::atom::{AtomView, Indeterminate, InlineNum, InlineVar};
 
     pub trait Sealed {}
 
     impl Sealed for InlineVar {}
     impl Sealed for InlineNum {}
+    impl Sealed for Indeterminate {}
     impl<'a> Sealed for AtomView<'a> {}
     impl<T: AsRef<super::Atom>> Sealed for T {}
     impl Sealed for super::AtomOrView<'_> {}

@@ -53,7 +53,7 @@ use crate::{
     printer::{AtomPrinter, PrintFunction, PrintOptions},
     state::{RecycledAtom, State, SymbolData, Workspace},
     transformer::StatsOptions,
-    utils::Settable,
+    utils::{BorrowedOrOwned, Settable},
 };
 
 use std::{borrow::Cow, cmp::Ordering, hash::Hash, ops::DerefMut};
@@ -363,6 +363,15 @@ impl std::fmt::Debug for Symbol {
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format(&PrintOptions::from_fmt(f), f)
+    }
+}
+
+impl<T: AtomCore> PartialEq<T> for Symbol {
+    fn eq(&self, other: &T) -> bool {
+        match other.as_atom_view() {
+            AtomView::Var(v) => *self == v.get_symbol(),
+            _ => false,
+        }
     }
 }
 
@@ -1076,6 +1085,114 @@ impl Symbol {
     /// Get data related to the symbol.
     pub(crate) fn get_data(self) -> &'static SymbolData {
         State::get_symbol_data(self)
+    }
+}
+
+/// A symbol or a function.
+///
+/// ```rust
+/// use symbolica::{atom::Indeterminate, parse, symbol};
+/// let x: Indeterminate = symbol!("x").into();
+/// let f: Indeterminate = parse!("f(x)").try_into().unwrap();
+/// ```
+#[derive(Clone, Hash, Eq, PartialOrd, Ord, Debug)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode_trait_derive::Encode),
+    derive(bincode_trait_derive::Decode),
+    derive(bincode_trait_derive::BorrowDecodeFromDecode),
+    trait_decode(trait = crate::state::HasStateMap)
+)]
+pub enum Indeterminate {
+    /// A symbol, for example x, y, z, etc.
+    Symbol(Symbol, InlineVar),
+    /// A function, for example f(x), sin(x), etc.
+    Function(Symbol, Atom),
+}
+
+impl std::fmt::Display for Indeterminate {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Indeterminate::Symbol(v, _) => f.write_str(v.get_stripped_name()),
+            Indeterminate::Function(_, a) => std::fmt::Display::fmt(a, f),
+        }
+    }
+}
+
+impl From<Symbol> for Indeterminate {
+    fn from(i: Symbol) -> Indeterminate {
+        Indeterminate::Symbol(i, i.into())
+    }
+}
+
+impl PartialEq<Symbol> for Indeterminate {
+    fn eq(&self, other: &Symbol) -> bool {
+        match self {
+            Indeterminate::Symbol(s, _) => s == other,
+            _ => false,
+        }
+    }
+}
+
+impl From<Symbol> for BorrowedOrOwned<'_, Indeterminate> {
+    fn from(atom: Symbol) -> Self {
+        BorrowedOrOwned::Owned(Indeterminate::from(atom))
+    }
+}
+
+impl<T: AtomCore> PartialEq<T> for Indeterminate {
+    fn eq(&self, other: &T) -> bool {
+        self.as_view() == other.as_atom_view()
+    }
+}
+
+impl TryFrom<Atom> for Indeterminate {
+    type Error = String;
+
+    fn try_from(a: Atom) -> Result<Indeterminate, Self::Error> {
+        match a {
+            Atom::Var(v) => {
+                let s = v.get_symbol();
+                Ok(Indeterminate::Symbol(s, InlineVar::new(s)))
+            }
+            Atom::Fun(f) => Ok(Indeterminate::Function(f.get_symbol(), Atom::Fun(f))),
+            _ => Err(format!(
+                "Cannot convert {a} to a variable as it can be decomposed into a polynomial part"
+            )),
+        }
+    }
+}
+
+impl TryFrom<Atom> for BorrowedOrOwned<'_, Indeterminate> {
+    type Error = String;
+    fn try_from(atom: Atom) -> Result<Self, Self::Error> {
+        Ok(BorrowedOrOwned::Owned(Indeterminate::try_from(atom)?))
+    }
+}
+
+impl Into<Atom> for Indeterminate {
+    fn into(self) -> Atom {
+        match self {
+            Indeterminate::Symbol(s, _) => Atom::var(s),
+            Indeterminate::Function(_, a) => a,
+        }
+    }
+}
+
+impl Indeterminate {
+    /// Get the head symbol of the indeterminate.
+    pub fn get_symbol(&self) -> Symbol {
+        match self {
+            Indeterminate::Symbol(s, _) => *s,
+            Indeterminate::Function(s, _) => *s,
+        }
+    }
+
+    pub fn as_view(&self) -> AtomView<'_> {
+        match self {
+            Indeterminate::Symbol(_, v) => v.as_view(),
+            Indeterminate::Function(_, a) => a.as_view(),
+        }
     }
 }
 

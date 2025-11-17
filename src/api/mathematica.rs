@@ -9,8 +9,8 @@ use crate::domains::SelfRing;
 use crate::domains::finite_field::{Zp, Zp64};
 use crate::domains::integer::Z;
 use crate::domains::rational::Q;
-use crate::parser::Token;
-use crate::poly::Variable;
+use crate::parser::{ParseSettings, Token};
+use crate::poly::PolyVariable;
 use crate::{
     domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
     symbol,
@@ -29,7 +29,7 @@ static STATE: Lazy<RwLock<LocalState>> = Lazy::new(|| {
 
 struct LocalState {
     buffer: String,
-    var_map: Arc<Vec<Variable>>,
+    var_map: Arc<Vec<PolyVariable>>,
     var_name_map: Vec<SmartString<LazyCompact>>,
     input_has_rational_numbers: bool,
     exp_fits_in_u8: bool,
@@ -42,7 +42,7 @@ fn set_options(input_has_rational_numbers: bool, exp_fits_in_u8: bool) {
     symbolica.exp_fits_in_u8 = exp_fits_in_u8;
 }
 
-#[wll::export(name = "SymbolicaSetVariables")]
+#[wll::export(name = "SymbolicaSetPolyVariables")]
 fn set_vars(vars: String) {
     let mut symbolica = STATE.write().unwrap();
 
@@ -62,7 +62,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
     let mut symbolica = STATE.write().unwrap();
     let symbolica: &mut LocalState = symbolica.borrow_mut();
 
-    let token = Token::parse(&input, true).unwrap();
+    let token = Token::parse(&input, ParseSettings::polynomial()).unwrap();
 
     macro_rules! to_rational {
         ($in_field: expr, $exp_size: ty) => {

@@ -23,7 +23,7 @@ use dyn_clone::DynClone;
 
 use crate::{
     atom::{
-        Atom, AtomCore, AtomType, AtomView, Num, SliceType, Symbol,
+        Atom, AtomCore, AtomType, AtomView, Indeterminate, Num, SliceType, Symbol,
         representation::{InlineVar, ListSlice},
     },
     coefficient::{Coefficient, CoefficientView},
@@ -75,6 +75,15 @@ impl From<Atom> for Pattern {
     }
 }
 
+impl From<Indeterminate> for Pattern {
+    fn from(atom: Indeterminate) -> Self {
+        match atom {
+            Indeterminate::Symbol(s, _) => Pattern::from(s),
+            Indeterminate::Function(_, a) => Pattern::from(a),
+        }
+    }
+}
+
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(a) = self.to_atom() {
@@ -106,6 +115,12 @@ impl<T: Into<Coefficient>> From<T> for ReplaceWith<'_> {
 
 impl From<Atom> for ReplaceWith<'_> {
     fn from(val: Atom) -> Self {
+        ReplaceWith::Pattern(BorrowedOrOwned::Owned(val.into()))
+    }
+}
+
+impl From<Indeterminate> for ReplaceWith<'_> {
+    fn from(val: Indeterminate) -> Self {
         ReplaceWith::Pattern(BorrowedOrOwned::Owned(val.into()))
     }
 }
@@ -467,6 +482,12 @@ impl From<Atom> for BorrowedOrOwned<'_, Pattern> {
     }
 }
 
+impl From<Indeterminate> for BorrowedOrOwned<'_, Pattern> {
+    fn from(atom: Indeterminate) -> Self {
+        Pattern::from(atom).into()
+    }
+}
+
 impl From<Symbol> for BorrowedOrOwned<'_, Pattern> {
     fn from(atom: Symbol) -> Self {
         Pattern::from(atom).into()
@@ -763,6 +784,16 @@ impl<'a> AtomView<'a> {
         }
 
         false
+    }
+
+    /// Returns true iff `self` contains the variable `s`.
+    /// Note: if the variable is `x^-1`, the function will return false
+    /// if `self` only contains `x^-n` with `n > 1`.
+    pub(crate) fn contains_indeterminate(&self, s: &Indeterminate) -> bool {
+        match s {
+            Indeterminate::Symbol(sym, _) => self.contains_symbol(*sym),
+            Indeterminate::Function(_, atom) => self.contains(atom.as_view()),
+        }
     }
 
     /// Returns true iff `self` contains the symbol `s`.

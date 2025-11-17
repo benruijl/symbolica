@@ -7,7 +7,7 @@ use std::ops::{Deref, Neg};
 
 use crate::domains::integer::{Integer, gcd_unsigned};
 use crate::domains::{RingOps, Set};
-use crate::poly::Variable::Temporary;
+use crate::poly::PolyVariable::Temporary;
 use crate::poly::gcd::PolynomialGCD;
 use crate::printer::{PrintOptions, PrintState};
 

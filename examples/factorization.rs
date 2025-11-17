@@ -4,7 +4,7 @@ use symbolica::{
     atom::AtomCore,
     domains::{finite_field::Zp, integer::Z},
     parse,
-    poly::{Variable, factor::Factorize, polynomial::MultivariatePolynomial},
+    poly::{PolyVariable, factor::Factorize, polynomial::MultivariatePolynomial},
     symbol,
 };
 
@@ -24,8 +24,8 @@ fn factor_ff_univariate() {
 
 fn factor_ff_bivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(symbol!("x")),
-        Variable::Symbol(symbol!("y")),
+        PolyVariable::Symbol(symbol!("x")),
+        PolyVariable::Symbol(symbol!("y")),
     ]);
 
     let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
@@ -96,8 +96,8 @@ fn factor_univariate_2() {
 
 fn factor_bivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(symbol!("x")),
-        Variable::Symbol(symbol!("y")),
+        PolyVariable::Symbol(symbol!("x")),
+        PolyVariable::Symbol(symbol!("y")),
     ]);
 
     let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
@@ -114,10 +114,10 @@ fn factor_bivariate() {
 
 fn factor_multivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(symbol!("x")),
-        Variable::Symbol(symbol!("y")),
-        Variable::Symbol(symbol!("z")),
-        Variable::Symbol(symbol!("w")),
+        PolyVariable::Symbol(symbol!("x")),
+        PolyVariable::Symbol(symbol!("y")),
+        PolyVariable::Symbol(symbol!("z")),
+        PolyVariable::Symbol(symbol!("w")),
     ]);
 
     let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";

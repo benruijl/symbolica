@@ -12,7 +12,7 @@ use std::{
 use crate::{
     domains::{RingOps, Set, algebraic_number::AlgebraicExtension},
     poly::{
-        PositiveExponent, Variable, factor::Factorize, gcd::PolynomialGCD,
+        PositiveExponent, PolyVariable, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial,
     },
     printer::{PrintOptions, PrintState},
@@ -29,14 +29,14 @@ use super::{
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FactorizedRationalPolynomialField<R: Ring, E: PositiveExponent> {
     ring: R,
-    var_map: Arc<Vec<Variable>>,
+    var_map: Arc<Vec<PolyVariable>>,
     _phantom_exp: PhantomData<E>,
 }
 
 impl<R: Ring, E: PositiveExponent> FactorizedRationalPolynomialField<R, E> {
     pub fn new(
         coeff_ring: R,
-        var_map: Arc<Vec<Variable>>,
+        var_map: Arc<Vec<PolyVariable>>,
     ) -> FactorizedRationalPolynomialField<R, E> {
         FactorizedRationalPolynomialField {
             ring: coeff_ring,
@@ -84,7 +84,7 @@ impl<R: Ring, E: PositiveExponent> InternalOrdering for FactorizedRationalPolyno
 }
 
 impl<R: Ring, E: PositiveExponent> FactorizedRationalPolynomial<R, E> {
-    pub fn new(field: &R, var_map: Arc<Vec<Variable>>) -> FactorizedRationalPolynomial<R, E> {
+    pub fn new(field: &R, var_map: Arc<Vec<PolyVariable>>) -> FactorizedRationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(field, None, var_map);
 
         FactorizedRationalPolynomial {
@@ -95,7 +95,7 @@ impl<R: Ring, E: PositiveExponent> FactorizedRationalPolynomial<R, E> {
         }
     }
 
-    pub fn get_variables(&self) -> &[Variable] {
+    pub fn get_variables(&self) -> &[PolyVariable] {
         self.numerator.get_vars_ref()
     }
 

@@ -21,7 +21,7 @@ use crate::printer::{PrintOptions, PrintState};
 
 use super::gcd::PolynomialGCD;
 use super::univariate::UnivariatePolynomial;
-use super::{Exponent, INLINED_EXPONENTS, LexOrder, MonomialOrder, PositiveExponent, Variable};
+use super::{Exponent, INLINED_EXPONENTS, LexOrder, MonomialOrder, PolyVariable, PositiveExponent};
 use smallvec::{SmallVec, smallvec};
 
 const MAX_DENSE_MUL_BUFFER_SIZE: usize = 1 << 24;
@@ -263,7 +263,7 @@ pub struct MultivariatePolynomial<F: Ring, E: Exponent = u16, O: MonomialOrder =
     pub exponents: Vec<E>,
     /// The coefficient ring.
     pub ring: F,
-    pub variables: Arc<Vec<Variable>>,
+    pub variables: Arc<Vec<PolyVariable>>,
     pub(crate) _phantom: PhantomData<O>,
 }
 
@@ -284,7 +284,7 @@ where
 
         let coefficients = Vec::<F::Element>::decode(&mut decoder.with_context(&ring))?;
         let exponents = Vec::<E>::decode(decoder)?;
-        let variables = Arc::<Vec<Variable>>::decode(decoder)?;
+        let variables = Arc::<Vec<PolyVariable>>::decode(decoder)?;
         Ok(MultivariatePolynomial {
             coefficients,
             exponents,
@@ -300,7 +300,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// prefer to create new polynomials from existing ones, so that the
     /// variable map and field are inherited.
     #[inline]
-    pub fn new(ring: &F, cap: Option<usize>, variables: Arc<Vec<Variable>>) -> Self {
+    pub fn new(ring: &F, cap: Option<usize>, variables: Arc<Vec<PolyVariable>>) -> Self {
         Self {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
             exponents: Vec::with_capacity(cap.unwrap_or(0) * variables.len()),
@@ -412,13 +412,13 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 
     /// Constructs a polynomial with a single term that is a variable.
     #[inline]
-    pub fn variable(&self, var: &Variable) -> Result<Self, &'static str> {
+    pub fn variable(&self, var: &PolyVariable) -> Result<Self, String> {
         if let Some(pos) = self.variables.iter().position(|v| v == var) {
             let mut exp = vec![E::zero(); self.nvars()];
             exp[pos] = E::one();
             Ok(self.monomial(self.ring.one(), exp))
         } else {
-            Err("Variable not found")
+            Err(format!("Variable {} not found", var))
         }
     }
 
@@ -544,17 +544,17 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     /// Get a copy of the variable list.
-    pub fn get_vars(&self) -> Arc<Vec<Variable>> {
+    pub fn get_vars(&self) -> Arc<Vec<PolyVariable>> {
         self.variables.clone()
     }
 
     /// Get a reference to the variables list.
-    pub fn get_vars_ref(&self) -> &[Variable] {
+    pub fn get_vars_ref(&self) -> &[PolyVariable] {
         self.variables.as_ref()
     }
 
     /// Rename a variable.
-    pub fn rename_variable(&mut self, old: &Variable, new: &Variable) {
+    pub fn rename_variable(&mut self, old: &PolyVariable, new: &PolyVariable) {
         if let Some(pos) = self.variables.iter().position(|v| v == old) {
             let mut new_vars = self.variables.as_ref().clone();
             new_vars[pos] = new.clone();
@@ -704,7 +704,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     /// Add a variable to the polynomial if it is not already present.
-    pub fn add_variable(&mut self, var: &Variable) {
+    pub fn add_variable(&mut self, var: &PolyVariable) {
         if self.variables.iter().any(|v| v == var) {
             return;
         }
@@ -2183,7 +2183,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// allows the polynomial to grow in size.
     pub fn rearrange_with_growth(
         &self,
-        order: &[Variable],
+        order: &[PolyVariable],
     ) -> Result<MultivariatePolynomial<F, E, LexOrder>, String> {
         let new_order: Vec<_> = order
             .iter()
@@ -4364,7 +4364,7 @@ impl<R: Ring, E: Exponent> Derivable for PolynomialRing<R, E> {
     fn derivative(
         &self,
         p: &MultivariatePolynomial<R, E>,
-        x: &Variable,
+        x: &PolyVariable,
     ) -> MultivariatePolynomial<R, E> {
         if let Some(pos) = p.get_vars_ref().iter().position(|v| v == x) {
             p.derivative(pos)
@@ -4557,12 +4557,7 @@ mod test {
 
         assert_eq!(
             r.get_vars_ref(),
-            &[
-                symbol!("v1").into(),
-                symbol!("v2").into(),
-                symbol!("v4").into(),
-                symbol!("v3").into()
-            ]
+            &[symbol!("v1"), symbol!("v2"), symbol!("v4"), symbol!("v3")]
         );
     }
 

@@ -8,7 +8,7 @@ use symbolica::{
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     parse,
-    poly::Variable,
+    poly::PolyVariable,
     symbol,
     tensors::matrix::Matrix,
 };
@@ -37,7 +37,7 @@ fn solve_from_matrix() {
         println!("\t ({}).x\u{20D7} = {}", r.join(","), v);
     }
 
-    let var_map = Arc::new(vec![Variable::Symbol(symbol!("c"))]);
+    let var_map = Arc::new(vec![PolyVariable::Symbol(symbol!("c"))]);
 
     let system_rat: Vec<RationalPolynomial<_, u8>> = system
         .iter()

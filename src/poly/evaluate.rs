@@ -855,11 +855,11 @@ pub enum Variable<N: NumericalFloatLike> {
 }
 
 impl Variable<Rational> {
-    fn to_pretty_string(&self, var_map: &[super::Variable], mode: InstructionSetMode) -> String {
+    fn to_pretty_string(&self, var_map: &[super::PolyVariable], mode: InstructionSetMode) -> String {
         match self {
             Variable::Var(v, index) => {
                 // convert f(0) to f[0]
-                if let super::Variable::Function(_, f) = &var_map[*v] {
+                if let super::PolyVariable::Function(_, f) = &var_map[*v] {
                     if let AtomView::Fun(f) = f.as_view() {
                         if f.get_nargs() == 1 {
                             if let Some(a) = f.iter().next() {
@@ -1248,7 +1248,7 @@ impl InstructionList {
     /// the computational memory needed for evaluations.
     pub fn to_output(
         self,
-        input_map: Vec<super::Variable>,
+        input_map: Vec<super::PolyVariable>,
         recycle_registers: bool,
     ) -> InstructionListOutput<Rational> {
         if !recycle_registers {
@@ -1324,7 +1324,7 @@ impl InstructionList {
 /// A list of instructions suitable for fast numerical evaluation.
 pub struct InstructionListOutput<N: NumericalFloatLike> {
     instr: Vec<(usize, Instruction<N>)>,
-    input_map: Vec<super::Variable>,
+    input_map: Vec<super::PolyVariable>,
 }
 
 /// An efficient structure that performs a range of operations.
@@ -1354,7 +1354,7 @@ enum InstructionRange {
 /// be done efficiently.
 #[derive(Clone)]
 pub struct InstructionEvaluator<N: NumericalFloatLike> {
-    input_map: Vec<super::Variable>,
+    input_map: Vec<super::PolyVariable>,
     instr: Vec<InstructionRange>,
     indices: Vec<usize>,
     eval: Vec<N>, // evaluation buffer
@@ -1473,16 +1473,16 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
         Workspace::get_local().with(|ws| {
             for (input, expr) in self.eval.iter_mut().zip(&self.input_map) {
                 match expr {
-                    super::Variable::Symbol(s) => {
+                    super::PolyVariable::Symbol(s) => {
                         *input = const_map
                             .get(ws.new_var(*s).as_view().get_data())
                             .expect("Variable not found")
                             .clone();
                     }
-                    super::Variable::Function(_, o) | super::Variable::Power(o) => {
+                    super::PolyVariable::Function(_, o) | super::PolyVariable::Power(o) => {
                         *input = o.evaluate(coeff_map, const_map, function_map).unwrap();
                     }
-                    super::Variable::Temporary(_) => panic!("Temporary variable in input"),
+                    super::PolyVariable::Temporary(_) => panic!("Temporary variable in input"),
                 }
             }
         });
@@ -1663,15 +1663,15 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
                 self.instr
                     .input_map
                     .iter()
-                    .filter_map(|x| if let super::Variable::Function(x, _) = x {
+                    .filter_map(|x| if let super::PolyVariable::Function(x, _) = x {
                         if !seen_arrays.contains(x) {
                             seen_arrays.push(*x);
 
-                            Some(format!("T* {}", super::Variable::Symbol(*x)))
+                            Some(format!("T* {}", super::PolyVariable::Symbol(*x)))
                         } else {
                             None
                         }
-                    } else if let super::Variable::Symbol(i) = x {
+                    } else if let super::PolyVariable::Symbol(i) = x {
                         if [Symbol::E, Symbol::PI].contains(i) {
                             None
                         } else {
@@ -1773,12 +1773,12 @@ impl std::fmt::Display for InstructionSetPrinter<'_> {
 /// A computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
 pub struct ExpressionEvaluator {
     operations: Vec<(
-        super::Variable,
+        super::PolyVariable,
         usize,
         InstructionListOutput<Rational>,
-        Vec<super::Variable>,
+        Vec<super::PolyVariable>,
     )>,
-    input: Vec<super::Variable>,
+    input: Vec<super::PolyVariable>,
 }
 
 impl ExpressionEvaluator {
@@ -1839,15 +1839,15 @@ impl ExpressionEvaluator {
                 let call_args = var_map
                     .iter()
                     .filter_map(|x| {
-                        if let super::Variable::Function(x, _) = x {
+                        if let super::PolyVariable::Function(x, _) = x {
                             if !seen_arrays.contains(x) {
                                 seen_arrays.push(*x);
 
-                                Some(super::Variable::Symbol(*x))
+                                Some(super::PolyVariable::Symbol(*x))
                             } else {
                                 None
                             }
-                        } else if let super::Variable::Symbol(i) = x {
+                        } else if let super::PolyVariable::Symbol(i) = x {
                             if [Symbol::E, Symbol::PI].contains(i) {
                                 None
                             } else {
@@ -1859,7 +1859,7 @@ impl ExpressionEvaluator {
                     })
                     .collect::<Vec<_>>();
 
-                overall_ops.push((super::Variable::Symbol(id), h.len(), o, call_args));
+                overall_ops.push((super::PolyVariable::Symbol(id), h.len(), o, call_args));
             }
         }
 
@@ -1882,7 +1882,7 @@ impl ExpressionEvaluator {
     }
 
     /// Get the list of input variables that have to be provided in this order to the generated evaluation function.
-    pub fn get_input(&self) -> &[super::Variable] {
+    pub fn get_input(&self) -> &[super::PolyVariable] {
         &self.input
     }
 }

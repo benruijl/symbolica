@@ -30,7 +30,7 @@ use std::ops::{Add, Deref, Div, Mul, Sub};
 
 use integer::Integer;
 
-use crate::poly::Variable;
+use crate::poly::PolyVariable;
 use crate::printer::{PrintOptions, PrintState};
 
 /// The internal ordering trait is used to compare elements of a ring.
@@ -86,7 +86,7 @@ impl_internal_ordering_range!(Vec<T>);
 /// A ring that supports a derivative.
 pub trait Derivable: Ring {
     /// Take the derivative of `e` in `x`.
-    fn derivative(&self, e: &<Self as Set>::Element, x: &Variable) -> <Self as Set>::Element;
+    fn derivative(&self, e: &<Self as Set>::Element, x: &PolyVariable) -> <Self as Set>::Element;
 }
 
 /// Rings whose elements contain all the knowledge of the ring itself,

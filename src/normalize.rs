@@ -10,7 +10,7 @@ use crate::{
         integer::Z,
         rational::{Q, Rational},
     },
-    poly::Variable,
+    poly::PolyVariable,
     state::{RecycledAtom, State, Workspace},
     warn,
 };
@@ -1098,7 +1098,7 @@ impl AtomView<'_> {
 
                         // disallow wildcards as variables
                         if r.numerator.get_vars_ref().iter().all(|v| {
-                            if let Variable::Symbol(v) = v {
+                            if let PolyVariable::Symbol(v) = v {
                                 v.get_wildcard_level() == 0
                             } else {
                                 false

@@ -10,10 +10,7 @@ use std::{
 use rand::Rng;
 use wide::{f64x2, f64x4};
 
-use crate::{
-    coefficient::ConvertToRing,
-    domains::{RingOps, Set, integer::Integer},
-};
+use crate::domains::{RingOps, Set, integer::Integer};
 
 use super::{EuclideanDomain, Field, InternalOrdering, Ring, SelfRing, rational::Rational};
 use rug::{
@@ -33,134 +30,9 @@ impl<T> FloatField<T> {
     pub fn from_rep(rep: T) -> Self {
         FloatField { rep }
     }
-}
 
-impl ConvertToRing for FloatField<F64> {
-    fn element_from_integer(&self, number: Integer) -> Self::Element {
-        self.rep.from_rational(&number.into())
-    }
-
-    fn try_element_from_coefficient(
-        &self,
-        number: crate::coefficient::Coefficient,
-    ) -> Result<Self::Element, String> {
-        match number {
-            crate::coefficient::Coefficient::Complex(complex) => {
-                if complex.is_real() {
-                    Ok(F64(complex.re.to_f64()))
-                } else {
-                    Err("Cannot convert {number} to real float".to_string())
-                }
-            }
-            crate::coefficient::Coefficient::Float(complex) => {
-                if complex.is_real() {
-                    Ok(F64(complex.re.to_f64()))
-                } else {
-                    Err("Cannot convert {number} to real float".to_string())
-                }
-            }
-            _ => Err("Cannot convert {number} to complex".to_string()),
-        }
-    }
-
-    fn try_element_from_coefficient_view(
-        &self,
-        number: crate::coefficient::CoefficientView<'_>,
-    ) -> Result<Self::Element, String> {
-        self.try_element_from_coefficient(number.to_owned())
-    }
-}
-
-impl ConvertToRing for FloatField<Float> {
-    fn element_from_integer(&self, number: Integer) -> Self::Element {
-        self.rep.from_rational(&number.into())
-    }
-
-    fn try_element_from_coefficient(
-        &self,
-        number: crate::coefficient::Coefficient,
-    ) -> Result<Self::Element, String> {
-        match number {
-            crate::coefficient::Coefficient::Complex(complex) => {
-                if complex.is_real() {
-                    Ok(complex.re.to_multi_prec_float(self.rep.prec()))
-                } else {
-                    Err("Cannot convert {number} to real float".to_string())
-                }
-            }
-            crate::coefficient::Coefficient::Float(complex) => {
-                if complex.is_real() {
-                    Ok(complex.re)
-                } else {
-                    Err("Cannot convert {number} to real float".to_string())
-                }
-            }
-            _ => Err("Cannot convert {number} to complex".to_string()),
-        }
-    }
-
-    fn try_element_from_coefficient_view(
-        &self,
-        number: crate::coefficient::CoefficientView<'_>,
-    ) -> Result<Self::Element, String> {
-        self.try_element_from_coefficient(number.to_owned())
-    }
-}
-
-impl ConvertToRing for FloatField<Complex<F64>> {
-    fn element_from_integer(&self, number: Integer) -> Self::Element {
-        self.rep.from_rational(&number.into())
-    }
-
-    fn try_element_from_coefficient(
-        &self,
-        number: crate::coefficient::Coefficient,
-    ) -> Result<Self::Element, String> {
-        match number {
-            crate::coefficient::Coefficient::Complex(complex) => Ok(Complex::new(
-                complex.re.to_f64().into(),
-                complex.im.to_f64().into(),
-            )),
-            crate::coefficient::Coefficient::Float(complex) => Ok(Complex::new(
-                complex.re.to_f64().into(),
-                complex.im.to_f64().into(),
-            )),
-            _ => Err("Cannot convert {number} to complex".to_string()),
-        }
-    }
-
-    fn try_element_from_coefficient_view(
-        &self,
-        number: crate::coefficient::CoefficientView<'_>,
-    ) -> Result<Self::Element, String> {
-        self.try_element_from_coefficient(number.to_owned())
-    }
-}
-
-impl ConvertToRing for FloatField<Complex<Float>> {
-    fn element_from_integer(&self, number: Integer) -> Self::Element {
-        self.rep.from_rational(&number.into())
-    }
-
-    fn try_element_from_coefficient(
-        &self,
-        number: crate::coefficient::Coefficient,
-    ) -> Result<Self::Element, String> {
-        match number {
-            crate::coefficient::Coefficient::Complex(complex) => Ok(Complex::new(
-                complex.re.to_multi_prec_float(self.rep.re.prec()),
-                complex.im.to_multi_prec_float(self.rep.im.prec()),
-            )),
-            crate::coefficient::Coefficient::Float(complex) => Ok(complex),
-            _ => Err("Cannot convert {number} to complex".to_string()),
-        }
-    }
-
-    fn try_element_from_coefficient_view(
-        &self,
-        number: crate::coefficient::CoefficientView<'_>,
-    ) -> Result<Self::Element, String> {
-        self.try_element_from_coefficient(number.to_owned())
+    pub fn get_rep(&self) -> &T {
+        &self.rep
     }
 }
 
@@ -4398,6 +4270,176 @@ impl<'a, T: FloatLike + From<&'a Rational>> From<&'a Rational> for Complex<T> {
         Complex::new(c, zero)
     }
 }
+
+impl Complex<Rational> {
+    pub fn gcd(&self, other: &Self) -> Self {
+        if self.is_zero() {
+            return other.clone();
+        }
+        if other.is_zero() {
+            return self.clone();
+        }
+
+        let gcd_re = self.re.gcd(&other.re);
+        let gcd_im = self.im.gcd(&other.im);
+
+        Complex::new(gcd_re, gcd_im)
+    }
+}
+
+#[cfg(feature = "python")]
+use numpy::Complex64;
+#[cfg(feature = "python")]
+use pyo3::{
+    Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyErr, PyResult, Python, exceptions,
+    pybacked::PyBackedStr,
+    sync::PyOnceLock,
+    types::{PyAny, PyAnyMethods, PyComplex, PyComplexMethods, PyType},
+};
+
+#[cfg(feature = "python")]
+/// A multi-precision floating point number for Python.
+pub struct PythonMultiPrecisionFloat(pub Float);
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(PythonMultiPrecisionFloat = f64 | Decimal);
+
+#[cfg(feature = "python_stubgen")]
+pub struct Decimal;
+
+#[cfg(feature = "python_stubgen")]
+impl PyStubType for Decimal {
+    fn type_output() -> TypeInfo {
+        TypeInfo {
+            name: "decimal.Decimal".to_string(),
+            import: {
+                let mut h = std::collections::HashSet::default();
+                h.insert("decimal".into());
+                h
+            },
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<Float> for PythonMultiPrecisionFloat {
+    fn from(f: Float) -> Self {
+        PythonMultiPrecisionFloat(f)
+    }
+}
+
+#[cfg(feature = "python")]
+static PYDECIMAL: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+
+#[cfg(feature = "python")]
+fn get_decimal(py: Python<'_>) -> &Py<PyType> {
+    PYDECIMAL.get_or_init(py, || {
+        py.import("decimal")
+            .unwrap()
+            .getattr("Decimal")
+            .unwrap()
+            .extract()
+            .unwrap()
+    })
+}
+
+#[cfg(feature = "python")]
+impl<'py> IntoPyObject<'py> for PythonMultiPrecisionFloat {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        get_decimal(py)
+            .call1(py, (self.0.to_string(),))
+            .expect("failed to call decimal.Decimal(value)")
+            .into_pyobject(py)
+    }
+}
+
+#[cfg(feature = "python")]
+impl<'py> FromPyObject<'_, 'py> for PythonMultiPrecisionFloat {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
+        if ob.is_instance(get_decimal(ob.py()).as_any().bind(ob.py()))? {
+            let a = ob
+                .call_method0("__str__")
+                .unwrap()
+                .extract::<PyBackedStr>()?;
+
+            // get the number of accurate digits
+            let digits = a
+                .chars()
+                .skip_while(|x| *x == '.' || *x == '0' || *x == '-')
+                .filter(|x| *x != '.')
+                .take_while(|x| x.is_ascii_digit())
+                .count();
+
+            Ok(Float::parse(
+                &a,
+                Some((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32),
+            )
+            .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
+            .into())
+        } else if let Ok(a) = ob.extract::<PyBackedStr>() {
+            Ok(Float::parse(&a, None)
+                .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
+                .into())
+        } else if let Ok(a) = ob.extract::<f64>() {
+            if a.is_finite() {
+                Ok(Float::with_val(53, a).into())
+            } else {
+                Err(exceptions::PyValueError::new_err(
+                    "Floating point number is not finite",
+                ))
+            }
+        } else {
+            Err(exceptions::PyValueError::new_err(
+                "Not a valid multi-precision float",
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(Complex<Float> = Complex64);
+
+#[cfg(feature = "python")]
+impl<'py> FromPyObject<'_, 'py> for Complex<f64> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
+        ob.extract::<Complex64>().map(|x| Complex::new(x.re, x.im))
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(Complex<f64> = Complex64);
+
+#[cfg(feature = "python")]
+impl<'py> FromPyObject<'_, 'py> for Complex<Float> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
+        if let Ok(a) = ob.extract::<PythonMultiPrecisionFloat>() {
+            let zero = Float::new(a.0.prec());
+            Ok(Complex::new(a.0, zero))
+        } else if let Ok(a) = ob.cast::<PyComplex>() {
+            Ok(Complex::new(
+                Float::with_val(53, a.real()),
+                Float::with_val(53, a.imag()),
+            ))
+        } else {
+            Err(exceptions::PyValueError::new_err(
+                "Not a valid complex number",
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(Complex<Float> = Complex64);
 
 #[cfg(test)]
 mod test {

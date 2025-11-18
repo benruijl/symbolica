@@ -8,7 +8,6 @@ use std::{
 
 use crate::{
     domains::{RingOps, Set, finite_field::Zp64},
-    poly::{Exponent, polynomial::PolynomialRing},
     printer::{PrintOptions, PrintState},
 };
 
@@ -36,6 +35,10 @@ pub struct FractionField<R: Ring> {
 impl<R: Ring> FractionField<R> {
     pub const fn new(ring: R) -> FractionField<R> {
         FractionField { ring }
+    }
+
+    pub fn ring(&self) -> &R {
+        &self.ring
     }
 }
 
@@ -100,12 +103,6 @@ pub trait FractionNormalization: Ring {
 impl FractionNormalization for Z {
     fn get_normalization_factor(&self, a: &Integer) -> Integer {
         if *a < 0 { (-1).into() } else { 1.into() }
-    }
-}
-
-impl<R: Ring + FractionNormalization, E: Exponent> FractionNormalization for PolynomialRing<R, E> {
-    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
-        a.constant(a.ring.get_normalization_factor(&a.lcoeff()))
     }
 }
 
@@ -182,6 +179,13 @@ impl<R: Ring> Fraction<R> {
 
     pub fn denominator_ref(&self) -> &R::Element {
         &self.denominator
+    }
+
+    pub fn from_unchecked(numerator: R::Element, denominator: R::Element) -> Self {
+        Fraction {
+            numerator,
+            denominator,
+        }
     }
 }
 
@@ -690,37 +694,6 @@ impl<R: EuclideanDomain + FractionNormalization> Field for FractionField<R> {
     }
 }
 
-impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<FractionField<R>, E> {
-    pub fn to_rational_polynomial(
-        &self,
-        e: &<Self as Set>::Element,
-    ) -> Fraction<PolynomialRing<R, E>> {
-        let mut lcm = self.ring.ring.one();
-        for x in &e.coefficients {
-            let g = self.ring.ring.gcd(&lcm, x.denominator_ref());
-            lcm = self
-                .ring
-                .ring
-                .mul(&lcm, &self.ring.ring.quot_rem(x.denominator_ref(), &g).0);
-        }
-
-        let e2 = e.map_coeff(
-            |c| {
-                self.ring.ring.mul(
-                    &c.numerator,
-                    &self.ring.ring.quot_rem(&lcm, &c.denominator).0,
-                )
-            },
-            self.ring.ring.clone(),
-        );
-
-        Fraction {
-            denominator: e2.constant(lcm),
-            numerator: e2,
-        }
-    }
-}
-
 /// A rational number.
 pub type Rational = Fraction<IntegerRing>;
 
@@ -892,7 +865,7 @@ impl Rational {
         Q.to_element(num.into(), d, true)
     }
 
-    pub fn from_unchecked<T: Into<Integer>>(num: T, den: T) -> Rational {
+    pub fn from_int_unchecked<T: Into<Integer>>(num: T, den: T) -> Rational {
         Q.to_element(num.into(), den.into(), false)
     }
 
@@ -1416,15 +1389,10 @@ impl<'a> std::iter::Sum<&'a Self> for Rational {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::AtomCore,
-        domains::{
-            Field, Ring, RingOps,
-            integer::Z,
-            rational::{FractionField, Q, Rational},
-        },
-        parse,
-        poly::polynomial::PolynomialRing,
+    use crate::domains::{
+        Field, Ring, RingOps,
+        integer::Z,
+        rational::{FractionField, Rational},
     };
 
     #[test]
@@ -1460,29 +1428,5 @@ mod test {
         let b = f.neg(f.nth(3.into()));
         let d = f.div(&f.add(&f.nth(100.into()), &b), &b);
         assert_eq!(d, f.to_element((-97).into(), 3.into(), false));
-    }
-
-    #[test]
-    fn fraction_poly() {
-        let poly = parse!("-3/2*x^2+1/5x+4").to_polynomial::<_, u8>(&Q, None);
-
-        let f = FractionField::new(Z);
-        let poly2 = poly.map_coeff(
-            |c| f.to_element(c.numerator(), c.denominator(), false),
-            f.clone(),
-        );
-
-        let p = PolynomialRing::from_poly(&poly2);
-        let rat = p.to_rational_polynomial(&poly2);
-        let f = FractionField::new(PolynomialRing::from_poly(&rat.numerator));
-
-        let b = f.neg(&f.nth(3.into()));
-        let c = f.add(&rat, &b);
-        let d = f.div(&c, &rat);
-
-        let num = parse!("-10-2*x+15*x^2").to_polynomial::<_, u8>(&Z, None);
-        let den = parse!("-40-2*x+15*x^2").to_polynomial::<_, u8>(&Z, None);
-
-        assert_eq!(d, f.to_element(num, den, false));
     }
 }

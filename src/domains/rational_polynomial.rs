@@ -18,7 +18,7 @@ use crate::{
         float::{FloatField, SingleFloat},
     },
     poly::{
-        GrevLexOrder, LexOrder, PositiveExponent, PolyVariable,
+        GrevLexOrder, LexOrder, PolyVariable, PositiveExponent,
         factor::Factorize,
         gcd::PolynomialGCD,
         groebner::{Echelonize, GroebnerBasis},
@@ -1112,7 +1112,13 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Derivable
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
-    fn derivative(&self, p: &RationalPolynomial<R, E>, x: &PolyVariable) -> RationalPolynomial<R, E> {
+    type Variable = PolyVariable;
+
+    fn derivative(
+        &self,
+        p: &RationalPolynomial<R, E>,
+        x: &PolyVariable,
+    ) -> RationalPolynomial<R, E> {
         if let Some(pos) = p.get_variables().iter().position(|v| v == x) {
             p.derivative(pos)
         } else {
@@ -1229,7 +1235,9 @@ where
             std::cmp::Reverse((0..f.nvars()).filter(|v| f.contains(*v)).count())
         });
 
-        let mut vars = (0..fs.len()).map(PolyVariable::Temporary).collect::<Vec<_>>();
+        let mut vars = (0..fs.len())
+            .map(PolyVariable::Temporary)
+            .collect::<Vec<_>>();
         for v in self.numerator.get_vars_ref() {
             vars.push(v.clone());
         }

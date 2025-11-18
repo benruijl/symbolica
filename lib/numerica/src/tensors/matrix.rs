@@ -5,8 +5,8 @@
 //! Solve an underdetermined linear system:
 //!
 //! ```
-//! use symbolica::domains::rational::Q;
-//! use symbolica::tensors::matrix::Matrix;
+//! use numerica::domains::rational::Q;
+//! use numerica::tensors::matrix::Matrix;
 //! let m = vec![
 //!     vec![1.into(), 1.into(), 1.into()],
 //!     vec![1.into(), 1.into(), 2.into()],
@@ -32,7 +32,6 @@ use crate::{
         integer::Z,
         rational::{Q, Rational},
     },
-    poly::PolyVariable,
     printer::{PrintOptions, PrintState},
 };
 
@@ -41,8 +40,8 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use symbolica::domains::rational::Q;
-/// use symbolica::tensors::matrix::Vector;
+/// use numerica::domains::rational::Q;
+/// use numerica::tensors::matrix::Vector;
 /// let v1 = Vector::new(vec![(3,1).into(), (1,1).into()], Q);
 /// let v2 = Vector::new(vec![(2,1).into(), (2,1).into()], Q);
 /// let b = Vector::orthogonalize(&[v1, v2]);
@@ -218,12 +217,12 @@ impl<F: Ring> InternalOrdering for Vector<F> {
 
 impl<F: Derivable> Vector<F> {
     /// Compute the derivative in the variable `x`.
-    pub fn derivative(&self, x: &PolyVariable) -> Vector<F> {
+    pub fn derivative(&self, x: &F::Variable) -> Vector<F> {
         self.map(|e| self.field.derivative(e, x), self.field.clone())
     }
 
     /// Compute the gradient in the variables `x`.
-    pub fn grad(&self, x: &[PolyVariable]) -> Vector<F> {
+    pub fn grad(&self, x: &[F::Variable]) -> Vector<F> {
         if self.len() != x.len() {
             panic!(
                 "The number of variables ({}) does not match the number of entries ({})",
@@ -243,7 +242,7 @@ impl<F: Derivable> Vector<F> {
     }
 
     /// Compute the curl of the vector in the variables `x`.
-    pub fn curl(&self, x: &[PolyVariable]) -> Vector<F> {
+    pub fn curl(&self, x: &[F::Variable]) -> Vector<F> {
         if self.len() != 3 || x.len() != 3 {
             panic!("Vector and variable list must be three-dimensional");
         }
@@ -268,7 +267,7 @@ impl<F: Derivable> Vector<F> {
     }
 
     /// Compute the Jacobian matrix of the vector of functions in the variables `x`.
-    pub fn jacobian(&self, x: &[PolyVariable]) -> Matrix<F> {
+    pub fn jacobian(&self, x: &[F::Variable]) -> Matrix<F> {
         let mut jacobian = Vec::with_capacity(self.data.len());
 
         for e in &self.data {
@@ -288,7 +287,7 @@ impl<F: Derivable> Vector<F> {
 
 impl<F: Derivable> Matrix<F> {
     /// Compute the derivative in the variable `x`.
-    pub fn derivative(&self, x: &PolyVariable) -> Matrix<F> {
+    pub fn derivative(&self, x: &F::Variable) -> Matrix<F> {
         self.map(|e| self.field.derivative(e, x), self.field.clone())
     }
 }
@@ -701,8 +700,8 @@ impl<F: Ring> Neg for Vector<F> {
 /// # Examples
 ///
 /// ```    
-/// use symbolica::domains::rational::Q;
-/// use symbolica::tensors::matrix::Matrix;    
+/// # use numerica::domains::rational::Q;
+/// # use numerica::tensors::matrix::Matrix;    
 /// let a = Matrix::from_linear(vec![3.into(), 2.into(), 15.into(), 4.into()], 2, 2, Q).unwrap();
 /// let inv = a.inv().unwrap();
 /// assert_eq!(&a * &inv, Matrix::identity(2, Q));
@@ -1721,9 +1720,7 @@ impl<F: Field> Matrix<F> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::Atom,
-        domains::{atom::AtomField, integer::Z, rational::Q},
-        parse, symbol,
+        domains::{integer::Z, rational::Q},
         tensors::matrix::{Matrix, Vector},
     };
 
@@ -1936,34 +1933,6 @@ mod test {
 
         // 32.0177 = 5 * pi + 6 * e
         assert_eq!(basis[0].data, &[5, 6, 1, 1]);
-    }
-
-    #[test]
-    fn jacobian() {
-        let a = Vector::new(
-            vec![parse!("x^2+y+z"), parse!("y+z"), parse!("z+x")],
-            AtomField::new(),
-        );
-
-        let b = a.jacobian(&[
-            symbol!("x").into(),
-            symbol!("y").into(),
-            symbol!("z").into(),
-        ]);
-        assert_eq!(
-            b.data,
-            [
-                parse!("2*x"),
-                Atom::num(1),
-                Atom::num(1),
-                Atom::num(0),
-                Atom::num(1),
-                Atom::num(1),
-                Atom::num(1),
-                Atom::num(0),
-                Atom::num(1)
-            ]
-        );
     }
 
     #[test]

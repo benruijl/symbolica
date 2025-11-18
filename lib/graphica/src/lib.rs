@@ -3,7 +3,7 @@
 //! # Examples
 //!
 //! ```
-//! use symbolica::graph::Graph;
+//! # use graphica::Graph;
 //! let mut g = Graph::new();
 //! let n0 = g.add_node(0);
 //! let n1 = g.add_node(1);
@@ -27,10 +27,9 @@ use std::{
     hash::Hash,
 };
 
-use crate::{
+use numerica::{
     combinatorics::{CombinationIterator, unique_permutations},
     domains::integer::Integer,
-    error,
     utils::AbortCheck,
 };
 
@@ -177,7 +176,7 @@ impl<T: Ord, U> Ord for HiddenData<T, U> {
 /// # Example
 ///
 /// ```
-/// use symbolica::graph::Graph;
+/// use graphica::Graph;
 /// let mut g = Graph::new();
 /// let n0 = g.add_node(0);
 /// let n1 = g.add_node(1);
@@ -478,9 +477,10 @@ impl<N, E> Graph<N, E> {
     /// Remove the last added empty node. This operation is O(1).
     pub fn delete_last_empty_node(&mut self) -> Option<Node<N>> {
         if let Some(node) = self.nodes.last()
-            && node.edges.is_empty() {
-                return self.nodes.pop();
-            }
+            && node.edges.is_empty()
+        {
+            return self.nodes.pop();
+        }
         None
     }
 
@@ -783,7 +783,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     ///
     /// The vertex signatures specify all allowed connections of directed half-edges. For example:
     /// ```
-    /// # use symbolica::graph::{HalfEdge, GenerationSettings, Graph};
+    /// # use graphica::{HalfEdge, GenerationSettings, Graph};
     /// let g = HalfEdge::undirected("g");
     /// let q = HalfEdge::incoming("q");
     /// let vertex_signatures = [vec![g, g, g], vec![q.flip(), q, g]];
@@ -797,7 +797,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
     /// # Example
     ///
     /// ```
-    /// use symbolica::graph::{HalfEdge, GenerationSettings, Graph};
+    /// # use graphica::{HalfEdge, GenerationSettings, Graph};
     /// let g = HalfEdge::undirected("g");
     /// let q = HalfEdge::incoming("q");
     ///
@@ -820,9 +820,14 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         vertex_signatures: &[Vec<HalfEdge<E>>],
         mut settings: GenerationSettings<N, E>,
     ) -> Result<HashMap<Graph<N, E>, Integer>, HashMap<Graph<N, E>, Integer>> {
-        if settings.max_vertices.is_none() && settings.max_loops.is_none() {
-            error!("At least one of max_vertices or max_loops must be set");
-            return Err(HashMap::default());
+        if settings.max_vertices.is_none()
+            && settings.max_loops.is_none()
+            && settings.progress_fn.is_none()
+            && settings.abort_check.is_none()
+        {
+            panic!(
+                "Infinite loop for graph generation: at least one of max_vertices, max_loops, progress_fn, abort_check must be set"
+            );
         }
 
         let vertex_sorted: Vec<_> = vertex_signatures
@@ -889,9 +894,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
         if let Some(max_vertices) = settings.settings.max_vertices
-            && self.nodes.len() > max_vertices {
-                return Ok(());
-            }
+            && self.nodes.len() > max_vertices
+        {
+            return Ok(());
+        }
 
         if let Some(max_loops) = settings.settings.max_loops {
             // filter based on an underestimate of the loop count
@@ -921,9 +927,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         }
 
         if let Some(f) = &settings.settings.filter_fn
-            && !f(self, cur_vertex) {
-                return Ok(());
-            }
+            && !f(self, cur_vertex)
+        {
+            return Ok(());
+        }
 
         if cur_vertex == self.nodes.len() {
             let mut spanning_tree = self.get_spanning_tree(0);
@@ -933,18 +940,20 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
 
             if let Some(abort_check) = &settings.settings.abort_check
-                && abort_check() {
-                    return Err(());
-                }
+                && abort_check()
+            {
+                return Err(());
+            }
 
             if settings.settings.max_bridges.is_some() || !settings.settings.allow_zero_flow_edges {
                 spanning_tree.chain_decomposition();
             }
 
             if let Some(max_bridges) = settings.settings.max_bridges
-                && spanning_tree.count_bridges() > max_bridges {
-                    return Ok(());
-                }
+                && spanning_tree.count_bridges() > max_bridges
+            {
+                return Ok(());
+            }
 
             if !settings.settings.allow_zero_flow_edges && spanning_tree.has_zero_flow_bridges() {
                 return Ok(());
@@ -955,9 +964,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             let mut cancel = false;
             out.entry(c.graph).or_insert_with_key(|g| {
                 if let Some(p) = &mut settings.settings.progress_fn
-                    && !p(g) {
-                        cancel = true;
-                    }
+                    && !p(g)
+                {
+                    cancel = true;
+                }
                 c.automorphism_group_size
             });
 
@@ -1046,10 +1056,11 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                 }
 
                 if let Some(last) = edges_left.last_mut()
-                    && last.0 == *e {
-                        last.1 += 1;
-                        continue;
-                    }
+                    && last.0 == *e
+                {
+                    last.1 += 1;
+                    continue;
+                }
 
                 edges_left.push((e.clone(), 1));
             }
@@ -1958,10 +1969,8 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        combinatorics::unique_permutations,
-        graph::{GenerationSettings, Graph, HalfEdge, SearchTreeNode},
-    };
+    use super::{GenerationSettings, Graph, HalfEdge, SearchTreeNode};
+    use numerica::combinatorics::unique_permutations;
 
     #[test]
     fn directed() {

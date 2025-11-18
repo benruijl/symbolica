@@ -1,3 +1,6 @@
+[workspace]
+members = ["lib/numerica", "lib/graphica"]
+
 [package]
 authors = ["Ben Ruijl <ben@symbolica.io>"]
 build = "build.rs"
@@ -8,9 +11,9 @@ keywords = ["algebra", "symbolic", "manipulation", "mathematics", "physics"]
 license-file = "License.md"
 name = "symbolica"
 readme = "Readme.md"
-repository = "https://github.com/benruijl/symbolica"
+repository = "https://github.com/symbolica-dev/symbolica"
 rust-version = "1.88"
-version = "0.20.0"
+version = "1.0.0"
 
 [profile.release]
 codegen-units = 1
@@ -38,18 +41,25 @@ python_api = [
     "pyo3-log",
     "tracing/log",
     "pyo3-stub-gen-derive",
+    "numerica/python",
 ]
 # export the Python API
-python_export = ["pyo3", "numpy", "bincode", "pyo3-stub-gen-derive"]
+python_export = [
+    "pyo3",
+    "numpy",
+    "bincode",
+    "pyo3-stub-gen-derive",
+    "numerica/python",
+]
 # generate stubs for Python API
-python_stubgen = ["python_export", "pyo3-stub-gen"]
+python_stubgen = ["python_export", "pyo3-stub-gen", "numerica/python_stubgen"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 tracing_max_level_info = ["tracing/release_max_level_info"]
 # import/export objects that do not depend on the state using serde
-serde = ["dep:serde", "rug/serde"]
+serde = ["dep:serde", "rug/serde", "numerica/serde"]
 # allow importing/exporting of atoms with a state map using bincode
-bincode = ["dep:bincode", "dep:bincode-trait-derive"]
+bincode = ["dep:bincode", "dep:bincode-trait-derive", "numerica/bincode"]
 
 [dependencies.pyo3]
 features = ["abi3", "py-clone", "num-complex"]
@@ -57,6 +67,9 @@ optional = true
 version = "0.27"
 
 [dependencies]
+numerica = { path = "lib/numerica", version = "1.0" }
+graphica = { path = "lib/graphica", version = "1.0" }
+
 ahash = "0.8.7"
 append-only-vec = "0.1"
 bincode = { version = "2.0", optional = true }

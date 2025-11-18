@@ -10,10 +10,10 @@ use std::ops::Add;
 use tracing::{debug, instrument};
 
 use crate::GLOBAL_SETTINGS;
-use crate::domains::algebraic_number::AlgebraicExtension;
+use crate::domains::algebraic_number::{AlgebraicExtension, GaloisField};
 use crate::domains::finite_field::{
-    FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, GaloisField,
-    PrimeIteratorU64, SMOOTH_PRIME_BASE, SMOOTH_PRIMES, ToFiniteField, Zp, Zp64,
+    FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, PrimeIteratorU64,
+    SMOOTH_PRIME_BASE, SMOOTH_PRIMES, ToFiniteField, Zp, Zp64,
 };
 use crate::domains::float::{FloatField, SingleFloat};
 use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES, Z};
@@ -128,12 +128,13 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
 
         // normalize the gcd
         if let Some(l) = d.coefficients.last()
-            && !d.ring.is_one(l) {
-                let i = d.ring.inv(l);
-                for x in &mut d.coefficients {
-                    d.ring.mul_assign(x, &i);
-                }
+            && !d.ring.is_one(l)
+        {
+            let i = d.ring.inv(l);
+            for x in &mut d.coefficients {
+                d.ring.mul_assign(x, &i);
             }
+        }
 
         d
     }
@@ -325,7 +326,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
         let m = Matrix::from_nested_vec(matrix, self.ring.clone()).unwrap();
         m.solve(&Matrix::new_vec(rhs, self.ring.clone()))
             .unwrap()
-            .data
+            .into_vec()
     }
 
     /// Perform Newton interpolation in the variable `x`, by providing
@@ -906,7 +907,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                                 shape[shape_map[0]].0, shape[shape_map[second_index]].0
                             );
 
-                            let mut r = r.data;
+                            let mut r = r.into_vec();
                             r.drain(0..vars_second);
                             solved_coeff = Some(r);
                         }
@@ -1965,10 +1966,11 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 let gc = g.div_coeff(&g_cont);
 
                 if let Some(q) = a.try_div(&gc)
-                    && let Some(q1) = b.try_div(&gc) {
-                        debug!("match {} {}", q, q1);
-                        return Ok((gc.mul_coeff(content_gcd), q, q1));
-                    }
+                    && let Some(q1) = b.try_div(&gc)
+                {
+                    debug!("match {} {}", q, q1);
+                    return Ok((gc.mul_coeff(content_gcd), q, q1));
+                }
 
                 debug!("co_fac_p {}", co_fac_p);
 
@@ -1976,9 +1978,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     let a_co_fac = interpolate(co_fac_p, var, &xi);
 
                     if let Some(q) = a.try_div(&a_co_fac)
-                        && let Some(q1) = b.try_div(&q) {
-                            return Ok((q.mul_coeff(content_gcd), a_co_fac, q1));
-                        }
+                        && let Some(q1) = b.try_div(&q)
+                    {
+                        return Ok((q.mul_coeff(content_gcd), a_co_fac, q1));
+                    }
                 }
 
                 if !co_fac_q.is_zero() {
@@ -1986,9 +1989,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     debug!("cofac b {}", b_co_fac);
 
                     if let Some(q) = b.try_div(&b_co_fac)
-                        && let Some(q1) = a.try_div(&q) {
-                            return Ok((q.mul_coeff(content_gcd), q1, b_co_fac));
-                        }
+                        && let Some(q1) = a.try_div(&q)
+                    {
+                        return Ok((q.mul_coeff(content_gcd), q1, b_co_fac));
+                    }
                 }
 
                 xi = Z

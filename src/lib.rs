@@ -57,15 +57,12 @@ mod api;
 pub mod atom;
 pub mod coefficient;
 mod collect;
-pub mod combinatorics;
 mod derivative;
 pub mod domains;
 pub mod evaluate;
 mod expand;
-pub mod graph;
 pub mod id;
 mod normalize;
-pub mod numerical_integration;
 pub mod parser;
 pub mod poly;
 pub mod printer;
@@ -75,6 +72,9 @@ pub mod streaming;
 pub mod tensors;
 pub mod transformer;
 pub mod utils;
+
+pub use graphica as graph; // re-export graphica
+pub use numerica::*; // re-export numerica
 
 #[cfg(feature = "faster_alloc")]
 #[global_allocator]
@@ -392,10 +392,11 @@ impl LicenseManager {
             key = f3.to_owned();
             std::thread::spawn(|| {
                 if let Err(e) = Self::check_registration(key)
-                    && e.contains("expired") {
-                        println!("{e}");
-                        abort();
-                    }
+                    && e.contains("expired")
+                {
+                    println!("{e}");
+                    abort();
+                }
             });
         } else {
             Self::check_registration(key)?;
@@ -545,10 +546,11 @@ Error: {status}",
 
             std::thread::spawn(|| {
                 if let Err(e) = Self::check_registration(oom_key.to_owned())
-                    && e.contains("Unknown license") {
-                        println!("{e}");
-                        abort();
-                    }
+                    && e.contains("Unknown license")
+                {
+                    println!("{e}");
+                    abort();
+                }
             });
 
             Ok(())

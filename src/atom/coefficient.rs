@@ -210,7 +210,7 @@ impl PackedRationalNumberWriter for Coefficient {
             }
             Coefficient::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
-                (num.0, f.0 as u64).write_packed(dest); // this adds an extra tag
+                (*num.inner(), f.0 as u64).write_packed(dest); // this adds an extra tag
             }
             Coefficient::RationalPolynomial(p) => {
                 dest.put_u8(RAT_POLY);
@@ -305,7 +305,7 @@ impl PackedRationalNumberWriter for Coefficient {
             }
             Coefficient::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
-                (num.0, f.0 as u64).write_packed_fixed(dest);
+                (*num.inner(), f.0 as u64).write_packed_fixed(dest);
             }
         }
     }
@@ -347,7 +347,7 @@ impl PackedRationalNumberWriter for Coefficient {
                 let si = f.im.serialize();
                 1 + 8 + 4 + s.len() as u64 + 8 + 4 + si.len() as u64
             }
-            Coefficient::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
+            Coefficient::FiniteField(m, i) => 2 + (*m.inner(), i.0 as u64).get_packed_size(),
             Coefficient::RationalPolynomial(_) => {
                 unimplemented!("Cannot get the packed size of a rational polynomial")
             }
@@ -469,7 +469,7 @@ impl PackedRationalNumberReader for [u8] {
             (num, fi, source) = source.get_frac_u64();
             (
                 CoefficientView::FiniteField(
-                    FiniteFieldElement(num),
+                    FiniteFieldElement::from_inner(num),
                     FiniteFieldIndex(fi as usize),
                 ),
                 source,

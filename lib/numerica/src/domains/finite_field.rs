@@ -7,11 +7,8 @@ use std::ops::{Deref, Neg};
 
 use crate::domains::integer::{Integer, gcd_unsigned};
 use crate::domains::{RingOps, Set};
-use crate::poly::PolyVariable::Temporary;
-use crate::poly::gcd::PolynomialGCD;
 use crate::printer::{PrintOptions, PrintState};
 
-use super::algebraic_number::AlgebraicExtension;
 use super::integer::Z;
 use super::{EuclideanDomain, Field, InternalOrdering, Ring};
 
@@ -62,85 +59,22 @@ impl ToFiniteField<Two> for u64 {
     }
 }
 
-/// A Galois field `GF(p,n)` is a finite field with `p^n` elements.
-/// It provides methods to upgrade and downgrade to Galois fields with the
-/// same prime but with a different power.
-pub trait GaloisField: Field {
-    type Base: Field;
-
-    fn get_extension_degree(&self) -> u64;
-    // Convert a number from the finite field to standard form `[0,p)`.
-    fn to_integer(&self, a: &Self::Element) -> Integer;
-    /// Convert a number from the finite field to symmetric form `[-p/2,p/2]`.
-    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer;
-
-    /// Upgrade the field to `GF(p,new_pow)`.
-    fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>
-    where
-        Self::Base: PolynomialGCD<u16>,
-        <Self::Base as Set>::Element: Copy;
-
-    fn upgrade_element(
-        &self,
-        e: &Self::Element,
-        larger_field: &AlgebraicExtension<Self::Base>,
-    ) -> <AlgebraicExtension<Self::Base> as Set>::Element;
-
-    fn downgrade_element(
-        &self,
-        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
-    ) -> Self::Element;
-}
-
-impl<UField: FiniteFieldWorkspace> GaloisField for FiniteField<UField>
-where
-    FiniteField<UField>: Field + FiniteFieldCore<UField>,
-{
-    type Base = Self;
-
-    fn get_extension_degree(&self) -> u64 {
-        1
-    }
-
-    fn to_integer(&self, a: &Self::Element) -> Integer {
-        self.from_element(a).to_integer()
-    }
-
-    #[inline(always)]
-    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
-        let i = self.from_element(a).to_integer();
-        let p = self.get_prime().to_integer();
-
-        if &i * &2.into() > p { &i - &p } else { i }
-    }
-
-    fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<FiniteField<UField>>
-    where
-        Self::Base: PolynomialGCD<u16>,
-        <Self::Base as Set>::Element: Copy,
-    {
-        AlgebraicExtension::galois_field(self.clone(), new_pow, Temporary(0))
-    }
-
-    fn upgrade_element(
-        &self,
-        e: &Self::Element,
-        larger_field: &AlgebraicExtension<Self::Base>,
-    ) -> <AlgebraicExtension<Self::Base> as Set>::Element {
-        larger_field.constant(e.clone())
-    }
-
-    fn downgrade_element(
-        &self,
-        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
-    ) -> Self::Element {
-        e.poly.get_constant()
-    }
-}
-
 /// A number in a finite field.
 #[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
+
+impl<UField> FiniteFieldElement<UField> {
+    /// Get the underlying value, which may be in a special representation.
+    pub fn inner(&self) -> &UField {
+        &self.0
+    }
+
+    /// Create a new finite field element from the inner value.
+    /// The value must be in the correct representation for the field.
+    pub fn from_inner(value: UField) -> Self {
+        FiniteFieldElement(value)
+    }
+}
 
 impl<UField: PartialOrd> InternalOrdering for FiniteFieldElement<UField> {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -187,6 +121,15 @@ pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
     fn to_element(&self, a: UField) -> Self::Element;
     /// Convert a number from the finite field to standard form `[0,p)`.
     fn from_element(&self, a: &Self::Element) -> UField;
+    // Convert a number from the finite field to standard form `[0,p)`.
+    fn to_integer(&self, a: &Self::Element) -> Integer;
+    /// Convert a number from the finite field to symmetric form `[-p/2,p/2]`.
+    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
+        let i = self.to_integer(a);
+        let p = self.get_prime().to_integer();
+
+        if &i * 2 <= p { i } else { i - p }
+    }
 }
 
 /// The modular ring `Z / mZ`, where `m` can be any odd positive integer. In most cases,
@@ -300,6 +243,10 @@ impl FiniteFieldCore<u32> for Zp {
     #[inline(always)]
     fn from_element(&self, a: &FiniteFieldElement<u32>) -> u32 {
         self.mul(a, &FiniteFieldElement(1)).0
+    }
+
+    fn to_integer(&self, a: &Self::Element) -> Integer {
+        self.from_element(a).into()
     }
 }
 
@@ -800,6 +747,10 @@ impl FiniteFieldCore<u64> for Zp64 {
     fn from_element(&self, a: &FiniteFieldElement<u64>) -> u64 {
         self.mul(a, &FiniteFieldElement(1)).0
     }
+
+    fn to_integer(&self, a: &Self::Element) -> Integer {
+        self.from_element(a).into()
+    }
 }
 
 impl<UField: Display> Display for FiniteField<UField> {
@@ -1232,6 +1183,10 @@ impl FiniteFieldCore<Two> for FiniteField<Two> {
     fn from_element(&self, a: &Self::Element) -> Two {
         Two(*a)
     }
+
+    fn to_integer(&self, a: &Self::Element) -> Integer {
+        self.from_element(a).0.into()
+    }
 }
 
 impl Set for FiniteField<Two> {
@@ -1529,6 +1484,10 @@ impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
 
     fn from_element(&self, a: &Self::Element) -> Mersenne64 {
         Mersenne64(*a)
+    }
+
+    fn to_integer(&self, a: &Self::Element) -> Integer {
+        self.from_element(a).0.into()
     }
 }
 
@@ -1858,6 +1817,10 @@ impl FiniteFieldCore<Integer> for FiniteField<Integer> {
         } else {
             a.clone()
         }
+    }
+
+    fn to_integer(&self, a: &Self::Element) -> Integer {
+        self.from_element(a).into()
     }
 }
 
@@ -2207,7 +2170,7 @@ impl Iterator for PrimeIteratorU64 {
 ///
 /// # Example
 /// ```rust
-/// use symbolica::domains::finite_field::{SmoothPrimeIterator};
+/// # use numerica::domains::finite_field::{SmoothPrimeIterator};
 /// let mut iter = SmoothPrimeIterator::new(vec![2, 3]);
 ///
 /// while let Some((p, pows)) = iter.next() {

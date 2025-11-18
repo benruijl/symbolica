@@ -14,7 +14,7 @@ use crate::{
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     evaluate::{FunctionMap, OptimizationSettings},
-    poly::{PositiveExponent, PolyVariable},
+    poly::{PolyVariable, PositiveExponent},
     tensors::matrix::{Matrix, MatrixError},
 };
 
@@ -228,9 +228,9 @@ impl AtomView<'_> {
 
             ci -= &(&i * &f);
 
-            cur = ci.data;
+            cur = ci.into_vec();
 
-            if f.data.iter().all(|x| x.norm() < prec) {
+            if f.into_iter().all(|x| x.norm() < prec) {
                 return Ok(cur);
             }
         }
@@ -515,10 +515,10 @@ mod test {
 
         let res = res
             .iter()
-            .map(|x| parse!(x).to_rational_polynomial(&Z, &Z, m.data[0].get_variables().clone()))
+            .map(|x| parse!(x).to_rational_polynomial(&Z, &Z, m[(0, 0)].get_variables().clone()))
             .collect::<Vec<_>>();
 
-        assert_eq!(sol.data, res);
+        assert_eq!(sol.into_vec(), res);
     }
 
     #[test]

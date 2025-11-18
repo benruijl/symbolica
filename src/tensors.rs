@@ -1,13 +1,13 @@
 //! Methods for tensor manipulation and linear algebra.
 
+pub use numerica::tensors::*;
+
 use crate::{
     atom::{Atom, AtomCore, AtomView, FunctionBuilder, Symbol},
     graph::{Graph, HiddenData},
     printer::PrintOptions,
     state::{RecycledAtom, Workspace},
 };
-
-pub mod matrix;
 
 /// A tensor in its canonical form and its list of external and dummy indices.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,9 +171,10 @@ impl<'a> AtomView<'a> {
                 } else {
                     Ok(None)
                 }
-            })? {
-                return Ok(r);
-            }
+            })?
+        {
+            return Ok(r);
+        }
 
         let mut g = Graph::new();
         let mut connections = vec![(vec![], false, 0); indices.len()];

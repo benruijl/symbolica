@@ -13,7 +13,7 @@ use std::sync::Arc;
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::float::FloatLike;
 use crate::domains::integer::{Integer, IntegerRing};
-use crate::domains::rational::{FractionField, FractionNormalization, Q, RationalField};
+use crate::domains::rational::{Fraction, FractionField, FractionNormalization, Q, RationalField};
 use crate::domains::{
     Derivable, EuclideanDomain, Field, InternalOrdering, Ring, RingOps, SelfRing, Set,
 };
@@ -32,6 +32,38 @@ thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec:
 pub struct PolynomialRing<R: Ring, E: Exponent> {
     pub(crate) ring: R,
     _phantom_exp: PhantomData<E>,
+}
+
+impl<R: Ring + FractionNormalization, E: Exponent> FractionNormalization for PolynomialRing<R, E> {
+    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
+        a.constant(a.ring.get_normalization_factor(&a.lcoeff()))
+    }
+}
+
+impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<FractionField<R>, E> {
+    pub fn to_rational_polynomial(
+        &self,
+        e: &<Self as Set>::Element,
+    ) -> Fraction<PolynomialRing<R, E>> {
+        let ring = self.ring.ring();
+        let mut lcm = ring.one();
+        for x in &e.coefficients {
+            let g = ring.gcd(&lcm, x.denominator_ref());
+            lcm = ring.mul(&lcm, &ring.quot_rem(x.denominator_ref(), &g).0);
+        }
+
+        let e2 = e.map_coeff(
+            |c| {
+                ring.mul(
+                    c.numerator_ref(),
+                    &ring.quot_rem(&lcm, c.denominator_ref()).0,
+                )
+            },
+            ring.clone(),
+        );
+
+        Fraction::from_unchecked(e2.constant(lcm), e2)
+    }
 }
 
 impl<R: Ring, E: Exponent> PolynomialRing<R, E> {
@@ -4346,6 +4378,8 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
 }
 
 impl<R: Ring, E: Exponent> Derivable for PolynomialRing<R, E> {
+    type Variable = PolyVariable;
+
     fn derivative(
         &self,
         p: &MultivariatePolynomial<R, E>,
@@ -4457,7 +4491,7 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 }
 
 // General implementation for F::Element blocked on https://github.com/rust-lang/rust/issues/20400
-impl<E: Exponent, O: MonomialOrder> PartialEq<<IntegerRing as Set>::Element>
+impl<E: Exponent, O: MonomialOrder> PartialEq<Integer>
     for MultivariatePolynomial<IntegerRing, E, O>
 {
     #[inline]
@@ -4467,11 +4501,10 @@ impl<E: Exponent, O: MonomialOrder> PartialEq<<IntegerRing as Set>::Element>
 }
 
 impl<R: Ring + FractionNormalization + EuclideanDomain, E: Exponent, O: MonomialOrder>
-    PartialEq<<FractionField<R> as Set>::Element>
-    for MultivariatePolynomial<FractionField<R>, E, O>
+    PartialEq<Fraction<R>> for MultivariatePolynomial<FractionField<R>, E, O>
 {
     #[inline]
-    fn eq(&self, other: &<FractionField<R> as Set>::Element) -> bool {
+    fn eq(&self, other: &Fraction<R>) -> bool {
         self.is_constant() && self.get_constant() == *other
     }
 }

@@ -10,7 +10,7 @@ use crate::{
     combinatorics::CombinationIterator,
     domains::{RingOps, Set, rational::Q},
     poly::{
-        PositiveExponent, PolyVariable, factor::Factorize, gcd::PolynomialGCD,
+        PolyVariable, PositiveExponent, factor::Factorize, gcd::PolynomialGCD,
         polynomial::MultivariatePolynomial, univariate::UnivariatePolynomial,
     },
     symbol,
@@ -19,9 +19,7 @@ use crate::{
 
 use super::{
     EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
-    finite_field::{
-        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, ToFiniteField,
-    },
+    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::Integer,
     rational::Rational,
 };
@@ -75,6 +73,66 @@ impl RootInfo {
     }
 }
 
+/// A Galois field `GF(p,n)` is a finite field with `p^n` elements.
+/// It provides methods to upgrade and downgrade to Galois fields with the
+/// same prime but with a different power.
+pub trait GaloisField: Field {
+    type Base: Field;
+
+    fn get_extension_degree(&self) -> u64;
+
+    /// Upgrade the field to `GF(p,new_pow)`.
+    fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>
+    where
+        Self::Base: PolynomialGCD<u16>,
+        <Self::Base as Set>::Element: Copy;
+
+    fn upgrade_element(
+        &self,
+        e: &Self::Element,
+        larger_field: &AlgebraicExtension<Self::Base>,
+    ) -> <AlgebraicExtension<Self::Base> as Set>::Element;
+
+    fn downgrade_element(
+        &self,
+        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
+    ) -> Self::Element;
+}
+
+impl<UField: FiniteFieldWorkspace> GaloisField for FiniteField<UField>
+where
+    FiniteField<UField>: Field + FiniteFieldCore<UField>,
+{
+    type Base = Self;
+
+    fn get_extension_degree(&self) -> u64 {
+        1
+    }
+
+    fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<FiniteField<UField>>
+    where
+        Self::Base: PolynomialGCD<u16>,
+        <Self::Base as Set>::Element: Copy,
+    {
+        AlgebraicExtension::galois_field(self.clone(), new_pow, PolyVariable::Temporary(0))
+    }
+
+    fn upgrade_element(
+        &self,
+        e: &Self::Element,
+        larger_field: &AlgebraicExtension<Self::Base>,
+    ) -> <AlgebraicExtension<Self::Base> as Set>::Element {
+        larger_field.constant(e.clone())
+    }
+
+    fn downgrade_element(
+        &self,
+        e: &<AlgebraicExtension<Self::Base> as Set>::Element,
+    ) -> Self::Element {
+        e.poly.get_constant()
+    }
+}
+
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
 ///
 /// # Examples
@@ -115,17 +173,11 @@ pub struct AlgebraicExtension<R: Ring> {
     embedding: Option<Arc<RootInfo>>,
 }
 
-impl<T: FiniteFieldWorkspace> GaloisField for AlgebraicExtension<FiniteField<T>>
+impl<T: FiniteFieldWorkspace> AlgebraicExtension<FiniteField<T>>
 where
-    FiniteField<T>: FiniteFieldCore<T> + PolynomialGCD<u16>,
+    FiniteField<T>: FiniteFieldCore<T>,
 {
-    type Base = FiniteField<T>;
-
-    fn get_extension_degree(&self) -> u64 {
-        self.poly.degree(0) as u64
-    }
-
-    fn to_integer(&self, a: &Self::Element) -> Integer {
+    pub fn to_integer(&self, a: &<Self as Set>::Element) -> Integer {
         let mut p = Integer::zero();
         for x in a.poly.into_iter() {
             p += &(self.poly.ring.to_integer(x.coefficient)
@@ -134,10 +186,21 @@ where
         p
     }
 
-    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
+    pub fn to_symmetric_integer(&self, a: &<Self as Set>::Element) -> Integer {
         let r = self.to_integer(a);
         let s = self.size().unwrap();
-        if &r * &2.into() > s { &r - &s } else { r }
+        if &r * 2 <= s { r } else { &r - &s }
+    }
+}
+
+impl<T: FiniteFieldWorkspace> GaloisField for AlgebraicExtension<FiniteField<T>>
+where
+    FiniteField<T>: FiniteFieldCore<T> + PolynomialGCD<u16>,
+{
+    type Base = FiniteField<T>;
+
+    fn get_extension_degree(&self) -> u64 {
+        self.poly.degree(0) as u64
     }
 
     fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>

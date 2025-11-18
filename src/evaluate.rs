@@ -8636,10 +8636,10 @@ impl<'a> AtomView<'a> {
             AtomView::Num(n) => match n.get_coeff_view() {
                 CoefficientView::Natural(n, d, ni, di) => {
                     if ni == 0 {
-                        Ok(coeff_map(&Rational::from_unchecked(n, d)))
+                        Ok(coeff_map(&Rational::from_int_unchecked(n, d)))
                     } else {
-                        let num = coeff_map(&Rational::from_unchecked(n, d));
-                        Ok(coeff_map(&Rational::from_unchecked(ni, di))
+                        let num = coeff_map(&Rational::from_int_unchecked(n, d));
+                        Ok(coeff_map(&Rational::from_int_unchecked(ni, di))
                             * num.i().ok_or_else(|| {
                                 "Numerical type does not support imaginary unit".to_string()
                             })?

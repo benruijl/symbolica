@@ -346,6 +346,8 @@ impl Field for AtomField {
 }
 
 impl Derivable for AtomField {
+    type Variable = PolyVariable;
+
     fn derivative(&self, e: &Atom, x: &PolyVariable) -> Atom {
         match x {
             PolyVariable::Symbol(s) => e.derivative(*s),

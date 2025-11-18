@@ -78,6 +78,56 @@ impl InternalOrdering for Integer {
     }
 }
 
+#[cfg(feature = "python")]
+use pyo3::{
+    Borrowed, Bound, FromPyObject, IntoPyObject, PyErr, PyResult, Python, exceptions, types::PyInt,
+};
+
+#[cfg(feature = "python_stubgen")]
+impl_stub_type!(Integer = PyInt);
+
+#[cfg(feature = "python")]
+impl<'py> FromPyObject<'_, 'py> for Integer {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
+        if let Ok(num) = ob.extract::<i64>() {
+            Ok(num.into())
+        } else if let Ok(num) = ob.cast::<PyInt>() {
+            let a = num.to_string();
+            Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
+        } else {
+            Err(exceptions::PyValueError::new_err("Not a valid integer"))
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl<'py> IntoPyObject<'py> for Integer {
+    type Target = PyInt;
+    type Output = Bound<'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self {
+            Integer::Single(n) => n.into_pyobject(py),
+            Integer::Double(d) => d.into_pyobject(py),
+            Integer::Large(l) => unsafe {
+                Ok(Bound::from_owned_ptr(
+                    py,
+                    pyo3::ffi::PyLong_FromString(
+                        l.to_string().as_str().as_ptr() as *const i8,
+                        std::ptr::null_mut(),
+                        10,
+                    ),
+                )
+                .cast_into::<PyInt>()
+                .unwrap())
+            },
+        }
+    }
+}
+
 #[cfg(feature = "bincode")]
 impl bincode::Encode for Integer {
     fn encode<E: bincode::enc::Encoder>(

@@ -11,8 +11,8 @@
 <p align="center">
 <a href="https://symbolica.io"><img alt="Symbolica website" src="https://img.shields.io/static/v1?label=symbolica&message=website&color=orange&style=flat-square"></a>
   <a href="https://zulip.symbolica.io"><img alt="Zulip Chat" src="https://img.shields.io/static/v1?label=zulip&message=discussions&color=blue&style=flat-square"></a>
-    <a href="https://github.com/benruijl/symbolica"><img alt="Symbolica website" src="https://img.shields.io/static/v1?label=github&message=development&color=green&style=flat-square&logo=github"></a>
-    <a href="https://app.codecov.io/gh/benruijl/symbolica"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/benruijl/symbolica?token=N43MATK5XJ&style=flat-square"></a>
+    <a href="https://github.com/symbolica-dev/symbolica"><img alt="Symbolica repository" src="https://img.shields.io/static/v1?label=github&message=development&color=green&style=flat-square&logo=github"></a>
+    <a href="https://app.codecov.io/gh/symbolica-dev/symbolica"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/symbolica-dev/symbolica?token=rhCESyNPk7&style=flat-square"></a>
 </p>
 
 # Symbolica ⊆ Modern Computer Algebra
@@ -60,7 +60,7 @@ If you want to use Symbolica as a library in Rust, simply include it in the `Car
 
 ```toml
 [dependencies]
-symbolica = "0.20"
+symbolica = "1.0"
 ```
 
 # Examples

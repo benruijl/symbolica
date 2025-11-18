@@ -5,7 +5,7 @@
 //! Combinations without replacements:
 //!
 //! ```rust
-//! use symbolica::combinatorics::CombinationIterator;
+//! # use numerica::combinatorics::CombinationIterator;
 //!
 //! let mut c = CombinationIterator::new(4, 3);
 //! let mut combinations = vec![];
@@ -21,7 +21,7 @@
 //! Partitions:
 //!
 //! ```rust
-//! use symbolica::combinatorics::partitions;
+//! # use numerica::combinatorics::partitions;
 //!
 //! let p = partitions(
 //!     &[1, 1, 1, 2, 2],
@@ -52,7 +52,7 @@ use crate::domains::integer::Integer;
 ///
 /// Create an iterator to generate combinations of 3 elements from a total of 4:
 /// ```rust
-/// use symbolica::combinatorics::CombinationIterator;
+/// # use numerica::combinatorics::CombinationIterator;
 /// let mut combos = CombinationIterator::new(4, 3);
 ///
 /// while let Some(c) = combos.next() {
@@ -123,8 +123,7 @@ impl CombinationIterator {
 /// # Example
 ///
 /// ```rust
-///
-/// use symbolica::combinatorics::CombinationWithReplacementIterator;
+/// # use numerica::combinatorics::CombinationWithReplacementIterator;
 ///
 /// let mut comb_iter = CombinationWithReplacementIterator::new(3, 2);
 /// while let Some(combination) = comb_iter.next() {
@@ -267,7 +266,7 @@ fn unique_permutations_impl<T: Clone>(
 /// # Example
 ///
 /// ```
-/// # use symbolica::combinatorics::partitions;
+/// # use numerica::combinatorics::partitions;
 /// let result = partitions(
 ///     &[1, 1, 1, 2, 2],
 ///     &[('f', 2), ('g', 2), ('f', 1)],
@@ -380,9 +379,12 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
         for a in single_bin_fill.drain(..) {
             // make sure we generate a descending list
             if let Some(l) = accum.last()
-                && l.0 == *bin_id && a.len() == l.1.len() && a < l.1 {
-                    continue;
-                }
+                && l.0 == *bin_id
+                && a.len() == l.1.len()
+                && a < l.1
+            {
+                continue;
+            }
 
             // remove uses from the counters
             for x in &a {

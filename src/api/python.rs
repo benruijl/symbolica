@@ -21,10 +21,9 @@ use pyo3::{
     pybacked::PyBackedStr,
     pyclass::CompareOp,
     pyfunction, pymethods,
-    sync::PyOnceLock,
     types::{
-        IntoPyDict, PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyDict, PyInt, PyModule,
-        PyTuple, PyTupleMethods, PyType, PyTypeMethods,
+        PyAnyMethods, PyBytes, PyComplex, PyDict, PyInt, PyModule, PyTuple, PyTupleMethods, PyType,
+        PyTypeMethods,
     },
     wrap_pyfunction,
 };
@@ -62,10 +61,8 @@ use crate::{
         Ring, RingOps, SelfRing,
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
-        finite_field::{
-            FiniteFieldCore, GaloisField, PrimeIteratorU64, ToFiniteField, Z2, Zp64, is_prime_u64,
-        },
-        float::{Complex, F64, Float, RealLike},
+        finite_field::{FiniteFieldCore, PrimeIteratorU64, ToFiniteField, Z2, Zp64, is_prime_u64},
+        float::{Complex, F64, Float, PythonMultiPrecisionFloat, RealLike},
         integer::{FromFiniteField, Integer, IntegerRelationError, IntegerRing, Z},
         rational::{Q, Rational, RationalField},
         rational_polynomial::{
@@ -209,6 +206,10 @@ impl From<PrintMode> for PythonPrintMode {
             PrintMode::Latex => PythonPrintMode::Latex,
             PrintMode::Mathematica => PythonPrintMode::Mathematica,
             PrintMode::Sympy => PythonPrintMode::Sympy,
+            _ => {
+                error!("Unsupported PrintMode: {:?}", mode);
+                PythonPrintMode::Symbolica
+            }
         }
     }
 }
@@ -221,47 +222,6 @@ impl From<PythonPrintMode> for PrintMode {
             PythonPrintMode::Mathematica => PrintMode::Mathematica,
             PythonPrintMode::Sympy => PrintMode::Sympy,
         }
-    }
-}
-
-impl<'py> IntoPyDict<'py> for PrintOptions {
-    fn into_py_dict(self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let dict = PyDict::new(py);
-        dict.set_item("mode", PythonPrintMode::from(self.mode))?;
-        dict.set_item("terms_on_new_line", self.terms_on_new_line)?;
-        dict.set_item("color_top_level_sum", self.color_top_level_sum)?;
-        dict.set_item("color_builtin_symbols", self.color_builtin_symbols)?;
-        dict.set_item("print_ring", self.print_ring)?;
-        dict.set_item(
-            "symmetric_representation_for_finite_field",
-            self.symmetric_representation_for_finite_field,
-        )?;
-        dict.set_item(
-            "explicit_rational_polynomial",
-            self.explicit_rational_polynomial,
-        )?;
-        dict.set_item(
-            "number_thousands_separator",
-            self.number_thousands_separator,
-        )?;
-        dict.set_item("multiplication_operator", self.multiplication_operator)?;
-        dict.set_item(
-            "double_star_for_exponentiation",
-            self.double_star_for_exponentiation,
-        )?;
-        dict.set_item(
-            "square_brackets_for_function",
-            self.square_brackets_for_function,
-        )?;
-        dict.set_item("num_exp_as_superscript", self.num_exp_as_superscript)?;
-        dict.set_item("precision", self.precision)?;
-        dict.set_item("pretty_matrix", self.pretty_matrix)?;
-        dict.set_item("hide_namespace", self.hide_namespace)?;
-        dict.set_item("hide_all_namespaces", self.hide_all_namespaces)?;
-        dict.set_item("color_namespace", self.color_namespace)?;
-        dict.set_item("max_terms", self.max_terms)?;
-        dict.set_item("custom_print_mode", self.custom_print_mode.map(|x| x.1))?;
-        Ok(dict)
     }
 }
 
@@ -320,6 +280,48 @@ pub fn create_symbolica_module<'a, 'b>(
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     Ok(m)
+}
+
+fn print_options_to_dict<'py>(
+    options: &PrintOptions,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("mode", PythonPrintMode::from(options.mode))?;
+    dict.set_item("terms_on_new_line", options.terms_on_new_line)?;
+    dict.set_item("color_top_level_sum", options.color_top_level_sum)?;
+    dict.set_item("color_builtin_symbols", options.color_builtin_symbols)?;
+    dict.set_item("print_ring", options.print_ring)?;
+    dict.set_item(
+        "symmetric_representation_for_finite_field",
+        options.symmetric_representation_for_finite_field,
+    )?;
+    dict.set_item(
+        "explicit_rational_polynomial",
+        options.explicit_rational_polynomial,
+    )?;
+    dict.set_item(
+        "number_thousands_separator",
+        options.number_thousands_separator,
+    )?;
+    dict.set_item("multiplication_operator", options.multiplication_operator)?;
+    dict.set_item(
+        "double_star_for_exponentiation",
+        options.double_star_for_exponentiation,
+    )?;
+    dict.set_item(
+        "square_brackets_for_function",
+        options.square_brackets_for_function,
+    )?;
+    dict.set_item("num_exp_as_superscript", options.num_exp_as_superscript)?;
+    dict.set_item("precision", options.precision)?;
+    dict.set_item("pretty_matrix", options.pretty_matrix)?;
+    dict.set_item("hide_namespace", options.hide_namespace)?;
+    dict.set_item("hide_all_namespaces", options.hide_all_namespaces)?;
+    dict.set_item("color_namespace", options.color_namespace)?;
+    dict.set_item("max_terms", options.max_terms)?;
+    dict.set_item("custom_print_mode", options.custom_print_mode.map(|x| x.1))?;
+    Ok(dict)
 }
 
 /// Symbolica is a blazing fast computer algebra system.
@@ -3205,49 +3207,6 @@ impl<'py> FromPyObject<'_, 'py> for PolyVariable {
 #[cfg(feature = "python_stubgen")]
 impl_stub_type!(PolyVariable = PythonExpression);
 
-#[cfg(feature = "python_stubgen")]
-impl_stub_type!(Integer = PyInt);
-
-impl<'py> FromPyObject<'_, 'py> for Integer {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
-        if let Ok(num) = ob.extract::<i64>() {
-            Ok(num.into())
-        } else if let Ok(num) = ob.cast::<PyInt>() {
-            let a = num.to_string();
-            Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
-        } else {
-            Err(exceptions::PyValueError::new_err("Not a valid integer"))
-        }
-    }
-}
-
-impl<'py> IntoPyObject<'py> for Integer {
-    type Target = PyInt;
-    type Output = Bound<'py, Self::Target>;
-    type Error = std::convert::Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        match self {
-            Integer::Single(n) => n.into_pyobject(py),
-            Integer::Double(d) => d.into_pyobject(py),
-            Integer::Large(l) => unsafe {
-                Ok(Bound::from_owned_ptr(
-                    py,
-                    pyo3::ffi::PyLong_FromString(
-                        l.to_string().as_str().as_ptr() as *const i8,
-                        std::ptr::null_mut(),
-                        10,
-                    ),
-                )
-                .cast_into::<PyInt>()
-                .unwrap())
-            },
-        }
-    }
-}
-
 pub struct ConvertibleToExpression(PythonExpression);
 
 impl ConvertibleToExpression {
@@ -3255,138 +3214,6 @@ impl ConvertibleToExpression {
         self.0
     }
 }
-
-pub struct PythonMultiPrecisionFloat(Float);
-
-#[cfg(feature = "python_stubgen")]
-impl_stub_type!(PythonMultiPrecisionFloat = f64 | Decimal);
-
-#[cfg(feature = "python_stubgen")]
-pub struct Decimal;
-
-#[cfg(feature = "python_stubgen")]
-impl PyStubType for Decimal {
-    fn type_output() -> TypeInfo {
-        TypeInfo {
-            name: "decimal.Decimal".to_string(),
-            import: {
-                let mut h = std::collections::HashSet::default();
-                h.insert("decimal".into());
-                h
-            },
-        }
-    }
-}
-
-impl From<Float> for PythonMultiPrecisionFloat {
-    fn from(f: Float) -> Self {
-        PythonMultiPrecisionFloat(f)
-    }
-}
-
-static PYDECIMAL: PyOnceLock<Py<PyType>> = PyOnceLock::new();
-
-fn get_decimal(py: Python<'_>) -> &Py<PyType> {
-    PYDECIMAL.get_or_init(py, || {
-        py.import("decimal")
-            .unwrap()
-            .getattr("Decimal")
-            .unwrap()
-            .extract()
-            .unwrap()
-    })
-}
-
-impl<'py> IntoPyObject<'py> for PythonMultiPrecisionFloat {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = std::convert::Infallible;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        get_decimal(py)
-            .call1(py, (self.0.to_string(),))
-            .expect("failed to call decimal.Decimal(value)")
-            .into_pyobject(py)
-    }
-}
-
-impl<'py> FromPyObject<'_, 'py> for PythonMultiPrecisionFloat {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
-        if ob.is_instance(get_decimal(ob.py()).as_any().bind(ob.py()))? {
-            let a = ob
-                .call_method0("__str__")
-                .unwrap()
-                .extract::<PyBackedStr>()?;
-
-            // get the number of accurate digits
-            let digits = a
-                .chars()
-                .skip_while(|x| *x == '.' || *x == '0' || *x == '-')
-                .filter(|x| *x != '.')
-                .take_while(|x| x.is_ascii_digit())
-                .count();
-
-            Ok(Float::parse(
-                &a,
-                Some((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32),
-            )
-            .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
-            .into())
-        } else if let Ok(a) = ob.extract::<PyBackedStr>() {
-            Ok(Float::parse(&a, None)
-                .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
-                .into())
-        } else if let Ok(a) = ob.extract::<f64>() {
-            if a.is_finite() {
-                Ok(Float::with_val(53, a).into())
-            } else {
-                Err(exceptions::PyValueError::new_err(
-                    "Floating point number is not finite",
-                ))
-            }
-        } else {
-            Err(exceptions::PyValueError::new_err(
-                "Not a valid multi-precision float",
-            ))
-        }
-    }
-}
-
-impl<'py> FromPyObject<'_, 'py> for Complex<f64> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
-        ob.extract::<Complex64>().map(|x| Complex::new(x.re, x.im))
-    }
-}
-
-#[cfg(feature = "python_stubgen")]
-impl_stub_type!(Complex<f64> = Complex64);
-
-impl<'py> FromPyObject<'_, 'py> for Complex<Float> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'_, 'py, pyo3::PyAny>) -> PyResult<Self> {
-        if let Ok(a) = ob.extract::<PythonMultiPrecisionFloat>() {
-            let zero = Float::new(a.0.prec());
-            Ok(Complex::new(a.0, zero))
-        } else if let Ok(a) = ob.cast::<PyComplex>() {
-            Ok(Complex::new(
-                Float::with_val(53, a.real()),
-                Float::with_val(53, a.imag()),
-            ))
-        } else {
-            Err(exceptions::PyValueError::new_err(
-                "Not a valid complex number",
-            ))
-        }
-    }
-}
-
-#[cfg(feature = "python_stubgen")]
-impl_stub_type!(Complex<Float> = Complex64);
 
 macro_rules! req_cmp {
     ($self:ident,$num:ident,$cmp_any_atom:ident,$c:ident) => {{
@@ -3687,7 +3514,7 @@ impl PythonExpression {
                 symbol = symbol.with_print_function(Box::new(
                     move |input: AtomView<'_>, opts: &PrintOptions| {
                         Python::attach(|py| {
-                            let kwargs = opts.into_py_dict(py).unwrap();
+                            let kwargs = print_options_to_dict(opts, py).unwrap();
                             f.call(
                                 py,
                                 (PythonExpression::from(input.to_owned()),),
@@ -9696,7 +9523,9 @@ impl PythonPolynomial {
             .map(|x| {
                 if let AtomView::Num(x) = x.to_expression().expr.as_view() {
                     match x.get_coeff_view() {
-                        CoefficientView::Natural(r, d, 0, 1) => Ok(Rational::from_unchecked(r, d)),
+                        CoefficientView::Natural(r, d, 0, 1) => {
+                            Ok(Rational::from_int_unchecked(r, d))
+                        }
                         CoefficientView::Large(r, i) => {
                             if i.is_zero() {
                                 Ok(r.to_rat())
@@ -17273,8 +17102,7 @@ impl PythonMatrix {
     ) -> PyResult<PythonMatrix> {
         let data = self
             .matrix
-            .data
-            .iter()
+            .into_iter()
             .map(|x| {
                 let expr = PythonRationalPolynomial { poly: x.clone() };
 
@@ -17291,9 +17119,9 @@ impl PythonMatrix {
         Ok(PythonMatrix {
             matrix: Matrix::from_linear(
                 data,
-                self.matrix.nrows,
-                self.matrix.ncols,
-                self.matrix.field.clone(),
+                self.matrix.nrows() as u32,
+                self.matrix.ncols() as u32,
+                self.matrix.field().clone(),
             )
             .unwrap(),
         })

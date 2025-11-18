@@ -1,7 +1,7 @@
 //! A hyperdual number is a number that keep track of (higher order) derivatives in one or multiple
 //! variables.
 //! ```
-//! use symbolica::{
+//! use numerica::{
 //! create_hyperdual_from_components, create_hyperdual_single_derivative,
 //! domains::{float::FloatLike, rational::Rational},
 //! };
@@ -182,7 +182,7 @@ pub const fn get_mult_table<const N: usize, const C: usize, const T: usize>(
 ///
 /// For example:
 /// ```
-/// # use symbolica::{
+/// # use numerica::{
 /// # create_hyperdual_single_derivative,
 /// # domains::{float::FloatLike, rational::Rational},
 /// # };
@@ -228,7 +228,7 @@ macro_rules! create_hyperdual_from_depths {
 ///
 /// For example:
 /// ```
-/// # use symbolica::{
+/// # use numerica::{
 /// # create_hyperdual_from_components,
 /// # domains::{float::FloatLike, rational::Rational},
 /// # };

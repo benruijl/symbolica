@@ -210,7 +210,7 @@ pub struct FiniteField<UField> {
 impl Zp {
     /// Create a new modular ring. `p` must be odd.
     pub fn new_non_prime(p: u32) -> Zp {
-        if p % 2 == 0 {
+        if p.is_multiple_of(2) {
             panic!("Prime 2 is not supported: use Z2 instead.");
         }
 
@@ -224,7 +224,7 @@ impl Zp {
 
     /// Create a new modular field from an odd prime `p`.
     pub fn new(p: u32) -> Zp {
-        if p % 2 == 0 {
+        if p.is_multiple_of(2) {
             panic!("Prime 2 is not supported: use Z2 instead.");
         }
 
@@ -656,7 +656,7 @@ impl FiniteFieldWorkspace for u64 {
 impl Zp64 {
     /// Create a new modular ring. `n` must be odd.
     pub fn new_non_prime(p: u64) -> Zp64 {
-        if p % 2 == 0 {
+        if p.is_multiple_of(2) {
             panic!("Prime 2 is not supported: use Z2 instead.");
         }
 
@@ -670,7 +670,7 @@ impl Zp64 {
 
     // Create a new modular field with odd prime `p`.
     pub fn new(p: u64) -> Zp64 {
-        if p % 2 == 0 {
+        if p.is_multiple_of(2) {
             panic!("Prime 2 is not supported: use Z2 instead.");
         }
 
@@ -713,7 +713,7 @@ impl Zp64 {
 
                 // assume smooth prime with small factors
                 // TODO: switch to baby-step giant-step algorithm
-                let mut gamma_c = gamma.clone();
+                let mut gamma_c = gamma;
                 for d in 1..*p {
                     if gamma_c == hh {
                         x += p.pow(k) * d;
@@ -2124,13 +2124,13 @@ pub fn is_prime_u64(n: u64) -> bool {
         return false;
     }
 
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return n == 2;
     }
 
     let mut s = 0;
     let mut d = n - 1;
-    while d % 2 == 0 {
+    while d.is_multiple_of(2) {
         d /= 2;
         s += 1;
     }
@@ -2324,7 +2324,7 @@ fn pollard_brent_rho(n: u64) -> u64 {
         return n;
     }
 
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return 2;
     }
 
@@ -2372,7 +2372,7 @@ fn pollard_brent_rho(n: u64) -> u64 {
                 if g > 1 {
                     if g == n {
                         // two sequences are repeating at the same time, increase constant
-                        c = c + 1;
+                        c += 1;
                         break;
                     }
                     return g;
@@ -2393,7 +2393,7 @@ pub fn factor(mut n: u64, out: &mut Vec<u64>) {
         return;
     }
 
-    while n % 2 == 0 {
+    while n.is_multiple_of(2) {
         out.push(2);
         n /= 2;
     }

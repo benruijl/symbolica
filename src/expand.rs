@@ -63,15 +63,13 @@ impl AtomView<'_> {
                     return false;
                 }
 
-                if let AtomView::Num(n) = exp {
-                    if let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view() {
-                        if n.unsigned_abs() <= u32::MAX as u64
+                if let AtomView::Num(n) = exp
+                    && let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view()
+                        && n.unsigned_abs() <= u32::MAX as u64
                             && matches!(base, AtomView::Add(_) | AtomView::Mul(_))
                         {
                             return var.map(|s| !base.contains(s)).unwrap_or(false);
                         }
-                    }
-                }
 
                 true
             }
@@ -126,12 +124,11 @@ impl AtomView<'_> {
             return;
         }
 
-        if let Some(v) = var {
-            if !self.contains(v) {
+        if let Some(v) = var
+            && !self.contains(v) {
                 out.set_from_view(self);
                 return;
             }
-        }
 
         match self {
             AtomView::Num(_) | AtomView::Var(_) | AtomView::Fun(_) => unreachable!(),
@@ -167,12 +164,11 @@ impl AtomView<'_> {
 
     /// Expand an expression, but do not normalize the result.
     fn expand_no_norm(&self, workspace: &Workspace, var: Option<AtomView>, out: &mut Atom) -> bool {
-        if let Some(s) = var {
-            if !self.contains(s) {
+        if let Some(s) = var
+            && !self.contains(s) {
                 out.set_from_view(self);
                 return false;
             }
-        }
 
         match self {
             AtomView::Pow(p) => {
@@ -185,13 +181,11 @@ impl AtomView<'_> {
                 changed |= exp.expand_with_ws_into(workspace, var, &mut new_exp);
 
                 let (negative, num) = 'get_num: {
-                    if let AtomView::Num(n) = new_exp.as_view() {
-                        if let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view() {
-                            if n.unsigned_abs() <= u32::MAX as u64 {
+                    if let AtomView::Num(n) = new_exp.as_view()
+                        && let CoefficientView::Natural(n, 1, 0, 1) = n.get_coeff_view()
+                            && n.unsigned_abs() <= u32::MAX as u64 {
                                 break 'get_num (n < 0, n.unsigned_abs() as u32);
                             }
-                        }
-                    }
 
                     let mut pow_h = workspace.new_atom();
                     let pow = pow_h.to_pow(new_base.as_view(), new_exp.as_view());

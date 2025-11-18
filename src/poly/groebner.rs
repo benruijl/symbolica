@@ -722,8 +722,8 @@ impl Echelonize for Zp {
         let mut pc = 0;
         for r in 0..matrix.len() {
             // identify all pivots
-            if let Some((coeff, col)) = matrix[r].first_mut() {
-                if pivots[*col].is_none() {
+            if let Some((coeff, col)) = matrix[r].first_mut()
+                && pivots[*col].is_none() {
                     pivots[*col] = Some(r);
                     pc += 1;
 
@@ -736,7 +736,6 @@ impl Echelonize for Zp {
                         }
                     }
                 }
-            }
         }
 
         if print_stats {
@@ -748,8 +747,8 @@ impl Echelonize for Zp {
                 continue;
             }
 
-            if let Some((coeff, col)) = matrix[r].first_mut() {
-                if pivots[*col].is_none() {
+            if let Some((coeff, col)) = matrix[r].first_mut()
+                && pivots[*col].is_none() {
                     pivots[*col] = Some(r);
                     pc += 1;
 
@@ -762,7 +761,6 @@ impl Echelonize for Zp {
                         }
                     }
                 }
-            }
 
             // do not reduce pivots
             if pivots.contains(&Some(r)) {

@@ -305,9 +305,9 @@ impl<'a> AtomView<'a> {
                 for a in m {
                     if let AtomView::Pow(p) = a {
                         let (b, e) = p.get_base_exp();
-                        if let AtomView::Num(n) = e {
-                            if let CoefficientView::Natural(n, d, ni, _di) = n.get_coeff_view() {
-                                if ni == 0 {
+                        if let AtomView::Num(n) = e
+                            && let CoefficientView::Natural(n, d, ni, _di) = n.get_coeff_view()
+                                && ni == 0 {
                                     if n < 0 && d == 1 {
                                         denominators.push(
                                             b.to_polynomial::<_, u16>(&Q, None)
@@ -321,8 +321,6 @@ impl<'a> AtomView<'a> {
                                         continue;
                                     }
                                 }
-                            }
-                        }
 
                         rest.push(a);
                     } else {
@@ -515,17 +513,15 @@ impl<'a> AtomView<'a> {
                 }
                 AtomView::Pow(p) => {
                     let (b, e) = p.get_base_exp();
-                    if let Ok(e) = i64::try_from(e) {
-                        if let Some(n) = get_num(b) {
-                            if let Coefficient::Complex(r) = n {
+                    if let Ok(e) = i64::try_from(e)
+                        && let Some(n) = get_num(b)
+                            && let Coefficient::Complex(r) = n {
                                 if e < 0 {
                                     return Some(r.pow((-e) as u64).inv().into());
                                 } else {
                                     return Some(r.pow(e as u64).into());
                                 }
                             }
-                        }
-                    }
 
                     None
                 }
@@ -550,8 +546,8 @@ impl<'a> AtomView<'a> {
                     r.as_view().normalize(ws, out);
                 }
 
-                if let AtomView::Add(aa) = out.as_view() {
-                    if let Some(n) = get_num(out.as_view()) {
+                if let AtomView::Add(aa) = out.as_view()
+                    && let Some(n) = get_num(out.as_view()) {
                         let v = ws.new_num(n);
                         // divide every term by n
                         let ra = r.to_add();
@@ -567,7 +563,6 @@ impl<'a> AtomView<'a> {
                         m.as_view().normalize(ws, out);
                         changed = true;
                     }
-                }
 
                 changed
             }

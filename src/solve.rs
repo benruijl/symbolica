@@ -250,7 +250,7 @@ impl AtomView<'_> {
             .iter()
             .map(|v| v.as_atom_view().to_owned().try_into())
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| SolveError::Other(e))?;
+            .map_err(SolveError::Other)?;
 
         AtomView::solve_linear_system_impl::<E>(&system, &vars)
     }

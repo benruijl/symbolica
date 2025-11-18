@@ -178,8 +178,8 @@ impl State {
                 *symbol,
                 SymbolData {
                     name: r.symbol.clone().into(),
-                    file: r.file.into(),
-                    namespace: r.namespace.into(),
+                    file: r.file,
+                    namespace: r.namespace,
                     line: r.line,
                     custom_normalization: None,
                     custom_print: None,
@@ -300,8 +300,8 @@ impl State {
                 *symbol,
                 SymbolData {
                     name: r.symbol.clone().into(),
-                    file: r.file.into(),
-                    namespace: r.namespace.into(),
+                    file: r.file,
+                    namespace: r.namespace,
                     line: r.line,
                     custom_normalization: None,
                     custom_print: None,
@@ -1095,11 +1095,10 @@ impl Drop for RecycledAtom {
         let _ = WORKSPACE.try_with(
             #[inline(always)]
             |ws| {
-                if let Ok(mut a) = ws.atom_buffer.try_borrow_mut() {
-                    if a.len() < Workspace::ATOM_BUFFER_MAX {
+                if let Ok(mut a) = ws.atom_buffer.try_borrow_mut()
+                    && a.len() < Workspace::ATOM_BUFFER_MAX {
                         a.push(std::mem::replace(&mut self.0, Atom::Zero));
                     }
-                }
             },
         );
     }

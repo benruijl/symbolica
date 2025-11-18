@@ -391,12 +391,11 @@ impl LicenseManager {
 
             key = f3.to_owned();
             std::thread::spawn(|| {
-                if let Err(e) = Self::check_registration(key) {
-                    if e.contains("expired") {
+                if let Err(e) = Self::check_registration(key)
+                    && e.contains("expired") {
                         println!("{e}");
                         abort();
                     }
-                }
             });
         } else {
             Self::check_registration(key)?;
@@ -545,12 +544,11 @@ Error: {status}",
             LICENSED.store(true, Relaxed);
 
             std::thread::spawn(|| {
-                if let Err(e) = Self::check_registration(oom_key.to_owned()) {
-                    if e.contains("Unknown license") {
+                if let Err(e) = Self::check_registration(oom_key.to_owned())
+                    && e.contains("Unknown license") {
                         println!("{e}");
                         abort();
                     }
-                }
             });
 
             Ok(())

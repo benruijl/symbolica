@@ -315,8 +315,8 @@ impl FunView<'_> {
         /// Add an argument `a` to `f` and flatten nested `arg`s.
         #[inline(always)]
         fn add_arg(f: &mut Fun, a: AtomView) {
-            if let AtomView::Fun(fa) = a {
-                if fa.get_symbol() == Symbol::ARG {
+            if let AtomView::Fun(fa) = a
+                && fa.get_symbol() == Symbol::ARG {
                     // flatten f(arg(...)) = f(...)
                     for aa in fa.iter() {
                         f.add_arg(aa);
@@ -324,7 +324,6 @@ impl FunView<'_> {
 
                     return;
                 }
-            }
 
             f.add_arg(a);
         }
@@ -594,8 +593,8 @@ impl Transformer {
                     }
                 }
                 Transformer::ForEach(t) => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let mut ff = workspace.new_atom();
                             let ff = ff.to_fun(Symbol::ARG);
 
@@ -608,7 +607,6 @@ impl Transformer {
                             ff.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     let _ = Self::execute_chain(cur_input, t, workspace, state, out);
                 }
@@ -721,8 +719,8 @@ impl Transformer {
                     cur_input.replace_multiple_into(replacements, out);
                 }
                 Transformer::Product => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let mut mul_h = workspace.new_atom();
                             let mul = mul_h.to_mul();
 
@@ -733,13 +731,12 @@ impl Transformer {
                             mul_h.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Sum => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let mut add_h = workspace.new_atom();
                             let add = add_h.to_add();
 
@@ -750,7 +747,6 @@ impl Transformer {
                             add_h.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     std::mem::swap(out, &mut tmp);
                 }
@@ -801,8 +797,8 @@ impl Transformer {
                     }
                 },
                 Transformer::Partition(bins, fill_last, repeat) => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();
@@ -839,13 +835,12 @@ impl Transformer {
                             sum_h.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Sort => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let mut args: Vec<_> = f.iter().collect();
                             args.sort();
 
@@ -859,7 +854,6 @@ impl Transformer {
                             fun_h.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     std::mem::swap(out, &mut tmp);
                 }
@@ -897,8 +891,8 @@ impl Transformer {
                     }
                 }
                 Transformer::Deduplicate => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let args: Vec<_> = f.iter().collect();
                             let mut args_dedup: Vec<_> = Vec::with_capacity(args.len());
 
@@ -919,13 +913,12 @@ impl Transformer {
                             fun_h.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Permutations(f_name) => {
-                    if let AtomView::Fun(f) = cur_input {
-                        if f.get_symbol() == Symbol::ARG {
+                    if let AtomView::Fun(f) = cur_input
+                        && f.get_symbol() == Symbol::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();
@@ -959,7 +952,6 @@ impl Transformer {
                             sum_h.as_view().normalize(workspace, out);
                             continue;
                         }
-                    }
 
                     std::mem::swap(out, &mut tmp);
                 }
@@ -997,8 +989,8 @@ impl Transformer {
                     }
                 }
                 Transformer::FromNumber => {
-                    if let AtomView::Num(n) = cur_input {
-                        if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
+                    if let AtomView::Num(n) = cur_input
+                        && let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
                             r.deserialize().to_expression_with_map(
                                 workspace,
                                 &HashMap::default(),
@@ -1006,7 +998,6 @@ impl Transformer {
                             );
                             continue;
                         }
-                    }
                     std::mem::swap(out, &mut tmp);
                 }
             }

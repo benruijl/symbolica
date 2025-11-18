@@ -16,7 +16,7 @@ impl<T> Deref for Settable<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.value
+        self.value
     }
 }
 

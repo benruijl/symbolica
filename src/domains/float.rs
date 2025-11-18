@@ -47,14 +47,14 @@ impl ConvertToRing for FloatField<F64> {
         match number {
             crate::coefficient::Coefficient::Complex(complex) => {
                 if complex.is_real() {
-                    Ok(F64(complex.re.to_f64().into()))
+                    Ok(F64(complex.re.to_f64()))
                 } else {
                     Err("Cannot convert {number} to real float".to_string())
                 }
             }
             crate::coefficient::Coefficient::Float(complex) => {
                 if complex.is_real() {
-                    Ok(F64(complex.re.to_f64().into()))
+                    Ok(F64(complex.re.to_f64()))
                 } else {
                     Err("Cannot convert {number} to real float".to_string())
                 }
@@ -148,8 +148,8 @@ impl ConvertToRing for FloatField<Complex<Float>> {
     ) -> Result<Self::Element, String> {
         match number {
             crate::coefficient::Coefficient::Complex(complex) => Ok(Complex::new(
-                complex.re.to_multi_prec_float(self.rep.re.prec()).into(),
-                complex.im.to_multi_prec_float(self.rep.im.prec()).into(),
+                complex.re.to_multi_prec_float(self.rep.re.prec()),
+                complex.im.to_multi_prec_float(self.rep.im.prec()),
             )),
             crate::coefficient::Coefficient::Float(complex) => Ok(complex),
             _ => Err("Cannot convert {number} to complex".to_string()),
@@ -1596,17 +1596,15 @@ impl Add<&Float> for Float {
 
         let mut r = self.0 + &rhs.0;
 
-        if let Some(e) = r.get_exp() {
-            if let Some(e1) = e1 {
-                if let Some(e2) = rhs.0.get_exp() {
+        if let Some(e) = r.get_exp()
+            && let Some(e1) = e1
+                && let Some(e2) = rhs.0.get_exp() {
                     // the max is at most 2 binary digits off
                     let max_prec = e + 1 - (e1 - sp as i32).max(e2 - rhs.prec() as i32);
 
                     // set the min precision to 1, from this point on the result is unreliable
                     r.set_prec(1.max(max_prec.min(r.prec() as i32)) as u32);
                 }
-            }
-        }
 
         r.into()
     }
@@ -1639,14 +1637,12 @@ impl Sub<&Float> for Float {
 
         let mut r = self.0 - &rhs.0;
 
-        if let Some(e) = r.get_exp() {
-            if let Some(e1) = e1 {
-                if let Some(e2) = rhs.0.get_exp() {
+        if let Some(e) = r.get_exp()
+            && let Some(e1) = e1
+                && let Some(e2) = rhs.0.get_exp() {
                     let max_prec = e + 1 - (e1 - sp as i32).max(e2 - rhs.prec() as i32);
                     r.set_prec(1.max(max_prec.min(r.prec() as i32)) as u32);
                 }
-            }
-        }
 
         r.into()
     }
@@ -1729,14 +1725,12 @@ impl AddAssign<&Float> for Float {
 
         self.0.add_assign(&rhs.0);
 
-        if let Some(e) = self.0.get_exp() {
-            if let Some(e1) = e1 {
-                if let Some(e2) = rhs.0.get_exp() {
+        if let Some(e) = self.0.get_exp()
+            && let Some(e1) = e1
+                && let Some(e2) = rhs.0.get_exp() {
                     let max_prec = e + 1 - (e1 - sp as i32).max(e2 - rhs.prec() as i32);
                     self.set_prec(1.max(max_prec.min(self.prec() as i32)) as u32);
                 }
-            }
-        }
     }
 }
 
@@ -1759,14 +1753,12 @@ impl SubAssign<&Float> for Float {
 
         self.0.sub_assign(&rhs.0);
 
-        if let Some(e) = self.0.get_exp() {
-            if let Some(e1) = e1 {
-                if let Some(e2) = rhs.0.get_exp() {
+        if let Some(e) = self.0.get_exp()
+            && let Some(e1) = e1
+                && let Some(e2) = rhs.0.get_exp() {
                     let max_prec = e + 1 - (e1 - sp as i32).max(e2 - rhs.prec() as i32);
                     self.set_prec(1.max(max_prec.min(self.prec() as i32)) as u32);
                 }
-            }
-        }
     }
 }
 
@@ -2324,15 +2316,14 @@ impl Real for Float {
 
     #[inline(always)]
     fn tanh(&self) -> Self {
-        if let Some(e) = self.0.get_exp() {
-            if e > 0 {
+        if let Some(e) = self.0.get_exp()
+            && e > 0 {
                 return MultiPrecisionFloat::with_val(
                     self.0.prec() + 3 * e.unsigned_abs() + 1,
                     self.0.tanh_ref(),
                 )
                 .into();
             }
-        }
 
         self.0.clone().tanh().into()
     }
@@ -2355,8 +2346,8 @@ impl Real for Float {
     #[inline]
     fn powf(&self, e: &Self) -> Self {
         let mut c = self.0.clone();
-        if let Some(exp) = e.0.get_exp() {
-            if let Some(eb) = self.0.get_exp() {
+        if let Some(exp) = e.0.get_exp()
+            && let Some(eb) = self.0.get_exp() {
                 // eb is (over)estimate of ln(self)
                 // TODO: prevent taking the wrong branch when self = 1
                 if eb == 0 {
@@ -2372,7 +2363,6 @@ impl Real for Float {
                     );
                 }
             }
-        }
 
         c.pow(&e.0).into()
     }

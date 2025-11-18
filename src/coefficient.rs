@@ -139,7 +139,7 @@ impl Coefficient {
             },
             Coefficient::Complex(r) => Coefficient::Complex(r.conj()),
             Coefficient::Float(f) => Coefficient::Float(f.conj()),
-            Coefficient::FiniteField(n, i) => Coefficient::FiniteField(n.clone(), *i),
+            Coefficient::FiniteField(n, i) => Coefficient::FiniteField(*n, *i),
             Coefficient::RationalPolynomial(p) => Coefficient::RationalPolynomial(p.clone()),
         }
     }
@@ -1239,11 +1239,10 @@ impl CoefficientView<'_> {
             if *n != 0 {
                 return (Coefficient::one(), self.to_owned(), other.to_owned());
             }
-        } else if let CoefficientView::Large(_, n) = other {
-            if !n.is_zero() {
+        } else if let CoefficientView::Large(_, n) = other
+            && !n.is_zero() {
                 return (Coefficient::one(), self.to_owned(), other.to_owned());
             }
-        }
 
         fn rat_pow(
             mut base: Rational,
@@ -1608,11 +1607,11 @@ impl CoefficientView<'_> {
                     self.to_owned(),
                     other.to_owned()
                 );
-                return (
+                (
                     Coefficient::one(),
                     Coefficient::Indeterminate,
                     Coefficient::one(),
-                );
+                )
             }
             (_, CoefficientView::Infinity(Some((r, i)))) => {
                 let r = r.to_rat();
@@ -1667,13 +1666,13 @@ impl CoefficientView<'_> {
                     if norm < Rational::one() && r > Rational::zero()
                         || norm > Rational::one() && r < Rational::zero()
                     {
-                        return (Coefficient::one(), Coefficient::zero(), Coefficient::one());
+                        (Coefficient::one(), Coefficient::zero(), Coefficient::one())
                     } else {
-                        return (
+                        (
                             Coefficient::one(),
                             Coefficient::Infinity(None),
                             Coefficient::one(),
-                        );
+                        )
                     }
                 } else {
                     match self {
@@ -1729,13 +1728,13 @@ impl CoefficientView<'_> {
                             error!(
                                 "Cannot simplify infinite exponent with float, finite field or rational polynomial base"
                             );
-                            return (
+                            (
                                 Coefficient::one(),
                                 Coefficient::Indeterminate,
                                 Coefficient::one(),
-                            );
+                            )
                         }
-                    };
+                    }
                 }
             }
             (&CoefficientView::Natural(_, _, _, _), &CoefficientView::RationalPolynomial(_)) => {

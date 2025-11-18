@@ -743,9 +743,9 @@ impl TryFrom<Atom> for PolyVariable {
     }
 }
 
-impl Into<Atom> for PolyVariable {
-    fn into(self) -> Atom {
-        match self {
+impl From<PolyVariable> for Atom {
+    fn from(val: PolyVariable) -> Self {
+        match val {
             PolyVariable::Symbol(s) => Atom::var(s),
             PolyVariable::Function(_, a) | PolyVariable::Power(a) => a.as_ref().clone(),
             PolyVariable::Temporary(x) => {
@@ -1054,14 +1054,14 @@ impl AtomView<'_> {
 
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
-                    if let CoefficientView::Natural(nn, nd, ni, _di) = num_n {
-                        if nd == 1 && ni == 0 {
+                    if let CoefficientView::Natural(nn, nd, ni, _di) = num_n
+                        && nd == 1 && ni == 0 {
                             if nn > 0 && nn < i32::MAX as i64 {
                                 return base.to_polynomial_impl(field, var_map).pow(nn as usize);
                             } else if nn < 0 && nn > i32::MIN as i64 {
                                 // allow x^-2 as a term if supported by the exponent
-                                if let Ok(e) = (nn as i32).try_into() {
-                                    if let AtomView::Var(v) = base {
+                                if let Ok(e) = (nn as i32).try_into()
+                                    && let AtomView::Var(v) = base {
                                         let s = PolyVariable::Symbol(v.get_symbol());
                                         if let Some(id) = var_map.iter().position(|v| v == &s) {
                                             let mut exp = vec![E::zero(); var_map.len()];
@@ -1086,10 +1086,8 @@ impl AtomView<'_> {
                                             .monomial(field.one(), exp);
                                         }
                                     }
-                                }
                             }
                         }
-                    }
                 }
 
                 // check if we have seen this variable before
@@ -1198,8 +1196,8 @@ impl AtomView<'_> {
                                 .pow(nn as usize);
                         } else if ni == 0 && nd == 1 && nn < 0 && nn > i32::MIN as i64 {
                             // allow x^-2 as a term if supported by the exponent
-                            if let Ok(e) = (nn as i32).try_into() {
-                                if let AtomView::Var(v) = base {
+                            if let Ok(e) = (nn as i32).try_into()
+                                && let AtomView::Var(v) = base {
                                     let s = PolyVariable::Symbol(v.get_symbol());
                                     if let Some(id) = var_map.iter().position(|v| v == &s) {
                                         let mut exp = vec![E::zero(); var_map.len()];
@@ -1209,7 +1207,6 @@ impl AtomView<'_> {
                                         return poly.constant(self.to_owned());
                                     }
                                 }
-                            }
                         }
                     }
                 }
@@ -1310,8 +1307,8 @@ impl AtomView<'_> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
 
-                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n {
-                        if ni == 0 && nd == 1 {
+                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n
+                        && ni == 0 && nd == 1 {
                             let b = base.to_rational_polynomial_impl(field, out_field, var_map);
 
                             return if nn < 0 {
@@ -1321,7 +1318,6 @@ impl AtomView<'_> {
                                 b.pow(nn as u64)
                             };
                         }
-                    }
                 }
 
                 // non-integer exponent, convert to new variable
@@ -1452,8 +1448,8 @@ impl AtomView<'_> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
 
-                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n {
-                        if ni == 0 && nd == 1 {
+                    if let CoefficientView::Natural(nn, nd, ni, _) = num_n
+                        && ni == 0 && nd == 1 {
                             let b = base
                                 .to_factorized_rational_polynomial_impl(field, out_field, var_map);
 
@@ -1464,7 +1460,6 @@ impl AtomView<'_> {
                                 b.pow(nn as u64)
                             };
                         }
-                    }
                 }
 
                 // non-integer exponent, convert to new variable

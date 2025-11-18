@@ -72,7 +72,7 @@ impl<'a> AtomView<'a> {
             });
         }
 
-        let mut orig_indices = indices.into_iter().map(|(i, g)| (i, g)).collect::<Vec<_>>();
+        let mut orig_indices = indices.into_iter().collect::<Vec<_>>();
         orig_indices.sort_by(|a, b| a.0.as_atom_view().cmp(&b.0.as_atom_view()));
         orig_indices.dedup_by(|a, b| a.0.as_atom_view().eq(&b.0.as_atom_view()));
 
@@ -146,8 +146,8 @@ impl<'a> AtomView<'a> {
     ) -> Result<(RecycledAtom, Vec<(bool, usize)>), String> {
         // strip all top-level factors that do not have any indices, so that
         // they do not influence the canonization
-        if let AtomView::Mul(m) = self {
-            if let Some(r) = Workspace::get_local().with(|ws| {
+        if let AtomView::Mul(m) = self
+            && let Some(r) = Workspace::get_local().with(|ws| {
                 let mut stripped = ws.new_atom();
                 let mut constants = ws.new_atom();
                 let mm = stripped.to_mul();
@@ -174,7 +174,6 @@ impl<'a> AtomView<'a> {
             })? {
                 return Ok(r);
             }
-        }
 
         let mut g = Graph::new();
         let mut connections = vec![(vec![], false, 0); indices.len()];

@@ -300,7 +300,7 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
         }
         Ordering::Equal => {}
         Ordering::Greater => {
-            if !fill_last && (!repeat || elements.len() % bin_sum != 0) {
+            if !fill_last && (!repeat || !elements.len().is_multiple_of(bin_sum)) {
                 return vec![];
             }
         }
@@ -379,11 +379,10 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
         let mut new_bin_fill = vec![];
         for a in single_bin_fill.drain(..) {
             // make sure we generate a descending list
-            if let Some(l) = accum.last() {
-                if l.0 == *bin_id && a.len() == l.1.len() && a < l.1 {
+            if let Some(l) = accum.last()
+                && l.0 == *bin_id && a.len() == l.1.len() && a < l.1 {
                     continue;
                 }
-            }
 
             // remove uses from the counters
             for x in &a {

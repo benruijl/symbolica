@@ -453,14 +453,14 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
             Sample::Uniform(_, bin_indices, g) => {
                 let b = std::mem::take(bin_indices);
                 *self = Sample::Continuous(T::new_zero(), std::mem::take(g));
-                return b;
+                b
             }
             Self::Continuous(_, _) => {
-                return vec![];
+                vec![]
             }
             Self::Discrete(_, _, _) => {
                 *self = Sample::Continuous(T::new_zero(), vec![]);
-                return vec![];
+                vec![]
             }
         }
     }
@@ -830,11 +830,10 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Discrete
                 .accumulator
                 .add_sample(bin_weight * eval, Some(sample));
 
-            if let Some(sg) = &mut self.bins[*index].sub_grid {
-                if let Some(sub_sample) = sub_sample {
+            if let Some(sg) = &mut self.bins[*index].sub_grid
+                && let Some(sub_sample) = sub_sample {
                     sg.add_training_sample(sub_sample, eval)?;
                 }
-            }
 
             Ok(())
         } else {

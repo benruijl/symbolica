@@ -1008,11 +1008,11 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
 
         if let Some(v) = &new_symbol {
             let old_var = &f.poly.get_vars_ref()[0];
-            a.poly.rename_variable(&old_var, v);
-            b.poly.rename_variable(&old_var, v);
+            a.poly.rename_variable(old_var, v);
+            b.poly.rename_variable(old_var, v);
 
             let mut new_poly = f.poly.as_ref().clone();
-            new_poly.rename_variable(&old_var, v);
+            new_poly.rename_variable(old_var, v);
 
             f = AlgebraicExtension {
                 poly: Arc::new(new_poly),
@@ -1134,13 +1134,13 @@ impl AlgebraicExtension<Q> {
             } else {
                 Err(format!(
                     "Cannot determine the sign of a non-real algebraic number {}",
-                    self.printer(&element)
+                    self.printer(element)
                 ))
             }
         } else {
             Err(format!(
                 "Cannot determine the sign of an algebraic number without embedding information {}",
-                self.printer(&element)
+                self.printer(element)
             ))
         }
     }

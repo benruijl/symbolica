@@ -197,12 +197,7 @@ impl<R: EuclideanDomain + FractionNormalization> Set for FractionField<R> {
     type Element = Fraction<R>;
 
     fn size(&self) -> Option<Integer> {
-        if let Some(s) = self.ring.size() {
-            // TODO: this is an overestimate
-            Some(&s * (&s - 1))
-        } else {
-            None
-        }
+        self.ring.size().map(|s| &s * (&s - 1))
     }
 }
 

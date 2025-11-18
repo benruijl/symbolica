@@ -446,7 +446,7 @@ impl AtomView<'_> {
     /// treating all antisymmetric functions as symmetric.
     fn to_canonical_string_symmetric(&self, settings: &CanonicalOrderingSettings) -> String {
         let mut s = String::new();
-        self.to_canonical_view_impl(&settings, &mut s);
+        self.to_canonical_view_impl(settings, &mut s);
         s
     }
 
@@ -511,9 +511,9 @@ impl AtomView<'_> {
                             }
 
                             if let AtomView::Fun(fff) = first {
-                                return sort_args(&fff, settings) * second;
+                                sort_args(&fff, settings) * second
                             } else if let AtomView::Fun(fff) = second {
-                                return sort_args(&fff, settings) * first;
+                                sort_args(&fff, settings) * first
                             } else {
                                 panic!(
                                     "Expected one term in product to be antisymmetric function: {}",
@@ -1029,12 +1029,10 @@ impl FormattedPrintNum for NumView<'_> {
                         } else {
                             f.write_str("-∞")?;
                         }
+                    } else if opts.mode.is_latex() {
+                        f.write_str("\\infty")?;
                     } else {
-                        if opts.mode.is_latex() {
-                            f.write_str("\\infty")?;
-                        } else {
-                            f.write_char('∞')?;
-                        }
+                        f.write_char('∞')?;
                     }
                 } else {
                     print_state.in_product = true;
@@ -1166,12 +1164,11 @@ impl FormattedPrintFn for FunView<'_> {
         }
 
         let id = self.get_symbol();
-        if let Some(custom_print) = &id.get_data().custom_print {
-            if let Some(s) = custom_print(self.as_view(), opts) {
+        if let Some(custom_print) = &id.get_data().custom_print
+            && let Some(s) = custom_print(self.as_view(), opts) {
                 f.write_str(&s)?;
                 return Ok(false);
             }
-        }
 
         id.format(opts, f)?;
 
@@ -1202,8 +1199,8 @@ impl FormattedPrintFn for FunView<'_> {
                 }
 
                 // curry the derivative function
-                if id == Symbol::DERIVATIVE {
-                    if let AtomView::Fun(fun) = x {
+                if id == Symbol::DERIVATIVE
+                    && let AtomView::Fun(fun) = x {
                         f.write_str("][")?;
                         fun.get_symbol().format(opts, f)?;
                         f.write_str("][")?;
@@ -1220,7 +1217,6 @@ impl FormattedPrintFn for FunView<'_> {
                         }
                         continue;
                     }
-                }
             }
 
             if !first {
@@ -1283,20 +1279,18 @@ impl FormattedPrintPow for PowView<'_> {
 
         let mut superscript_exponent = false;
         if opts.mode.is_latex() {
-            if let AtomView::Num(n) = e {
-                if n.get_coeff_view() == CoefficientView::Natural(-1, 1, 0, 1) {
+            if let AtomView::Num(n) = e
+                && n.get_coeff_view() == CoefficientView::Natural(-1, 1, 0, 1) {
                     // TODO: construct the numerator
                     f.write_str("\\frac{1}{")?;
                     b.format(f, opts, print_state)?;
                     f.write_char('}')?;
                     return Ok(false);
                 }
-            }
-        } else if opts.mode.is_symbolica() && opts.num_exp_as_superscript {
-            if let AtomView::Num(n) = e {
+        } else if opts.mode.is_symbolica() && opts.num_exp_as_superscript
+            && let AtomView::Num(n) = e {
                 superscript_exponent = n.get_coeff_view().is_integer()
             }
-        }
 
         print_state.in_exp_base = true;
 
@@ -1380,11 +1374,10 @@ impl FormattedPrintAdd for AddView<'_> {
 
         let mut count = 0;
         for x in self.iter() {
-            if let Some(max_terms) = opts.max_terms {
-                if opts.mode.is_symbolica() && count >= max_terms {
+            if let Some(max_terms) = opts.max_terms
+                && opts.mode.is_symbolica() && count >= max_terms {
                     break;
                 }
-            }
 
             if !first && print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;

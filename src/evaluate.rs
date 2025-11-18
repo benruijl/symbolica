@@ -127,14 +127,13 @@ impl<T> FunctionMap<T> {
             ));
         }
 
-        if let Some(t) = self.tag.insert(name, 0) {
-            if t != 0 {
+        if let Some(t) = self.tag.insert(name, 0)
+            && t != 0 {
                 return Err(format!(
                     "Cannot add the same function {} with a different number of parameters",
                     name.get_name()
                 ));
             }
-        }
 
         self.tagged_fn_map.insert(
             (name, vec![]),
@@ -165,14 +164,13 @@ impl<T> FunctionMap<T> {
             ));
         }
 
-        if let Some(t) = self.tag.insert(name, tags.len()) {
-            if t != tags.len() {
+        if let Some(t) = self.tag.insert(name, tags.len())
+            && t != tags.len() {
                 return Err(format!(
                     "Cannot add the same function {} with a different number of parameters",
                     name.get_name()
                 ));
             }
-        }
 
         let tag_len = tags.len();
         self.tagged_fn_map.insert(
@@ -215,14 +213,13 @@ impl<T> FunctionMap<T> {
             ));
         }
 
-        if let Some(t) = self.tag.insert(name, 0) {
-            if t != 0 {
+        if let Some(t) = self.tag.insert(name, 0)
+            && t != 0 {
                 return Err(format!(
                     "Cannot add the same function {} with a different number of parameters",
                     name.get_name()
                 ));
             }
-        }
 
         self.tagged_fn_map
             .insert((name, vec![]), ConstOrExpr::Condition);
@@ -671,12 +668,11 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         subexp: &HashMap<&HashedExpression<T>, usize>,
         skip_root: bool,
     ) {
-        if !skip_root {
-            if let Some(i) = subexp.get(self) {
+        if !skip_root
+            && let Some(i) = subexp.get(self) {
                 *self = HashedExpression::SubExpression(self.get_hash(), *i); // TODO: do not recyle hash?
                 return;
             }
-        }
 
         match self {
             HashedExpression::Const(_, _)
@@ -1201,11 +1197,11 @@ impl<T: Default> ExpressionEvaluator<T> {
                 Instr::IfElse(_, _) => {
                     line_usage_zone[p] = current_zone;
                     current_zone_depth += 1;
-                    current_zone += 1 * 3_usize.pow(current_zone_depth);
+                    current_zone += 3_usize.pow(current_zone_depth);
                     continue;
                 }
                 Instr::Goto(_) => {
-                    current_zone += 1 * 3_usize.pow(current_zone_depth);
+                    current_zone += 3_usize.pow(current_zone_depth);
                 }
                 Instr::Join(..) => {
                     current_zone %= 3_usize.pow(current_zone_depth);
@@ -1258,7 +1254,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                         let lu = line_usage_zone[line];
                         for pow in 1..32 {
                             if lu % 3usize.pow(pow) != usage_zone % 3usize.pow(pow) {
-                                usage_zone = usage_zone % 3usize.pow(pow - 1);
+                                usage_zone %= 3usize.pow(pow - 1);
                                 break;
                             }
                         }
@@ -1364,7 +1360,7 @@ impl<T: Default> ExpressionEvaluator<T> {
                         let lu = line_usage_zone[line];
                         for pow in 1..32 {
                             if lu % 3usize.pow(pow) != usage_zone % 3usize.pow(pow) {
-                                usage_zone = usage_zone % 3usize.pow(pow - 1);
+                                usage_zone %= 3usize.pow(pow - 1);
                                 break;
                             }
                         }
@@ -2174,11 +2170,11 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
     ) -> String {
         let mut res = String::new();
         if settings.include_header {
-            res += &"#include <cuda_runtime.h>\n";
-            res += &"#include <iostream>\n";
-            res += &"#include <stdio.h>\n";
+            res += "#include <cuda_runtime.h>\n";
+            res += "#include <iostream>\n";
+            res += "#include <stdio.h>\n";
             if number_class == NumberClass::ComplexF64 {
-                res += &"#include <cuda/std/complex>\n";
+                res += "#include <cuda/std/complex>\n";
             } else {
                 res += "template<typename T> T conj(T a) { return a; }\n";
             }
@@ -2191,11 +2187,11 @@ impl<T: ExportNumber + SingleFloat> ExpressionEvaluator<T> {
             res += "\n\n";
         }
         if number_class == NumberClass::ComplexF64 {
-            res += &"typedef cuda::std::complex<double> CudaNumber;\n";
-            res += &"typedef std::complex<double> Number;\n";
+            res += "typedef cuda::std::complex<double> CudaNumber;\n";
+            res += "typedef std::complex<double> Number;\n";
         } else if number_class == NumberClass::RealF64 {
-            res += &"typedef double CudaNumber;\n";
-            res += &"typedef double Number;\n";
+            res += "typedef double CudaNumber;\n";
+            res += "typedef double Number;\n";
         }
 
         res += &format!(
@@ -2380,9 +2376,9 @@ extern "C" {{
         };
 
         if number_class == NumberClass::ComplexF64 {
-            res += &"typedef std::complex<double> Number;\n";
+            res += "typedef std::complex<double> Number;\n";
         } else if number_class == NumberClass::RealF64 {
-            res += &"typedef double Number;\n";
+            res += "typedef double Number;\n";
         }
 
         res += &format!(
@@ -5609,9 +5605,9 @@ impl Expression<Complex<Rational>> {
                             return;
                         }
 
-                        if i == n_cores - 1 {
-                            if let Some(a) = &settings.abort_check {
-                                if a() {
+                        if i == n_cores - 1
+                            && let Some(a) = &settings.abort_check
+                                && a() {
                                     abort.store(true, Ordering::Relaxed);
 
                                     if settings.verbose {
@@ -5624,8 +5620,6 @@ impl Expression<Complex<Rational>> {
 
                                     return;
                                 }
-                            }
-                        }
 
                         // try a random swap
                         let mut t1 = 0;
@@ -6344,7 +6338,7 @@ impl<'lib> EvaluatorFunctionsRealf64<'lib> {
         let function_name = f64::construct_function_name(function_name);
         unsafe {
             let eval: EvalTypeWithBuffer<'lib, f64> = lib
-                .get(format!("{}", function_name).as_bytes())
+                .get(function_name.to_string().as_bytes())
                 .map_err(|e| e.to_string())?;
             let get_buffer_len: GetBufferLenType<'lib> = lib
                 .get(format!("{}_get_buffer_len", function_name).as_bytes())
@@ -6378,7 +6372,7 @@ impl<'lib> EvaluatorFunctionsSimdRealf64<'lib> {
         let function_name = wide::f64x4::construct_function_name(function_name);
         unsafe {
             let eval: EvalTypeWithBuffer<'lib, wide::f64x4> = lib
-                .get(format!("{}", function_name).as_bytes())
+                .get(function_name.to_string().as_bytes())
                 .map_err(|e| e.to_string())?;
             let get_buffer_len: GetBufferLenType<'lib> = lib
                 .get(format!("{}_get_buffer_len", function_name).as_bytes())
@@ -6410,7 +6404,7 @@ impl<'lib> EvaluatorFunctionsSimdComplexf64<'lib> {
         let function_name = Complex::<wide::f64x4>::construct_function_name(function_name);
         unsafe {
             let eval: EvalTypeWithBuffer<'lib, Complex<wide::f64x4>> = lib
-                .get(format!("{}", function_name).as_bytes())
+                .get(function_name.to_string().as_bytes())
                 .map_err(|e| e.to_string())?;
             let get_buffer_len: GetBufferLenType<'lib> = lib
                 .get(format!("{}_get_buffer_len", function_name).as_bytes())
@@ -6442,7 +6436,7 @@ impl<'lib> EvaluatorFunctionsComplexf64<'lib> {
         let function_name = Complex::<f64>::construct_function_name(function_name);
         unsafe {
             let eval: EvalTypeWithBuffer<'lib, Complex<f64>> = lib
-                .get(format!("{}", function_name).as_bytes())
+                .get(function_name.to_string().as_bytes())
                 .map_err(|e| e.to_string())?;
             let get_buffer_len: GetBufferLenType<'lib> = lib
                 .get(format!("{}_get_buffer_len", function_name).as_bytes())
@@ -6628,14 +6622,14 @@ impl BatchEvaluator<f64> for CompiledRealEvaluator {
         params: &[f64],
         out: &mut [f64],
     ) -> Result<(), String> {
-        if params.len() % batch_size != 0 {
+        if !params.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Parameter length {} not divisible by batch size {}",
                 params.len(),
                 batch_size
             ));
         }
-        if out.len() % batch_size != 0 {
+        if !out.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Output length {} not divisible by batch size {}",
                 out.len(),
@@ -6689,14 +6683,14 @@ impl BatchEvaluator<Complex<f64>> for CompiledComplexEvaluator {
         params: &[Complex<f64>],
         out: &mut [Complex<f64>],
     ) -> Result<(), String> {
-        if params.len() % batch_size != 0 {
+        if !params.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Parameter length {} not divisible by batch size {}",
                 params.len(),
                 batch_size
             ));
         }
-        if out.len() % batch_size != 0 {
+        if !out.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Output length {} not divisible by batch size {}",
                 out.len(),
@@ -7015,14 +7009,14 @@ impl BatchEvaluator<f64> for CompiledSimdRealEvaluator {
         params: &[f64],
         out: &mut [f64],
     ) -> Result<(), String> {
-        if params.len() % batch_size != 0 {
+        if !params.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Parameter length {} not divisible by batch size {}",
                 params.len(),
                 batch_size
             ));
         }
-        if out.len() % batch_size != 0 {
+        if !out.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Output length {} not divisible by batch size {}",
                 out.len(),
@@ -7288,14 +7282,14 @@ impl BatchEvaluator<Complex<f64>> for CompiledSimdComplexEvaluator {
         params: &[Complex<f64>],
         out: &mut [Complex<f64>],
     ) -> Result<(), String> {
-        if params.len() % batch_size != 0 {
+        if !params.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Parameter length {} not divisible by batch size {}",
                 params.len(),
                 batch_size
             ));
         }
-        if out.len() % batch_size != 0 {
+        if !out.len().is_multiple_of(batch_size) {
             return Err(format!(
                 "Output length {} not divisible by batch size {}",
                 out.len(),
@@ -8136,8 +8130,7 @@ impl<T: CompiledNumber> ExportedCode<T> {
             .output()?;
 
         if !r.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!(
                     "Could not compile code: {} {}\n{}",
                     builder.get_program().to_string_lossy(),
@@ -8573,13 +8566,11 @@ impl<'a> AtomView<'a> {
                 let (b, e) = p.get_base_exp();
                 let b_eval = b.to_eval_tree_impl(fn_map, params, args, funcs)?;
 
-                if let AtomView::Num(n) = e {
-                    if let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view() {
-                        if den == 1 && num_i == 0 {
+                if let AtomView::Num(n) = e
+                    && let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view()
+                        && den == 1 && num_i == 0 {
                             return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
                         }
-                    }
-                }
 
                 let e_eval = e.to_eval_tree_impl(fn_map, params, args, funcs)?;
                 Ok(Expression::Powf(Box::new((b_eval, e_eval))))
@@ -8754,17 +8745,15 @@ impl<'a> AtomView<'a> {
                 let (b, e) = p.get_base_exp();
                 let b_eval = b.evaluate_impl(coeff_map, const_map, function_map, cache)?;
 
-                if let AtomView::Num(n) = e {
-                    if let CoefficientView::Natural(num, den, ni, _di) = n.get_coeff_view() {
-                        if den == 1 && ni == 0 {
+                if let AtomView::Num(n) = e
+                    && let CoefficientView::Natural(num, den, ni, _di) = n.get_coeff_view()
+                        && den == 1 && ni == 0 {
                             if num >= 0 {
                                 return Ok(b_eval.pow(num as u64));
                             } else {
                                 return Ok(b_eval.pow(num.unsigned_abs()).inv());
                             }
                         }
-                    }
-                }
 
                 let e_eval = e.evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 Ok(b_eval.powf(&e_eval))

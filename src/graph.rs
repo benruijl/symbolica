@@ -477,11 +477,10 @@ impl<N, E> Graph<N, E> {
 
     /// Remove the last added empty node. This operation is O(1).
     pub fn delete_last_empty_node(&mut self) -> Option<Node<N>> {
-        if let Some(node) = self.nodes.last() {
-            if node.edges.is_empty() {
+        if let Some(node) = self.nodes.last()
+            && node.edges.is_empty() {
                 return self.nodes.pop();
             }
-        }
         None
     }
 
@@ -889,11 +888,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         edge_signatures: &mut Vec<Vec<HalfEdge<E>>>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) -> Result<(), ()> {
-        if let Some(max_vertices) = settings.settings.max_vertices {
-            if self.nodes.len() > max_vertices {
+        if let Some(max_vertices) = settings.settings.max_vertices
+            && self.nodes.len() > max_vertices {
                 return Ok(());
             }
-        }
 
         if let Some(max_loops) = settings.settings.max_loops {
             // filter based on an underestimate of the loop count
@@ -922,11 +920,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
         }
 
-        if let Some(f) = &settings.settings.filter_fn {
-            if !f(self, cur_vertex) {
+        if let Some(f) = &settings.settings.filter_fn
+            && !f(self, cur_vertex) {
                 return Ok(());
             }
-        }
 
         if cur_vertex == self.nodes.len() {
             let mut spanning_tree = self.get_spanning_tree(0);
@@ -935,21 +932,19 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                 return Ok(());
             }
 
-            if let Some(abort_check) = &settings.settings.abort_check {
-                if abort_check() {
+            if let Some(abort_check) = &settings.settings.abort_check
+                && abort_check() {
                     return Err(());
                 }
-            }
 
             if settings.settings.max_bridges.is_some() || !settings.settings.allow_zero_flow_edges {
                 spanning_tree.chain_decomposition();
             }
 
-            if let Some(max_bridges) = settings.settings.max_bridges {
-                if spanning_tree.count_bridges() > max_bridges {
+            if let Some(max_bridges) = settings.settings.max_bridges
+                && spanning_tree.count_bridges() > max_bridges {
                     return Ok(());
                 }
-            }
 
             if !settings.settings.allow_zero_flow_edges && spanning_tree.has_zero_flow_bridges() {
                 return Ok(());
@@ -959,11 +954,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
 
             let mut cancel = false;
             out.entry(c.graph).or_insert_with_key(|g| {
-                if let Some(p) = &mut settings.settings.progress_fn {
-                    if !p(g) {
+                if let Some(p) = &mut settings.settings.progress_fn
+                    && !p(g) {
                         cancel = true;
                     }
-                }
                 c.automorphism_group_size
             });
 
@@ -1051,12 +1045,11 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                     }
                 }
 
-                if let Some(last) = edges_left.last_mut() {
-                    if last.0 == *e {
+                if let Some(last) = edges_left.last_mut()
+                    && last.0 == *e {
                         last.1 += 1;
                         continue;
                     }
-                }
 
                 edges_left.push((e.clone(), 1));
             }

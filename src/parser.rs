@@ -100,16 +100,13 @@ pub enum Operator {
 
 /// The mode in which to parse the expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum ParseMode {
+    #[default]
     Symbolica,
     Mathematica,
 }
 
-impl Default for ParseMode {
-    fn default() -> Self {
-        ParseMode::Symbolica
-    }
-}
 
 /// Settings for parsing.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -334,7 +331,7 @@ impl Token {
 
     /// Check the validity of a symbol namespace.
     pub fn check_symbol_namespace(symbol: &str) -> Result<(), String> {
-        if symbol.len() == 0 {
+        if symbol.is_empty() {
             return Err("Empty symbol namespace".to_string());
         }
 
@@ -887,7 +884,7 @@ impl Token {
     /// Map Mathematica `FullForm` symbols to internal functions and operators.
     /// The first argument is the function name.
     fn map_mathematica_full_form_symbols(args: &mut Vec<Token>) -> Result<Option<Self>, String> {
-        if let Some(Token::ID(name)) = args.get(0) {
+        if let Some(Token::ID(name)) = args.first() {
             match name.as_str() {
                 "Power" => {
                     let mut args = std::mem::take(args);
@@ -995,7 +992,7 @@ impl Token {
                         && let Some(Token::ID(_)) = args.get(1)
                         && let Some(Token::Fn(_, _, wildcard_type)) = args.get(2)
                         && wildcard_type.len() == 1
-                        && let Some(Token::ID(wt)) = wildcard_type.get(0)
+                        && let Some(Token::ID(wt)) = wildcard_type.first()
                     {
                         let level;
                         match wt.as_str() {
@@ -1504,13 +1501,12 @@ impl Token {
                                 {
                                     *f = false;
 
-                                    if settings.mode.is_mathematica() {
-                                        if let Some(rewrite) =
+                                    if settings.mode.is_mathematica()
+                                        && let Some(rewrite) =
                                             Token::map_mathematica_full_form_symbols(args)?
                                         {
                                             *unsafe { stack.get_unchecked_mut(pos) } = rewrite;
                                         }
-                                    }
 
                                     stack.pop();
                                 } else {
@@ -1603,13 +1599,12 @@ impl Token {
                                     args.push(mid);
                                 }
 
-                                if settings.mode.is_mathematica() {
-                                    if let Some(rewrite) =
+                                if settings.mode.is_mathematica()
+                                    && let Some(rewrite) =
                                         Token::map_mathematica_full_form_symbols(args)?
                                     {
                                         *first = rewrite;
                                     }
-                                }
                             }
                             (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
                                 *first = mid;
@@ -1763,11 +1758,10 @@ impl Token {
                     if !is_hex && len <= 40 {
                         let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
 
-                        if len <= 20 {
-                            if let Ok(n) = n.parse::<i64>() {
+                        if len <= 20
+                            && let Ok(n) = n.parse::<i64>() {
                                 break 'read_coeff field.element_from_coefficient(n.into());
                             }
-                        }
 
                         if let Ok(n) = n.parse::<i128>() {
                             break 'read_coeff field

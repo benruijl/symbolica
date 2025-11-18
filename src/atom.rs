@@ -586,7 +586,7 @@ impl Symbol {
     ///
     /// Use the [symbol!](crate::symbol) macro instead to define symbols in the current namespace.
     pub fn parse(name: DefaultNamespace) -> Result<Self, String> {
-        Token::parse_symbol(&name.data, &name, &mut State::get_state_mut())
+        Token::parse_symbol(name.data, &name, &mut State::get_state_mut())
     }
 
     /// Create a new variable from the symbol.
@@ -937,12 +937,11 @@ impl Symbol {
         let data = self.get_data();
         let (namespace, name) = (&data.namespace, &data.name[data.namespace.len() + 2..]);
 
-        if let Some(custom_print) = &data.custom_print {
-            if let Some(s) = custom_print(InlineVar::new(*self).as_view(), opts) {
+        if let Some(custom_print) = &data.custom_print
+            && let Some(s) = custom_print(InlineVar::new(*self).as_view(), opts) {
                 f.write_str(&s)?;
                 return Ok(());
             }
-        }
 
         if opts.mode.is_latex() {
             match *self {
@@ -982,7 +981,7 @@ impl Symbol {
                             }
                         }
 
-                        if self.get_tags().len() > 0 {
+                        if !self.get_tags().is_empty() {
                             for tag in self.get_tags() {
                                 if !first {
                                     f.write_fmt(format_args!("{}", ",".dimmed()))?;
@@ -1028,7 +1027,7 @@ impl Symbol {
                             }
                         }
 
-                        if self.get_tags().len() > 0 {
+                        if !self.get_tags().is_empty() {
                             for tag in self.get_tags() {
                                 if !first {
                                     f.write_char(',')?;
@@ -1170,9 +1169,9 @@ impl TryFrom<Atom> for BorrowedOrOwned<'_, Indeterminate> {
     }
 }
 
-impl Into<Atom> for Indeterminate {
-    fn into(self) -> Atom {
-        match self {
+impl From<Indeterminate> for Atom {
+    fn from(val: Indeterminate) -> Self {
+        match val {
             Indeterminate::Symbol(s, _) => Atom::var(s),
             Indeterminate::Function(_, a) => a,
         }

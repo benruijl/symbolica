@@ -1760,11 +1760,10 @@ where
         mut coefficient_upper_bound: u64,
         max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {
-        if let Some(m) = max_bivariate_factors {
-            if m == 1 {
+        if let Some(m) = max_bivariate_factors
+            && m == 1 {
                 return vec![self.clone()];
             }
-        }
 
         // check for problems arising from canceling terms in the derivative
         let der = self.derivative(order[0]);
@@ -1903,15 +1902,14 @@ where
             return vec![self.clone()];
         }
 
-        if let Some(max) = max_bivariate_factors {
-            if bivariate_factors.len() > max {
+        if let Some(max) = max_bivariate_factors
+            && bivariate_factors.len() > max {
                 return self.multivariate_factorization(
                     order,
                     coefficient_upper_bound,
                     max_bivariate_factors,
                 );
             }
-        }
 
         let (sorted_biv_factors, true_lcoeffs) =
             match self.lcoeff_precomputation(&bivariate_factors, &sample_points, order) {
@@ -3434,11 +3432,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         mut coefficient_upper_bound: i64,
         mut max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {
-        if let Some(m) = max_bivariate_factors {
-            if m == 1 {
+        if let Some(m) = max_bivariate_factors
+            && m == 1 {
                 return vec![self.clone()];
             }
-        }
 
         let mut sparse_fail = 0;
         let (bivariate_factors, sample_points, uni_f) = loop {
@@ -3475,15 +3472,14 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             }
         };
 
-        if let Some(max) = max_bivariate_factors {
-            if bivariate_factors.len() > max {
+        if let Some(max) = max_bivariate_factors
+            && bivariate_factors.len() > max {
                 return self.multivariate_factorization(
                     order,
                     coefficient_upper_bound,
                     max_bivariate_factors,
                 );
             }
-        }
 
         for (v, s) in &sample_points {
             debug!("Sample point x{} = {}", v, s);

@@ -467,17 +467,15 @@ impl FromStr for Integer {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() <= 20 {
-            if let Ok(n) = s.parse::<i64>() {
+        if s.len() <= 20
+            && let Ok(n) = s.parse::<i64>() {
                 return Ok(Integer::Single(n));
             }
-        }
 
-        if s.len() <= 40 {
-            if let Ok(n) = s.parse::<i128>() {
+        if s.len() <= 40
+            && let Ok(n) = s.parse::<i128>() {
                 return Ok(Integer::Double(n));
             }
-        }
 
         if let Ok(n) = s.parse::<MultiPrecisionInteger>() {
             Ok(Integer::Large(n))
@@ -1280,8 +1278,8 @@ impl Integer {
             }
 
             // check the norm of the largest element once in a while
-            if let Some(max_coeff) = &max_coeff {
-                if i % 20 == 0 {
+            if let Some(max_coeff) = &max_coeff
+                && i % 20 == 0 {
                     let mut norm = x[0].zero();
                     for i in 0..n as u32 {
                         let mut row_norm_sq = x[0].zero();
@@ -1298,7 +1296,6 @@ impl Integer {
                         return Err(IntegerRelationError::CoefficientLimit);
                     }
                 }
-            }
         }
 
         // return the best estimate
@@ -1542,7 +1539,7 @@ impl Ring for IntegerRing {
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
         match a {
-            Integer::Single(1) | Integer::Single(-1) => return Some(a.clone()),
+            Integer::Single(1) | Integer::Single(-1) => Some(a.clone()),
             _ => None,
         }
     }

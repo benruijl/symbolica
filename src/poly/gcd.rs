@@ -127,14 +127,13 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
         }
 
         // normalize the gcd
-        if let Some(l) = d.coefficients.last() {
-            if !d.ring.is_one(l) {
+        if let Some(l) = d.coefficients.last()
+            && !d.ring.is_one(l) {
                 let i = d.ring.inv(l);
                 for x in &mut d.coefficients {
                     d.ring.mul_assign(x, &i);
                 }
             }
-        }
 
         d
     }
@@ -1965,34 +1964,31 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let gc = g.div_coeff(&g_cont);
 
-                if let Some(q) = a.try_div(&gc) {
-                    if let Some(q1) = b.try_div(&gc) {
+                if let Some(q) = a.try_div(&gc)
+                    && let Some(q1) = b.try_div(&gc) {
                         debug!("match {} {}", q, q1);
                         return Ok((gc.mul_coeff(content_gcd), q, q1));
                     }
-                }
 
                 debug!("co_fac_p {}", co_fac_p);
 
                 if !co_fac_p.is_zero() {
                     let a_co_fac = interpolate(co_fac_p, var, &xi);
 
-                    if let Some(q) = a.try_div(&a_co_fac) {
-                        if let Some(q1) = b.try_div(&q) {
+                    if let Some(q) = a.try_div(&a_co_fac)
+                        && let Some(q1) = b.try_div(&q) {
                             return Ok((q.mul_coeff(content_gcd), a_co_fac, q1));
                         }
-                    }
                 }
 
                 if !co_fac_q.is_zero() {
                     let b_co_fac = interpolate(co_fac_q, var, &xi);
                     debug!("cofac b {}", b_co_fac);
 
-                    if let Some(q) = b.try_div(&b_co_fac) {
-                        if let Some(q1) = a.try_div(&q) {
+                    if let Some(q) = b.try_div(&b_co_fac)
+                        && let Some(q1) = a.try_div(&q) {
                             return Ok((q.mul_coeff(content_gcd), q1, b_co_fac));
                         }
-                    }
                 }
 
                 xi = Z
@@ -2054,7 +2050,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
             // prevent sampling f[i] and f[i+prime_len] with the same
             // prefactor every iteration
-            let num_primes = if f.len() % SMALL_PRIMES.len() == 0 {
+            let num_primes = if f.len().is_multiple_of(SMALL_PRIMES.len()) {
                 SMALL_PRIMES.len() - 1
             } else {
                 SMALL_PRIMES.len()
@@ -2482,7 +2478,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     }
                 });
 
-                let prime_bound = ri_prod.clone() * 2u64.pow(delta);
+                let prime_bound = ri_prod * 2u64.pow(delta);
 
                 let (p, totient_primes, alpha, kr_a_p, kr_b_p, kr_gamma_p) = loop {
                     let Some((p, alpha, fs)) = SMOOTH_PRIMES.get(smooth_prime_index) else {
@@ -2542,7 +2538,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let mut kr_ap_exponents_s: Vec<_> = kr_ap_exponents_alpha
                     .iter()
-                    .map(|x| p.pow(&x, shift))
+                    .map(|x| p.pow(x, shift))
                     .collect();
 
                 let kr_bp_exponents_alpha: Vec<_> = kr_b_p
@@ -2553,7 +2549,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let mut kr_bp_exponents_s: Vec<_> = kr_bp_exponents_alpha
                     .iter()
-                    .map(|x| p.pow(&x, shift))
+                    .map(|x| p.pow(x, shift))
                     .collect();
 
                 let kr_gamma_p_exponents_alpha: Vec<_> = kr_gamma_p
@@ -2564,7 +2560,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let mut kr_gamma_p_exponents_s: Vec<_> = kr_gamma_p_exponents_alpha
                     .iter()
-                    .map(|x| p.pow(&x, shift))
+                    .map(|x| p.pow(x, shift))
                     .collect();
 
                 fn eval(
@@ -2940,7 +2936,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     }
                 });
 
-                let prime_bound = ri_prod.clone() * 2u64.pow(delta);
+                let prime_bound = ri_prod * 2u64.pow(delta);
 
                 let (p, totient_primes, alpha, kr_a_p, kr_b_p, kr_gamma_p) = 'new_prime: loop {
                     let Some((p, alpha, fs)) = SMOOTH_PRIMES.get(smooth_prime_index) else {
@@ -3003,7 +2999,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let mut kr_ap_exponents_s: Vec<_> = kr_ap_exponents_alpha
                     .iter()
-                    .map(|x| p.pow(&x, shift))
+                    .map(|x| p.pow(x, shift))
                     .collect();
 
                 let kr_bp_exponents_alpha: Vec<_> = kr_b_p
@@ -3014,7 +3010,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let mut kr_bp_exponents_s: Vec<_> = kr_bp_exponents_alpha
                     .iter()
-                    .map(|x| p.pow(&x, shift))
+                    .map(|x| p.pow(x, shift))
                     .collect();
 
                 let kr_gamma_p_exponents_alpha: Vec<_> = kr_gamma_p
@@ -3025,7 +3021,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let mut kr_gamma_p_exponents_s: Vec<_> = kr_gamma_p_exponents_alpha
                     .iter()
-                    .map(|x| p.pow(&x, shift))
+                    .map(|x| p.pow(x, shift))
                     .collect();
 
                 fn eval(
@@ -3123,11 +3119,11 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                     for (i, hh) in gs.iter().enumerate() {
                         for m in hh {
-                            if !p.is_zero(&m.coefficient) {
+                            if !p.is_zero(m.coefficient) {
                                 coeffs
                                     .entry((m.exponents[0], m.exponents[1]))
                                     .or_default()
-                                    .push((i, m.coefficient.clone()));
+                                    .push((i, *m.coefficient));
                             }
                         }
                     }
@@ -3137,7 +3133,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     if missing_terms {
                         for (e_x_y, l) in &coeffs {
                             for pp in l {
-                                row[pp.0] = pp.1.clone();
+                                row[pp.0] = pp.1;
                             }
 
                             let (r, s) = p.find_linear_recurrence_relation(&row);
@@ -3211,7 +3207,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 for (e_x_y, l) in &coeffs {
                     let mut row = vec![p.zero(); gs.len()];
                     for pp in l {
-                        row[pp.0] = pp.1.clone();
+                        row[pp.0] = pp.1;
                     }
 
                     let monomials: Vec<_> = sigma[e_x_y].iter().cloned().collect();
@@ -3241,7 +3237,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                             != coeffs[e_x_y]
                                 .iter()
                                 .find(|(i, _)| *i == max)
-                                .map(|(_, v)| v.clone())
+                                .map(|(_, v)| *v)
                                 .unwrap_or(p.zero())
                         {
                             debug!("Missing terms in h_p2 for {:?}: {}; {}", e_x_y, h_p_e, aa);

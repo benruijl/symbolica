@@ -774,7 +774,7 @@ impl HornerScheme<RationalField> {
                                     return *a;
                                 }
 
-                                if p % 2 == 0 {
+                                if p.is_multiple_of(2) {
                                     let p_half = bin_exp(var, p / 2, instr, seen);
                                     instr.push(Instruction::Mul(vec![p_half, p_half]));
                                 } else {
@@ -859,23 +859,16 @@ impl Variable<Rational> {
         match self {
             Variable::Var(v, index) => {
                 // convert f(0) to f[0]
-                if let super::PolyVariable::Function(_, f) = &var_map[*v] {
-                    if let AtomView::Fun(f) = f.as_view() {
-                        if f.get_nargs() == 1 {
-                            if let Some(a) = f.iter().next() {
-                                if let AtomView::Num(n) = a {
-                                    if let CoefficientView::Natural(n, d, ni, _di) =
+                if let super::PolyVariable::Function(_, f) = &var_map[*v]
+                    && let AtomView::Fun(f) = f.as_view()
+                        && f.get_nargs() == 1
+                            && let Some(a) = f.iter().next()
+                                && let AtomView::Num(n) = a
+                                    && let CoefficientView::Natural(n, d, ni, _di) =
                                         n.get_coeff_view()
-                                    {
-                                        if d == 1 && ni == 0 && n >= 0 {
+                                        && d == 1 && ni == 0 && n >= 0 {
                                             return format!("{}[{}]", f.get_symbol(), a);
                                         }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
 
                 let mut s = var_map[*v].to_string();
 
@@ -1013,8 +1006,8 @@ impl InstructionList {
 
         for i in 0..self.instr.len() {
             // we could be in chain of single use -> single use -> etc so work from the start
-            if let Instruction::Add(a) | Instruction::Mul(a) = &self.instr[i] {
-                if a.iter().any(|v| use_count[*v] == 1) {
+            if let Instruction::Add(a) | Instruction::Mul(a) = &self.instr[i]
+                && a.iter().any(|v| use_count[*v] == 1) {
                     let mut instr = std::mem::replace(&mut self.instr[i], Instruction::Empty);
 
                     if let Instruction::Add(a) | Instruction::Mul(a) = &mut instr {
@@ -1040,7 +1033,6 @@ impl InstructionList {
 
                     self.instr[i] = instr;
                 }
-            }
         }
 
         self.remove_empty_ops();

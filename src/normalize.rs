@@ -6,7 +6,7 @@ use crate::{
     atom::{Atom, AtomCore, AtomView, Fun, Symbol, representation::InlineNum},
     coefficient::{Coefficient, CoefficientView},
     domains::{
-        float::{Complex, NumericalFloatLike, Real},
+        float::{Complex, FloatLike, Real},
         integer::Z,
         rational::{Q, Rational},
     },

@@ -3,7 +3,7 @@ use ahash::HashMap;
 use crate::{
     atom::{Add, Atom, AtomCore, AtomOrView, AtomView, Indeterminate, Symbol},
     coefficient::{Coefficient, CoefficientView},
-    domains::{float::NumericalFloatLike, integer::Z, rational::Q},
+    domains::{float::FloatLike, integer::Z, rational::Q},
     poly::{Exponent, factor::Factorize, polynomial::MultivariatePolynomial},
     state::Workspace,
 };

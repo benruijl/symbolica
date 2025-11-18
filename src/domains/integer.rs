@@ -25,7 +25,7 @@ use super::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Z2, Zp,
         Zp64,
     },
-    float::{FloatField, NumericalFloatLike, Real, RealNumberLike, SingleFloat},
+    float::{FloatField, FloatLike, Real, RealLike, SingleFloat},
     rational::Rational,
 };
 
@@ -468,14 +468,16 @@ impl FromStr for Integer {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() <= 20
-            && let Ok(n) = s.parse::<i64>() {
-                return Ok(Integer::Single(n));
-            }
+            && let Ok(n) = s.parse::<i64>()
+        {
+            return Ok(Integer::Single(n));
+        }
 
         if s.len() <= 40
-            && let Ok(n) = s.parse::<i128>() {
-                return Ok(Integer::Double(n));
-            }
+            && let Ok(n) = s.parse::<i128>()
+        {
+            return Ok(Integer::Double(n));
+        }
 
         if let Ok(n) = s.parse::<MultiPrecisionInteger>() {
             Ok(Integer::Large(n))
@@ -1130,8 +1132,8 @@ impl Integer {
     ///
     /// If the procedure runs out of iterations, the current best solution is returned.
     pub fn solve_integer_relation<
-        T: NumericalFloatLike
-            + RealNumberLike
+        T: FloatLike
+            + RealLike
             + Real
             + SingleFloat
             + std::hash::Hash
@@ -1279,23 +1281,24 @@ impl Integer {
 
             // check the norm of the largest element once in a while
             if let Some(max_coeff) = &max_coeff
-                && i % 20 == 0 {
-                    let mut norm = x[0].zero();
-                    for i in 0..n as u32 {
-                        let mut row_norm_sq = x[0].zero();
-                        for j in 0..n as u32 - 1 {
-                            row_norm_sq += h[(i, j)].clone() * &h[(i, j)];
-                        }
-
-                        if row_norm_sq > norm {
-                            norm = row_norm_sq;
-                        }
+                && i % 20 == 0
+            {
+                let mut norm = x[0].zero();
+                for i in 0..n as u32 {
+                    let mut row_norm_sq = x[0].zero();
+                    for j in 0..n as u32 - 1 {
+                        row_norm_sq += h[(i, j)].clone() * &h[(i, j)];
                     }
 
-                    if &norm.sqrt().inv().round_to_nearest_integer() > max_coeff {
-                        return Err(IntegerRelationError::CoefficientLimit);
+                    if row_norm_sq > norm {
+                        norm = row_norm_sq;
                     }
                 }
+
+                if &norm.sqrt().inv().round_to_nearest_integer() > max_coeff {
+                    return Err(IntegerRelationError::CoefficientLimit);
+                }
+            }
         }
 
         // return the best estimate

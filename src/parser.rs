@@ -20,7 +20,7 @@ use crate::{
     coefficient::{Coefficient, ConvertToRing},
     domains::{
         Ring,
-        float::{Complex, Float, NumericalFloatLike},
+        float::{Complex, Float, FloatLike},
         integer::Integer,
         rational::Rational,
     },

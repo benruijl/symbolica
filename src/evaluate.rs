@@ -22,8 +22,8 @@ use crate::{
     domains::{
         InternalOrdering,
         float::{
-            Complex, ConstructibleFloat, ErrorPropagatingFloat, F64, Float, NumericalFloatLike,
-            Real, RealNumberLike, SingleFloat,
+            Complex, Constructible, ErrorPropagatingFloat, F64, Float, FloatLike, Real, RealLike,
+            SingleFloat,
         },
         integer::Integer,
         rational::Rational,
@@ -128,12 +128,13 @@ impl<T> FunctionMap<T> {
         }
 
         if let Some(t) = self.tag.insert(name, 0)
-            && t != 0 {
-                return Err(format!(
-                    "Cannot add the same function {} with a different number of parameters",
-                    name.get_name()
-                ));
-            }
+            && t != 0
+        {
+            return Err(format!(
+                "Cannot add the same function {} with a different number of parameters",
+                name.get_name()
+            ));
+        }
 
         self.tagged_fn_map.insert(
             (name, vec![]),
@@ -165,12 +166,13 @@ impl<T> FunctionMap<T> {
         }
 
         if let Some(t) = self.tag.insert(name, tags.len())
-            && t != tags.len() {
-                return Err(format!(
-                    "Cannot add the same function {} with a different number of parameters",
-                    name.get_name()
-                ));
-            }
+            && t != tags.len()
+        {
+            return Err(format!(
+                "Cannot add the same function {} with a different number of parameters",
+                name.get_name()
+            ));
+        }
 
         let tag_len = tags.len();
         self.tagged_fn_map.insert(
@@ -214,12 +216,13 @@ impl<T> FunctionMap<T> {
         }
 
         if let Some(t) = self.tag.insert(name, 0)
-            && t != 0 {
-                return Err(format!(
-                    "Cannot add the same function {} with a different number of parameters",
-                    name.get_name()
-                ));
-            }
+            && t != 0
+        {
+            return Err(format!(
+                "Cannot add the same function {} with a different number of parameters",
+                name.get_name()
+            ));
+        }
 
         self.tagged_fn_map
             .insert((name, vec![]), ConstOrExpr::Condition);
@@ -668,11 +671,10 @@ impl<T: Eq + Hash + Clone + InternalOrdering> HashedExpression<T> {
         subexp: &HashMap<&HashedExpression<T>, usize>,
         skip_root: bool,
     ) {
-        if !skip_root
-            && let Some(i) = subexp.get(self) {
-                *self = HashedExpression::SubExpression(self.get_hash(), *i); // TODO: do not recyle hash?
-                return;
-            }
+        if !skip_root && let Some(i) = subexp.get(self) {
+            *self = HashedExpression::SubExpression(self.get_hash(), *i); // TODO: do not recyle hash?
+            return;
+        }
 
         match self {
             HashedExpression::Const(_, _)
@@ -5607,19 +5609,20 @@ impl Expression<Complex<Rational>> {
 
                         if i == n_cores - 1
                             && let Some(a) = &settings.abort_check
-                                && a() {
-                                    abort.store(true, Ordering::Relaxed);
+                            && a()
+                        {
+                            abort.store(true, Ordering::Relaxed);
 
-                                    if settings.verbose {
-                                        info!(
-                                            "Aborting Horner optimization at step {}/{}.",
-                                            j,
-                                            settings.horner_iterations / n_cores
-                                        );
-                                    }
+                            if settings.verbose {
+                                info!(
+                                    "Aborting Horner optimization at step {}/{}.",
+                                    j,
+                                    settings.horner_iterations / n_cores
+                                );
+                            }
 
-                                    return;
-                                }
+                            return;
+                        }
 
                         // try a random swap
                         let mut t1 = 0;
@@ -8130,18 +8133,16 @@ impl<T: CompiledNumber> ExportedCode<T> {
             .output()?;
 
         if !r.status.success() {
-            return Err(std::io::Error::other(
-                format!(
-                    "Could not compile code: {} {}\n{}",
-                    builder.get_program().to_string_lossy(),
-                    builder
-                        .get_args()
-                        .map(|arg| arg.to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                    String::from_utf8_lossy(&r.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Could not compile code: {} {}\n{}",
+                builder.get_program().to_string_lossy(),
+                builder
+                    .get_args()
+                    .map(|arg| arg.to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                String::from_utf8_lossy(&r.stderr)
+            )));
         }
 
         Ok(CompiledCode {
@@ -8181,7 +8182,7 @@ impl Default for InlineASM {
     }
 }
 
-impl<T: NumericalFloatLike> EvalTree<T> {
+impl<T: FloatLike> EvalTree<T> {
     /// Export the evaluation tree to C++ code. For much improved performance,
     /// optimize the tree instead.
     pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
@@ -8568,9 +8569,11 @@ impl<'a> AtomView<'a> {
 
                 if let AtomView::Num(n) = e
                     && let CoefficientView::Natural(num, den, num_i, _den_i) = n.get_coeff_view()
-                        && den == 1 && num_i == 0 {
-                            return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
-                        }
+                    && den == 1
+                    && num_i == 0
+                {
+                    return Ok(Expression::Pow(Box::new((b_eval.clone(), num))));
+                }
 
                 let e_eval = e.to_eval_tree_impl(fn_map, params, args, funcs)?;
                 Ok(Expression::Powf(Box::new((b_eval, e_eval))))
@@ -8747,13 +8750,15 @@ impl<'a> AtomView<'a> {
 
                 if let AtomView::Num(n) = e
                     && let CoefficientView::Natural(num, den, ni, _di) = n.get_coeff_view()
-                        && den == 1 && ni == 0 {
-                            if num >= 0 {
-                                return Ok(b_eval.pow(num as u64));
-                            } else {
-                                return Ok(b_eval.pow(num.unsigned_abs()).inv());
-                            }
-                        }
+                    && den == 1
+                    && ni == 0
+                {
+                    if num >= 0 {
+                        return Ok(b_eval.pow(num as u64));
+                    } else {
+                        return Ok(b_eval.pow(num.unsigned_abs()).inv());
+                    }
+                }
 
                 let e_eval = e.evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 Ok(b_eval.powf(&e_eval))

@@ -65,7 +65,7 @@ use crate::{
         finite_field::{
             FiniteFieldCore, GaloisField, PrimeIteratorU64, ToFiniteField, Z2, Zp64, is_prime_u64,
         },
-        float::{Complex, F64, Float, RealNumberLike},
+        float::{Complex, F64, Float, RealLike},
         integer::{FromFiniteField, Integer, IntegerRelationError, IntegerRing, Z},
         rational::{Q, Rational, RationalField},
         rational_polynomial::{

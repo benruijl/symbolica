@@ -1,0 +1,22 @@
+[package]
+name = "graphica"
+authors = ["Ben Ruijl <ben@symbolica.io>"]
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+description = "Open-source multi-edge and mixed directional graph generation and canonization library"
+
+[features]
+# import/export objects that do not depend on the state using serde
+serde = ["dep:serde"]
+# allow importing/exporting of atoms with a state map using bincode
+bincode = ["dep:bincode", "dep:bincode-trait-derive"]
+
+[dependencies]
+ahash = "0.8.7"
+dyn-clone = "1.0"
+rand = "0.9"
+serde = { version = "1.0", features = ["derive"], optional = true }
+bincode = { version = "2.0", optional = true }
+bincode-trait-derive = { version = "0.1.0", optional = true }
+numerica = { path = "../numerica", version = "1.0" }

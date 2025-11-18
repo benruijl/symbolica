@@ -4642,6 +4642,12 @@ class Matrix:
     def transpose(self) -> Matrix:
         """Return the transpose of the matrix."""
 
+    def swap_rows(self, i: int, j: int, start: int = 0) -> None:
+        """Swap rows `i` and `j` of the matrix in-place, starting from column `start`."""
+
+    def swap_cols(self, i: int, j: int) -> None:
+        """Swap columns `i` and `j` of the matrix in-place."""
+
     def inv(self) -> Matrix:
         """Return the inverse of the matrix, if it exists."""
 

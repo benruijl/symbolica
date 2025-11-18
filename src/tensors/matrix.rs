@@ -323,10 +323,7 @@ impl<F: EuclideanDomain> Matrix<F> {
                 for k in i + 1..self.nrows {
                     if !self.field.is_zero(&self[(k, j)]) {
                         // Swap i-th row and k-th row.
-                        for l in j..self.ncols {
-                            self.data
-                                .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
-                        }
+                        self.swap_rows(i, k, j);
                         break;
                     }
                 }
@@ -580,6 +577,24 @@ impl<F: Ring> IndexMut<u32> for Vector<F> {
     #[inline]
     fn index_mut(&mut self, index: u32) -> &mut F::Element {
         &mut self.data[index as usize]
+    }
+}
+
+impl<F: Ring> Index<usize> for Vector<F> {
+    type Output = F::Element;
+
+    /// Get the `i`th entry of the vector.
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.data[index]
+    }
+}
+
+impl<F: Ring> IndexMut<usize> for Vector<F> {
+    /// Get the `i`th entry of the vector.
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut F::Element {
+        &mut self.data[index]
     }
 }
 
@@ -868,16 +883,28 @@ impl<F: Ring> Matrix<F> {
         }
     }
 
-    // Swap the i-th row with the j-th row.
-    pub fn swap_rows(&mut self, i: u32, j: u32) {
-        for k in 0..self.ncols {
-            self.data
-                .swap((i * self.ncols + k) as usize, (j * self.ncols + k) as usize);
+    // Swap the i-th row with the j-th row, starting at column `start`.
+    pub fn swap_rows(&mut self, mut i: u32, mut j: u32, start: u32) {
+        if i == j {
+            return;
         }
+
+        if i > j {
+            (i, j) = (j, i);
+        }
+
+        let (a, b) = self.data.split_at_mut((j * self.ncols) as usize);
+
+        a[(i * self.ncols + start) as usize..((i + 1) * self.ncols) as usize]
+            .swap_with_slice(&mut b[start as usize..self.ncols as usize]);
     }
 
     // Swap the i-th column with the j-th column.
     pub fn swap_cols(&mut self, i: u32, j: u32) {
+        if i == j {
+            return;
+        }
+
         for k in 0..self.nrows {
             self.data
                 .swap((k * self.ncols + i) as usize, (k * self.ncols + j) as usize);
@@ -892,6 +919,11 @@ impl<F: Ring> Matrix<F> {
             ncols: self.ncols,
             field: self.field.clone(),
         }
+    }
+
+    /// Return a row-first iterator over the entries of the matrix.
+    pub fn iter(&self) -> std::slice::Iter<'_, F::Element> {
+        self.data.iter()
     }
 
     /// Apply a function `f` to each entry of the matrix.
@@ -1024,7 +1056,7 @@ impl<F: Ring> Matrix<F> {
                             return Ok(self.field.zero());
                         }
 
-                        m.swap_rows(k, pivot_row);
+                        m.swap_rows(k, pivot_row, k);
                         flip_sign = !flip_sign;
                     }
 
@@ -1545,11 +1577,7 @@ impl<F: Field> Matrix<F> {
                 // Select a non-zero pivot.
                 for k in i + 1..self.nrows {
                     if !self.field.is_zero(&self[(k, j)]) {
-                        // Swap i-th row and k-th row.
-                        for l in j..self.ncols {
-                            self.data
-                                .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
-                        }
+                        self.swap_rows(i, k, j);
                         break;
                     }
                 }

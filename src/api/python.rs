@@ -17151,6 +17151,32 @@ impl PythonMatrix {
         }
     }
 
+    #[pyo3(signature = (row1, row2, start=0))]
+    pub fn swap_rows(&mut self, row1: u32, row2: u32, start: u32) -> PyResult<()> {
+        if row1 >= self.matrix.nrows() as u32 || row2 >= self.matrix.nrows() as u32 {
+            return Err(exceptions::PyIndexError::new_err("Row index out of bounds"));
+        }
+        if start >= self.matrix.ncols() as u32 {
+            return Err(exceptions::PyIndexError::new_err(
+                "Start index out of bounds",
+            ));
+        }
+
+        self.matrix.swap_rows(row1, row2, start);
+        Ok(())
+    }
+
+    pub fn swap_cols(&mut self, col1: u32, col2: u32) -> PyResult<()> {
+        if col1 >= self.matrix.ncols() as u32 || col2 >= self.matrix.ncols() as u32 {
+            return Err(exceptions::PyIndexError::new_err(
+                "Column index out of bounds",
+            ));
+        }
+
+        self.matrix.swap_cols(col1, col2);
+        Ok(())
+    }
+
     /// Return the inverse of the matrix, if it exists.
     pub fn inv(&self) -> PyResult<PythonMatrix> {
         Ok(PythonMatrix {

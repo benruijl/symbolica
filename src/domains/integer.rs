@@ -1237,7 +1237,7 @@ impl Integer {
                 .0;
 
             y.swap(m as usize, m as usize + 1);
-            h.swap_rows(m, m + 1);
+            h.swap_rows(m, m + 1, 0);
             b.swap_cols(m, m + 1);
 
             // make h lower trapezoidal

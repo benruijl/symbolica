@@ -781,12 +781,16 @@ impl<T: Into<Integer> + Copy> PartialOrd<(T, T)> for Rational {
     }
 }
 
-impl From<f64> for Rational {
+impl TryFrom<f64> for Rational {
+    type Error = &'static str;
+
     /// Convert a floating point number to its exact rational number equivalent.
     /// Use [`Rational::truncate_denominator`] to get an approximation with a smaller denominator.
     #[inline]
-    fn from(f: f64) -> Self {
-        assert!(f.is_finite());
+    fn try_from(f: f64) -> Result<Self, Self::Error> {
+        if !f.is_finite() {
+            return Err("Cannot convert non-finite float to rational");
+        }
 
         // taken from num-traits
         let bits: u64 = f.to_bits();
@@ -802,18 +806,18 @@ impl From<f64> for Rational {
 
         // superfluous factors of 2 will be divided out in the conversion to rational
         if exponent < 0 {
-            (
+            Ok((
                 (sign as i64 * mantissa as i64).into(),
                 Integer::from(2).pow(-exponent as u64),
             )
-                .into()
+                .into())
         } else {
-            (
+            Ok((
                 &Integer::from(sign as i64 * mantissa as i64)
                     * &Integer::from(2).pow(exponent as u64),
                 1.into(),
             )
-                .into()
+                .into())
         }
     }
 }

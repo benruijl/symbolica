@@ -938,10 +938,11 @@ impl Symbol {
         let (namespace, name) = (&data.namespace, &data.name[data.namespace.len() + 2..]);
 
         if let Some(custom_print) = &data.custom_print
-            && let Some(s) = custom_print(InlineVar::new(*self).as_view(), opts) {
-                f.write_str(&s)?;
-                return Ok(());
-            }
+            && let Some(s) = custom_print(InlineVar::new(*self).as_view(), opts)
+        {
+            f.write_str(&s)?;
+            return Ok(());
+        }
 
         if opts.mode.is_latex() {
             match *self {
@@ -1144,6 +1145,23 @@ impl<T: AtomCore> PartialEq<T> for Indeterminate {
         self.as_view() == other.as_atom_view()
     }
 }
+
+macro_rules! from_int {
+    ($($t:ty),*) => {
+        $(
+            impl From<$t> for Atom {
+                /// Convert an integer type to an atom. This will allocate memory.
+                fn from(n: $t) -> Atom {
+                    Atom::num(n as u64)
+                }
+            }
+        )*
+    };
+}
+
+from_int!(
+    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
+);
 
 impl TryFrom<Atom> for Indeterminate {
     type Error = String;

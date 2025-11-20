@@ -1814,37 +1814,6 @@ impl DivAssign<Float> for Float {
     }
 }
 
-impl Add<i64> for Float {
-    type Output = Self;
-
-    /// Add an infinite-precision `i64` to the float.
-    #[inline]
-    fn add(mut self, rhs: i64) -> Self::Output {
-        if rhs == 0 {
-            return self;
-        }
-
-        let Some(e1) = self.0.get_exp() else {
-            return self + rhs;
-        };
-
-        let e2 = rhs.unsigned_abs().ilog2() + 1;
-        let old_prec = self.prec();
-
-        if e1.unsigned_abs() <= e2 {
-            self.set_prec(old_prec + (e2 as i32 - e1) as u32 + 1);
-        }
-
-        let mut r = self.0 + rhs;
-
-        if let Some(e) = r.get_exp() {
-            r.set_prec((1.max(old_prec as i32 + 1 - (e1 - e))) as u32);
-        }
-
-        r.into()
-    }
-}
-
 impl Add<Float> for i64 {
     type Output = Float;
 
@@ -1852,16 +1821,6 @@ impl Add<Float> for i64 {
     #[inline]
     fn add(self, rhs: Float) -> Self::Output {
         rhs + self
-    }
-}
-
-impl Sub<i64> for Float {
-    type Output = Self;
-
-    /// Subtract an infinite-precision `i64` from a float.
-    #[inline]
-    fn sub(self, rhs: i64) -> Self::Output {
-        self + -rhs
     }
 }
 
@@ -1875,16 +1834,6 @@ impl Sub<Float> for i64 {
     }
 }
 
-impl Mul<i64> for Float {
-    type Output = Self;
-
-    /// Multiply an infinite-precision `i64` to a float.
-    #[inline]
-    fn mul(self, rhs: i64) -> Self::Output {
-        (self.0 * rhs).into()
-    }
-}
-
 impl Mul<Float> for i64 {
     type Output = Float;
 
@@ -1892,16 +1841,6 @@ impl Mul<Float> for i64 {
     #[inline]
     fn mul(self, rhs: Float) -> Self::Output {
         (self * rhs.0).into()
-    }
-}
-
-impl Div<i64> for Float {
-    type Output = Self;
-
-    /// Divide an infinite-precision `i64` from a float.
-    #[inline]
-    fn div(self, rhs: i64) -> Self::Output {
-        (self.0 / rhs).into()
     }
 }
 
@@ -1915,21 +1854,12 @@ impl Div<Float> for i64 {
     }
 }
 
-impl Add<Rational> for Float {
+impl<R: Into<Rational>> Add<R> for Float {
     type Output = Self;
 
     /// Add an infinite-precision rational to the float.
     #[inline]
-    fn add(mut self, rhs: Rational) -> Self::Output {
-        if rhs.is_zero() {
-            return self;
-        }
-
-        let Some(e1) = self.0.get_exp() else {
-            let np = self.prec();
-            return (self.0 + rhs.to_multi_prec_float(np).0).into();
-        };
-
+    fn add(mut self, rhs: R) -> Self::Output {
         fn get_bits(i: &Integer) -> i32 {
             match i {
                 Integer::Single(n) => n.unsigned_abs().ilog2() as i32 + 1,
@@ -1937,6 +1867,41 @@ impl Add<Rational> for Float {
                 Integer::Large(r) => r.significant_bits() as i32,
             }
         }
+
+        let rhs = rhs.into();
+        if rhs.is_zero() {
+            return self;
+        }
+
+        if rhs.denominator_ref().is_one() {
+            let Some(e1) = self.0.get_exp() else {
+                return self + rhs;
+            };
+
+            let e2 = get_bits(&rhs.numerator_ref());
+            let old_prec = self.prec();
+
+            if e1 <= e2 {
+                self.set_prec(old_prec + (e2 as i32 - e1) as u32 + 1);
+            }
+
+            let mut r = match rhs.numerator() {
+                Integer::Single(n) => self.0 + n,
+                Integer::Double(n) => self.0 + n,
+                Integer::Large(n) => self.0 + n,
+            };
+
+            if let Some(e) = r.get_exp() {
+                r.set_prec((1.max(old_prec as i32 + 1 - (e1 - e))) as u32);
+            }
+
+            return r.into();
+        }
+
+        let Some(e1) = self.0.get_exp() else {
+            let np = self.prec();
+            return (self.0 + rhs.to_multi_prec_float(np).0).into();
+        };
 
         // TODO: check off-by-one errors
         let e2 = get_bits(rhs.numerator_ref()) - get_bits(rhs.denominator_ref());
@@ -1958,30 +1923,50 @@ impl Add<Rational> for Float {
     }
 }
 
-impl Sub<Rational> for Float {
+impl<R: Into<Rational>> Sub<R> for Float {
     type Output = Self;
 
     #[inline]
-    fn sub(self, rhs: Rational) -> Self::Output {
-        self + -rhs
+    fn sub(self, rhs: R) -> Self::Output {
+        self + -rhs.into()
     }
 }
 
-impl Mul<Rational> for Float {
+impl<R: Into<Rational>> Mul<R> for Float {
     type Output = Self;
 
     #[inline]
-    fn mul(self, rhs: Rational) -> Self::Output {
-        (self.0 * rhs.to_multi_prec()).into()
+    fn mul(self, rhs: R) -> Self::Output {
+        let r = rhs.into();
+        if r.is_integer() {
+            match r.numerator() {
+                Integer::Single(n) => self.0 * n,
+                Integer::Double(n) => self.0 * n,
+                Integer::Large(n) => self.0 * n,
+            }
+            .into()
+        } else {
+            (self.0 * r.to_multi_prec()).into()
+        }
     }
 }
 
-impl Div<Rational> for Float {
+impl<R: Into<Rational>> Div<R> for Float {
     type Output = Self;
 
     #[inline]
-    fn div(self, rhs: Rational) -> Self::Output {
-        (self.0 / rhs.to_multi_prec()).into()
+    fn div(self, rhs: R) -> Self::Output {
+        let r = rhs.into();
+        if r.is_integer() {
+            match r.numerator() {
+                Integer::Single(n) => self.0 / n,
+                Integer::Double(n) => self.0 / n,
+                Integer::Large(n) => self.0 / n,
+            }
+            .into()
+        } else {
+            (self.0 / r.to_multi_prec()).into()
+        }
     }
 }
 
@@ -2078,6 +2063,10 @@ impl Float {
 
     pub fn to_rational(&self) -> Rational {
         self.0.to_rational().unwrap().into()
+    }
+
+    pub fn try_to_rational(&self) -> Option<Rational> {
+        self.0.to_rational().map(|x| x.into())
     }
 
     pub fn into_inner(self) -> MultiPrecisionFloat {
@@ -2391,16 +2380,16 @@ pub struct ErrorPropagatingFloat<T: FloatLike> {
     abs_err: f64,
 }
 
-impl From<f64> for ErrorPropagatingFloat<f64> {
+impl<T: FloatLike + From<f64>> From<f64> for ErrorPropagatingFloat<T> {
     fn from(value: f64) -> Self {
         if value == 0. {
             ErrorPropagatingFloat {
-                value,
+                value: value.into(),
                 abs_err: f64::EPSILON,
             }
         } else {
             ErrorPropagatingFloat {
-                value,
+                value: value.into(),
                 abs_err: f64::EPSILON * value.abs(),
             }
         }
@@ -2419,7 +2408,7 @@ impl<T: FloatLike> Neg for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: RealLike> Add<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: FloatLike> Add<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -2431,7 +2420,7 @@ impl<T: RealLike> Add<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: RealLike> Add<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: FloatLike> Add<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -2440,7 +2429,7 @@ impl<T: RealLike> Add<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: RealLike> Sub<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: FloatLike> Sub<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -2449,7 +2438,7 @@ impl<T: RealLike> Sub<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: RealLike> Sub<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: FloatLike> Sub<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -2481,32 +2470,39 @@ impl<T: RealLike> Mul<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: RealLike + Add<Rational, Output = T>> Add<Rational> for ErrorPropagatingFloat<T> {
+impl<T: RealLike + Add<Rational, Output = T>, R: Into<Rational>> Add<R>
+    for ErrorPropagatingFloat<T>
+{
     type Output = Self;
 
     #[inline]
-    fn add(self, rhs: Rational) -> Self::Output {
+    fn add(self, rhs: R) -> Self::Output {
         ErrorPropagatingFloat {
             abs_err: self.abs_err,
-            value: self.value + rhs,
+            value: self.value + rhs.into(),
         }
     }
 }
 
-impl<T: RealLike + Add<Rational, Output = T>> Sub<Rational> for ErrorPropagatingFloat<T> {
+impl<T: RealLike + Add<Rational, Output = T>, R: Into<Rational>> Sub<R>
+    for ErrorPropagatingFloat<T>
+{
     type Output = Self;
 
     #[inline]
-    fn sub(self, rhs: Rational) -> Self::Output {
-        self + -rhs
+    fn sub(self, rhs: R) -> Self::Output {
+        self + -rhs.into()
     }
 }
 
-impl<T: RealLike + Mul<Rational, Output = T>> Mul<Rational> for ErrorPropagatingFloat<T> {
+impl<T: RealLike + Mul<Rational, Output = T>, R: Into<Rational>> Mul<R>
+    for ErrorPropagatingFloat<T>
+{
     type Output = Self;
 
     #[inline]
-    fn mul(self, rhs: Rational) -> Self::Output {
+    fn mul(self, rhs: R) -> Self::Output {
+        let rhs = rhs.into();
         ErrorPropagatingFloat {
             abs_err: self.abs_err * rhs.to_f64().abs(),
             value: self.value * rhs,
@@ -2515,16 +2511,55 @@ impl<T: RealLike + Mul<Rational, Output = T>> Mul<Rational> for ErrorPropagating
     }
 }
 
-impl<T: RealLike + Div<Rational, Output = T>> Div<Rational> for ErrorPropagatingFloat<T> {
+impl<T: RealLike + Div<Rational, Output = T>, R: Into<Rational>> Div<R>
+    for ErrorPropagatingFloat<T>
+{
     type Output = Self;
 
     #[inline]
-    fn div(self, rhs: Rational) -> Self::Output {
+    fn div(self, rhs: R) -> Self::Output {
+        let rhs = rhs.into();
         ErrorPropagatingFloat {
             abs_err: self.abs_err * rhs.inv().to_f64().abs(),
             value: self.value.clone() / rhs,
         }
         .truncate()
+    }
+}
+
+impl<T: FloatLike + From<f64>> Add<f64> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: f64) -> Self::Output {
+        self + Self::from(rhs)
+    }
+}
+
+impl<T: FloatLike + From<f64>> Sub<f64> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: f64) -> Self::Output {
+        self - Self::from(rhs)
+    }
+}
+
+impl<T: RealLike + From<f64>> Mul<f64> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: f64) -> Self::Output {
+        self * Self::from(rhs)
+    }
+}
+
+impl<T: RealLike + From<f64>> Div<f64> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: f64) -> Self::Output {
+        self / Self::from(rhs)
     }
 }
 
@@ -3324,9 +3359,13 @@ macro_rules! simd_impl {
 simd_impl!(f64x2, pow_f64x2);
 simd_impl!(f64x4, pow_f64x4);
 
-impl From<Float> for Rational {
-    fn from(value: Float) -> Self {
-        value.to_rational()
+impl TryFrom<Float> for Rational {
+    type Error = &'static str;
+
+    fn try_from(value: Float) -> Result<Self, Self::Error> {
+        value
+            .try_to_rational()
+            .ok_or("Cannot convert Float to Rational")
     }
 }
 

@@ -150,7 +150,7 @@ const LATEX_PRINT_OPTIONS: PrintOptions = PrintOptions {
 /// ```
 #[cfg(feature = "python_export")]
 pub trait SymbolicaCommunityModule {
-    /// The name of the submodule. Must be used in all defined Python structures, such as:
+    /// The name of the submodule. Must be used in all defined Python structures, as such:
     /// ```
     /// #[pyclass(module = "symbolica.community.NAME")]
     /// struct MyPythonStruct {}
@@ -3823,16 +3823,26 @@ impl PythonExpression {
             PythonExpression::parse(_cls, &a, PythonParseMode::Symbolica, "python")
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             if let Some(relative_error) = relative_error {
-                let mut r: Rational = f.0.into();
-                r = r.round(&relative_error.into());
+                let err = relative_error
+                    .try_into()
+                    .map_err(exceptions::PyValueError::new_err)?;
+                let mut r: Rational = f.0.try_into().map_err(exceptions::PyValueError::new_err)?;
+                r = r.round(&err);
                 Ok(Atom::num(r).into())
             } else {
                 Ok(Atom::num(f.0).into())
             }
         } else if let Ok(f) = num.extract::<Complex<f64>>(py) {
             if let Some(relative_error) = relative_error {
-                let r = Rational::from(f.re).round(&relative_error.into());
-                let i = Rational::from(f.im).round(&relative_error.into());
+                let err = relative_error
+                    .try_into()
+                    .map_err(exceptions::PyValueError::new_err)?;
+                let r = Rational::try_from(f.re)
+                    .map_err(exceptions::PyValueError::new_err)?
+                    .round(&err);
+                let i = Rational::try_from(f.im)
+                    .map_err(exceptions::PyValueError::new_err)?
+                    .round(&err);
                 Ok(Atom::num(Complex::new(r, i)).into())
             } else {
                 Ok(Atom::num(Complex::<Float>::new(f.re.into(), f.im.into())).into())
@@ -4737,7 +4747,14 @@ impl PythonExpression {
             ));
         }
 
-        Ok(self.expr.rationalize(&relative_error.into()).into())
+        Ok(self
+            .expr
+            .rationalize(
+                &relative_error
+                    .try_into()
+                    .map_err(exceptions::PyValueError::new_err)?,
+            )
+            .into())
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.

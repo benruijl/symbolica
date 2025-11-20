@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    PositiveExponent, PolyVariable,
+    PolyVariable, PositiveExponent,
     factor::Factorize,
     polynomial::{MultivariatePolynomial, PolynomialRing},
 };
@@ -1054,7 +1054,7 @@ impl UnivariatePolynomial<IntegerRing> {
                 let tmp: f64 = (-2f64.powf(t as f64) * self.coefficients[i].to_rational().to_f64()
                     / self.coefficients[j].to_rational().to_f64())
                 .powf(1. / (j - i) as f64);
-                let tmp = Rational::from(tmp);
+                let tmp = Rational::try_from(tmp).unwrap();
                 if tmp > bound {
                     bound = tmp;
                 }

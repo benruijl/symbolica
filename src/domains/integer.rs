@@ -2952,9 +2952,9 @@ mod test {
         let pi = Float::with_val(300, rug::float::Constant::Pi);
         let e = Float::with_val(300, rug::float::Constant::Euler);
         let log2 = Float::with_val(300, rug::float::Constant::Log2);
-        let r = pi.clone() * 178236781263123
-            + e.clone() * -712365671253675
-            + log2.clone() * 712637812361762786;
+        let r = pi.clone() * 178236781263123i64
+            + e.clone() * -712365671253675i64
+            + log2.clone() * 712637812361762786i64;
 
         let result = Integer::solve_integer_relation(
             &[pi, e, log2, -r],

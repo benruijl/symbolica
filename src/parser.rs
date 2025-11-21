@@ -8,6 +8,7 @@
 
 use std::{borrow::Cow, fmt::Write, string::String, sync::Arc};
 
+use ahash::HashMap;
 use bytes::Buf;
 use rug::Integer as MultiPrecisionInteger;
 
@@ -24,8 +25,8 @@ use crate::{
         integer::Integer,
         rational::Rational,
     },
-    poly::{PositiveExponent, PolyVariable, polynomial::MultivariatePolynomial},
-    state::{State, Workspace},
+    poly::{PolyVariable, PositiveExponent, polynomial::MultivariatePolynomial},
+    state::{RecycledAtom, State, Workspace},
 };
 
 const HEX_DIGIT_MASK: [bool; 255] = [
@@ -99,19 +100,19 @@ pub enum Operator {
 }
 
 /// The mode in which to parse the expression.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum ParseMode {
     #[default]
     Symbolica,
     Mathematica,
 }
 
-
 /// Settings for parsing.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParseSettings {
     pub mode: ParseMode,
+    /// Convert completed terms to atoms during parsing, to save memory
+    pub convert_mul_to_atom: bool,
     pub distribute_neg: bool,
 }
 
@@ -129,6 +130,7 @@ impl ParseSettings {
     pub const fn symbolica() -> Self {
         ParseSettings {
             mode: ParseMode::Symbolica,
+            convert_mul_to_atom: true,
             distribute_neg: false,
         }
     }
@@ -136,6 +138,7 @@ impl ParseSettings {
     pub const fn mathematica() -> Self {
         ParseSettings {
             mode: ParseMode::Mathematica,
+            convert_mul_to_atom: true,
             distribute_neg: false,
         }
     }
@@ -143,6 +146,7 @@ impl ParseSettings {
     pub const fn polynomial() -> Self {
         ParseSettings {
             mode: ParseMode::Symbolica,
+            convert_mul_to_atom: false,
             distribute_neg: true,
         }
     }
@@ -152,6 +156,7 @@ impl Default for ParseSettings {
     fn default() -> Self {
         ParseSettings {
             mode: ParseMode::Symbolica,
+            convert_mul_to_atom: true,
             distribute_neg: false,
         }
     }
@@ -172,7 +177,7 @@ impl std::fmt::Display for Operator {
 
 impl Operator {
     #[inline]
-    pub fn get_arity(&self) -> usize {
+    pub const fn get_arity(&self) -> usize {
         match self {
             Operator::Neg | Operator::Inv => 1,
             _ => 2,
@@ -180,7 +185,7 @@ impl Operator {
     }
 
     #[inline]
-    pub fn get_precedence(&self) -> u8 {
+    pub const fn get_precedence(&self) -> u8 {
         match self {
             Operator::Mul => 8,
             Operator::Add => 7,
@@ -192,7 +197,7 @@ impl Operator {
     }
 
     #[inline]
-    pub fn left_associative(&self) -> bool {
+    pub const fn left_associative(&self) -> bool {
         match self {
             Operator::Mul => true,
             Operator::Add => true,
@@ -204,7 +209,7 @@ impl Operator {
     }
 
     #[inline]
-    pub fn right_associative(&self) -> bool {
+    pub const fn right_associative(&self) -> bool {
         match self {
             Operator::Mul => true,
             Operator::Add => true,
@@ -234,6 +239,7 @@ pub enum Token {
     RationalPolynomial(SmartString<LazyCompact>),
     Op(bool, bool, Operator, Vec<Token>),
     Fn(bool, bool, Vec<Token>),
+    ParsedMul(Box<RecycledAtom>), // a partially parsed and converted expression
     Start,
     OpenParenthesis,
     CloseParenthesis,
@@ -315,6 +321,7 @@ impl std::fmt::Display for Token {
             Token::CloseParenthesis => f.write_char(')'),
             Token::CloseBracket => f.write_char(']'),
             Token::EOF => f.write_str("EOF"),
+            Token::ParsedMul(a) => write!(f, "Atom({})", a),
         }
     }
 }
@@ -386,11 +393,12 @@ impl Token {
 
     /// Get the precedence of the token.
     #[inline]
-    fn get_precedence(&self) -> u8 {
+    const fn get_precedence(&self) -> u8 {
         match self {
             Token::Number(_, _) => 11,
             Token::SpecialNumber(_) => 11,
             Token::ID(_) => 11,
+            Token::ParsedMul(_) => Operator::Mul.get_precedence(),
             Token::RationalPolynomial(_) => 11,
             Token::Op(_, _, o, _) => o.get_precedence(),
             Token::Fn(_, _, _)
@@ -520,9 +528,10 @@ impl Token {
     }
 
     /// Parse the token into an atom.
-    pub fn to_atom(
+    pub fn to_atom<T>(
         &self,
-        namespace: &DefaultNamespace,
+        namespace: &DefaultNamespace<T>,
+        name_map: &mut HashMap<SmartString<LazyCompact>, Symbol>,
         workspace: &Workspace,
     ) -> Result<Atom, String> {
         let mut atom = workspace.new_atom();
@@ -530,7 +539,9 @@ impl Token {
         {
             let mut state = State::get_global_state().write().unwrap();
             // do not normalize to prevent potential deadlocks
-            self.to_atom_with_output_no_norm(namespace, &mut state, workspace, &mut atom)?;
+            self.to_atom_with_output_no_norm(
+                namespace, name_map, &mut state, workspace, &mut atom,
+            )?;
         }
 
         let mut out = Atom::new();
@@ -540,12 +551,17 @@ impl Token {
     }
 
     /// Parse a symbol with potential attributes.
-    pub(crate) fn parse_symbol(
+    pub(crate) fn parse_symbol<T>(
         x: &str,
-        namespace: &DefaultNamespace,
+        namespace: &DefaultNamespace<T>,
+        name_map: &mut HashMap<SmartString<LazyCompact>, Symbol>,
         state: &mut State,
     ) -> Result<Symbol, String> {
-        if let Some((namespace, attr)) = x.split_once("::{") {
+        if let Some(s) = name_map.get(x) {
+            return Ok(*s);
+        }
+
+        let s = if let Some((namespace, attr)) = x.split_once("::{") {
             if let Some((attrs, symbol)) = attr.split_once("}::") {
                 let mut attributes = vec![];
                 let mut tags = vec![];
@@ -578,21 +594,27 @@ impl Token {
                     .with_attributes(attributes)
                     .with_tags(tags)
                     .build_with_state(state)
-                    .map_err(|e| e.into())
+                    .map_err(|e| e.to_string())
             } else {
                 Err(format!("Malformatted attribute section in {}", x))
             }
         } else {
             SymbolBuilder::new(namespace.attach_namespace(x))
                 .build_with_state(state)
-                .map_err(|e| e.into())
-        }
+                .map_err(|e| e.to_string())
+        }?;
+
+        // store the name in a map to prevent string allocation when the default namespace
+        // gets added to the symbol
+        name_map.insert(x.into(), s);
+        Ok(s)
     }
 
     /// Parse the token into the atom `out`.
-    fn to_atom_with_output_no_norm(
+    fn to_atom_with_output_no_norm<T>(
         &self,
-        namespace: &DefaultNamespace,
+        namespace: &DefaultNamespace<T>,
+        name_map: &mut HashMap<SmartString<LazyCompact>, Symbol>,
         state: &mut State,
         workspace: &Workspace,
         out: &mut Atom,
@@ -631,7 +653,7 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(Self::parse_symbol(x, namespace, state)?);
+                out.to_var(Self::parse_symbol(x, namespace, name_map, state)?);
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -639,7 +661,9 @@ impl Token {
 
                     let mut atom = workspace.new_atom();
                     for a in args {
-                        a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
+                        a.to_atom_with_output_no_norm(
+                            namespace, name_map, state, workspace, &mut atom,
+                        )?;
                         mul.extend(atom.as_view());
                     }
                 }
@@ -648,7 +672,9 @@ impl Token {
 
                     let mut atom = workspace.new_atom();
                     for a in args {
-                        a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
+                        a.to_atom_with_output_no_norm(
+                            namespace, name_map, state, workspace, &mut atom,
+                        )?;
                         add.extend(atom.as_view());
                     }
                 }
@@ -656,10 +682,16 @@ impl Token {
                     // pow is right associative
                     args.last()
                         .unwrap()
-                        .to_atom_with_output_no_norm(namespace, state, workspace, out)?;
+                        .to_atom_with_output_no_norm(namespace, name_map, state, workspace, out)?;
                     for a in args.iter().rev().skip(1) {
                         let mut cur_base = workspace.new_atom();
-                        a.to_atom_with_output_no_norm(namespace, state, workspace, &mut cur_base)?;
+                        a.to_atom_with_output_no_norm(
+                            namespace,
+                            name_map,
+                            state,
+                            workspace,
+                            &mut cur_base,
+                        )?;
 
                         let mut pow_h = workspace.new_atom();
                         pow_h.to_pow(cur_base.as_view(), out.as_view());
@@ -671,7 +703,9 @@ impl Token {
                     debug_assert!(args.len() == 1);
 
                     let mut base = workspace.new_atom();
-                    args[0].to_atom_with_output_no_norm(namespace, state, workspace, &mut base)?;
+                    args[0].to_atom_with_output_no_norm(
+                        namespace, name_map, state, workspace, &mut base,
+                    )?;
 
                     let num = workspace.new_num(-1);
 
@@ -683,7 +717,9 @@ impl Token {
                     debug_assert!(args.len() == 1);
 
                     let mut base = workspace.new_atom();
-                    args[0].to_atom_with_output_no_norm(namespace, state, workspace, &mut base)?;
+                    args[0].to_atom_with_output_no_norm(
+                        namespace, name_map, state, workspace, &mut base,
+                    )?;
 
                     let num = workspace.new_num(-1);
 
@@ -696,16 +732,21 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(Self::parse_symbol(name, namespace, state)?);
+                let fun = out.to_fun(Self::parse_symbol(name, namespace, name_map, state)?);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
-                    a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
+                    a.to_atom_with_output_no_norm(
+                        namespace, name_map, state, workspace, &mut atom,
+                    )?;
                     fun.add_arg(atom.as_view());
                 }
             }
             Token::RationalPolynomial(_) => Err(format!(
                 "Optimized rational polynomial input cannot be parsed yet as atom: {self}"
             ))?,
+            Token::ParsedMul(a) => {
+                out.set_from_view(&a.as_view());
+            }
             x => return Err(format!("Unexpected token {x}")),
         }
 
@@ -1046,9 +1087,21 @@ impl Token {
 
     /// Parse a Symbolica expression, generating a token tree. For most users,
     /// it is recommended to use [crate::parse] instead, which returns an atom.
-    ///
-    /// Optionally, distribute distribute unary minus operators into sums.
     pub fn parse(input: &str, settings: ParseSettings) -> Result<Token, String> {
+        Token::parse_with_atom_info::<&'static str>(input, settings, None)
+    }
+
+    /// Parse a Symbolica expression, generating a token tree that may contain
+    /// parsed atom. For most users, it is recommended to use [crate::parse] instead, which returns an atom.
+    pub fn parse_with_atom_info<T>(
+        input: &str,
+        settings: ParseSettings,
+        mut atom_info: Option<(
+            &DefaultNamespace<T>,
+            &mut HashMap<SmartString<LazyCompact>, Symbol>,
+            &Workspace,
+        )>,
+    ) -> Result<Token, String> {
         LicenseManager::check();
 
         // Remove ANSI color codes from the input string.
@@ -1504,9 +1557,9 @@ impl Token {
                                     if settings.mode.is_mathematica()
                                         && let Some(rewrite) =
                                             Token::map_mathematica_full_form_symbols(args)?
-                                        {
-                                            *unsafe { stack.get_unchecked_mut(pos) } = rewrite;
-                                        }
+                                    {
+                                        *unsafe { stack.get_unchecked_mut(pos) } = rewrite;
+                                    }
 
                                     stack.pop();
                                 } else {
@@ -1602,9 +1655,9 @@ impl Token {
                                 if settings.mode.is_mathematica()
                                     && let Some(rewrite) =
                                         Token::map_mathematica_full_form_symbols(args)?
-                                    {
-                                        *first = rewrite;
-                                    }
+                                {
+                                    *first = rewrite;
+                                }
                             }
                             (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
                                 *first = mid;
@@ -1624,7 +1677,33 @@ impl Token {
                                     if o_mid == *o1 && o_mid.right_associative() {
                                         m.append(&mut m_mid);
                                     } else {
-                                        m.push(Token::Op(false, false, o_mid, m_mid));
+                                        if settings.convert_mul_to_atom
+                                            && o_mid == Operator::Mul
+                                            && let Some((ns, name_map, ws)) = &mut atom_info
+                                        {
+                                            // convert a finished multiplication sandwiched between
+                                            // two additions (a term) into an atom
+                                            // this representation will be more memory efficient
+                                            let t = Token::Op(false, false, o_mid, m_mid);
+
+                                            let mut atom = ws.new_atom();
+
+                                            {
+                                                let mut state =
+                                                    State::get_global_state().write().unwrap();
+                                                // do not normalize to prevent potential deadlocks
+                                                t.to_atom_with_output_no_norm(
+                                                    ns, name_map, &mut state, ws, &mut atom,
+                                                )?;
+                                            }
+
+                                            let mut norm = ws.new_atom();
+                                            atom.as_view().normalize(ws, &mut norm);
+
+                                            m.push(Token::ParsedMul(Box::new(norm)));
+                                        } else {
+                                            m.push(Token::Op(false, false, o_mid, m_mid));
+                                        }
                                     }
                                 } else {
                                     m.push(mid)
@@ -1759,9 +1838,10 @@ impl Token {
                         let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
 
                         if len <= 20
-                            && let Ok(n) = n.parse::<i64>() {
-                                break 'read_coeff field.element_from_coefficient(n.into());
-                            }
+                            && let Ok(n) = n.parse::<i64>()
+                        {
+                            break 'read_coeff field.element_from_coefficient(n.into());
+                        }
 
                         if let Ok(n) = n.parse::<i128>() {
                             break 'read_coeff field

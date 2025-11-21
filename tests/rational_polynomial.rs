@@ -65,6 +65,7 @@ fn factorized_rational_poly_large() {
     let p = Token::parse(
         input,
         ParseSettings {
+            convert_mul_to_atom: false,
             distribute_neg: true,
             mode: ParseMode::Symbolica,
         },

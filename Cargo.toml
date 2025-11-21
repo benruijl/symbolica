@@ -25,10 +25,8 @@ crate-type = ["lib"]
 name = "symbolica"
 
 [features]
-default = ["tracing_max_level_info"]
-# if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
-# if symbolica is used as a dynamic library (as is the case for the Python API)
-faster_alloc = ["tikv-jemallocator"]
+default = ["tracing_max_level_info", "faster_alloc"]
+faster_alloc = ["mimalloc"]
 # sort functions based on an argument-by-argument comparison
 full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
@@ -82,7 +80,7 @@ self_cell = "1.2.0"
 serde = { version = "1.0", features = ["derive"], optional = true }
 smallvec = "1.13"
 smartstring = "1.0"
-tikv-jemallocator = { version = "0.6", optional = true }
+mimalloc = { version = "0.1", optional = true }
 tinyjson = "2.5"
 tracing = "0.1"
 wide = "0.8"

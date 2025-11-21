@@ -78,7 +78,7 @@ pub mod utils;
 
 #[cfg(feature = "faster_alloc")]
 #[global_allocator]
-static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 static LICENSE_KEY: OnceCell<String> = OnceCell::new();
 static LICENSE_MANAGER: OnceCell<LicenseManager> = OnceCell::new();

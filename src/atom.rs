@@ -43,6 +43,7 @@ mod coefficient;
 mod core;
 pub mod representation;
 
+use ahash::HashMap;
 use colored::Colorize;
 use smartstring::{LazyCompact, SmartString};
 
@@ -172,14 +173,14 @@ macro_rules! wrap_symbol {
 
 /// A string representation of an expression with a namespace, and optional positional data (file and line).
 /// Can be created with the [wrap_input!](crate::wrap_input) macro.
-pub struct DefaultNamespace<'a> {
+pub struct DefaultNamespace<T> {
     pub namespace: Cow<'static, str>,
-    pub data: &'a str,
+    pub data: T,
     pub file: Cow<'static, str>,
     pub line: usize,
 }
 
-impl DefaultNamespace<'_> {
+impl<T> DefaultNamespace<T> {
     /// Parse a string into a namespaced string.
     pub fn attach_namespace(&self, s: &str) -> NamespacedSymbol {
         if let Some(mut s) = NamespacedSymbol::try_parse(s) {
@@ -209,7 +210,7 @@ impl DefaultNamespace<'_> {
 macro_rules! wrap_input {
     ($e:expr) => {
         $crate::atom::DefaultNamespace {
-            data: $e.as_ref(),
+            data: $e,
             namespace: $crate::namespace!().into(),
             file: file!().into(),
             line: line!() as usize,
@@ -222,7 +223,7 @@ macro_rules! wrap_input {
 macro_rules! with_default_namespace {
     ($e:expr, $namespace: expr) => {
         $crate::atom::DefaultNamespace {
-            data: $e.as_ref(),
+            data: $e,
             namespace: $namespace.into(),
             file: file!().into(),
             line: line!() as usize,
@@ -585,8 +586,13 @@ impl Symbol {
     /// Parse a symbol from a string with optional namespace and attributes.
     ///
     /// Use the [symbol!](crate::symbol) macro instead to define symbols in the current namespace.
-    pub fn parse(name: DefaultNamespace) -> Result<Self, String> {
-        Token::parse_symbol(name.data, &name, &mut State::get_state_mut())
+    pub fn parse<T: AsRef<str>>(name: DefaultNamespace<T>) -> Result<Self, String> {
+        Token::parse_symbol(
+            name.data.as_ref(),
+            &name,
+            &mut HashMap::default(),
+            &mut State::get_state_mut(),
+        )
     }
 
     /// Create a new variable from the symbol.
@@ -1826,8 +1832,29 @@ impl Atom {
     /// let x_2 = Atom::parse(with_default_namespace!("x_2", "b"), ParseSettings::default()).unwrap();
     /// assert!(x != x_2);
     /// ```
-    pub fn parse(input: DefaultNamespace, settings: ParseSettings) -> Result<Atom, String> {
-        Workspace::get_local().with(|ws| Token::parse(input.data, settings)?.to_atom(&input, ws))
+    pub fn parse<T: AsRef<str>>(
+        input: DefaultNamespace<T>,
+        settings: ParseSettings,
+    ) -> Result<Atom, String> {
+        let mut name_map = HashMap::default();
+        Workspace::get_local().with(|ws| {
+            let t = Token::parse_with_atom_info(
+                input.data.as_ref(),
+                settings,
+                Some((&input, &mut name_map, ws)),
+            )?;
+
+            // drop the input data before parsing further
+            let ns = DefaultNamespace {
+                data: "",
+                namespace: input.namespace,
+                file: input.file,
+                line: input.line,
+            };
+            drop(input.data);
+
+            t.to_atom(&ns, &mut name_map, ws)
+        })
     }
 
     /// Create a new atom that represents a variable.

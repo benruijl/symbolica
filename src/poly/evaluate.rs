@@ -855,20 +855,26 @@ pub enum Variable<N: FloatLike> {
 }
 
 impl Variable<Rational> {
-    fn to_pretty_string(&self, var_map: &[super::PolyVariable], mode: InstructionSetMode) -> String {
+    fn to_pretty_string(
+        &self,
+        var_map: &[super::PolyVariable],
+        mode: InstructionSetMode,
+    ) -> String {
         match self {
             Variable::Var(v, index) => {
                 // convert f(0) to f[0]
                 if let super::PolyVariable::Function(_, f) = &var_map[*v]
                     && let AtomView::Fun(f) = f.as_view()
-                        && f.get_nargs() == 1
-                            && let Some(a) = f.iter().next()
-                                && let AtomView::Num(n) = a
-                                    && let CoefficientView::Natural(n, d, ni, _di) =
-                                        n.get_coeff_view()
-                                        && d == 1 && ni == 0 && n >= 0 {
-                                            return format!("{}[{}]", f.get_symbol(), a);
-                                        }
+                    && f.get_nargs() == 1
+                    && let Some(a) = f.iter().next()
+                    && let AtomView::Num(n) = a
+                    && let CoefficientView::Natural(n, d, ni, _di) = n.get_coeff_view()
+                    && d == 1
+                    && ni == 0
+                    && n >= 0
+                {
+                    return format!("{}[{}]", f.get_symbol(), a);
+                }
 
                 let mut s = var_map[*v].to_string();
 
@@ -1007,32 +1013,32 @@ impl InstructionList {
         for i in 0..self.instr.len() {
             // we could be in chain of single use -> single use -> etc so work from the start
             if let Instruction::Add(a) | Instruction::Mul(a) = &self.instr[i]
-                && a.iter().any(|v| use_count[*v] == 1) {
-                    let mut instr = std::mem::replace(&mut self.instr[i], Instruction::Empty);
+                && a.iter().any(|v| use_count[*v] == 1)
+            {
+                let mut instr = std::mem::replace(&mut self.instr[i], Instruction::Empty);
 
-                    if let Instruction::Add(a) | Instruction::Mul(a) = &mut instr {
-                        let mut new_a = Vec::with_capacity(a.len());
-                        for v in a.drain(..) {
-                            if use_count[v] == 1 {
-                                if let Instruction::Add(aa) | Instruction::Mul(aa) = &self.instr[v]
-                                {
-                                    for x in aa {
-                                        new_a.push(*x);
-                                    }
-                                    self.instr[v] = Instruction::Empty;
-                                } else {
-                                    unreachable!()
+                if let Instruction::Add(a) | Instruction::Mul(a) = &mut instr {
+                    let mut new_a = Vec::with_capacity(a.len());
+                    for v in a.drain(..) {
+                        if use_count[v] == 1 {
+                            if let Instruction::Add(aa) | Instruction::Mul(aa) = &self.instr[v] {
+                                for x in aa {
+                                    new_a.push(*x);
                                 }
+                                self.instr[v] = Instruction::Empty;
                             } else {
-                                new_a.push(v);
+                                unreachable!()
                             }
+                        } else {
+                            new_a.push(v);
                         }
-                        new_a.sort();
-                        *a = new_a;
                     }
-
-                    self.instr[i] = instr;
+                    new_a.sort();
+                    *a = new_a;
                 }
+
+                self.instr[i] = instr;
+            }
         }
 
         self.remove_empty_ops();
@@ -1485,9 +1491,7 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
 
 impl<N: FloatLike> InstructionListOutput<N> {
     /// Convert all numbers in the instruction list from the field `N` to the field `NO`.
-    pub fn convert<'a, NO: FloatLike + for<'b> From<&'b N>>(
-        &'a self,
-    ) -> InstructionListOutput<NO> {
+    pub fn convert<'a, NO: FloatLike + for<'b> From<&'b N>>(&'a self) -> InstructionListOutput<NO> {
         self.convert_with_map(|x| x.into())
     }
 
@@ -1946,6 +1950,8 @@ auto 𝑖 = 1i;\n",
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use crate::{
         atom::AtomCore,
         domains::{float::Complex, rational::Q},
@@ -1954,6 +1960,7 @@ mod test {
             evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
             polynomial::MultivariatePolynomial,
         },
+        symbol,
     };
 
     use wide::f64x4;
@@ -2010,7 +2017,11 @@ a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
 
     #[test]
     fn res_53() {
-        let poly: MultivariatePolynomial<_, u8> = parse!(RES_53).to_polynomial(&Q, None);
+        let vars = ["a0", "a1", "a2", "a3", "a4", "a5", "b0", "b1", "b2", "b3"];
+        let vars = vars.iter().map(|x| symbol!(x).into()).collect::<Vec<_>>();
+
+        let poly: MultivariatePolynomial<_, u8> =
+            parse!(RES_53).to_polynomial(&Q, Some(Arc::new(vars)));
 
         let (h, _ops, scheme) = poly.optimize_horner_scheme(1000);
         let mut i = h.to_instr(poly.nvars());
@@ -2052,7 +2063,7 @@ a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
         let res = evaluator
             .evaluate_with_input(&(0..poly.nvars()).map(|x| x as f64 + 1.).collect::<Vec<_>>())[0];
 
-        assert_eq!(res, 280944.);
+        assert_eq!(res, -1167748.);
 
         // evaluate with simd
         let o_f64x4 = o.convert::<f64x4>();
@@ -2064,7 +2075,10 @@ a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
                 .collect::<Vec<_>>(),
         )[0];
 
-        assert_eq!(res, f64x4::new([280944.0, 645000.0, 1774950.0, 4985154.0]));
+        assert_eq!(
+            res,
+            f64x4::new([-1167748., -3589814., -8821476., -18822982.])
+        );
 
         // evaluate with complex numbers
         let mut complex_evaluator = o.convert::<Complex<f64>>().evaluator();
@@ -2074,7 +2088,8 @@ a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
                 .collect::<Vec<_>>(),
         )[0];
         assert!(
-            (res.re - 3230756.634848104).abs() < 1e-6 && (res.im - 2522437.0904901037).abs() < 1e-6
+            (res.re - -9246939.447600078).abs() < 1e-6
+                && (res.im - -21536192.22926005).abs() < 1e-6
         );
     }
 }

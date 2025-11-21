@@ -118,6 +118,7 @@ print(p)
 ```
 which yields `(45+13*x+50*x*y^2+152*x^2+25*x^2*y^4+300*x^3*y^2+150*x^4*y^4)/(5+2*x+30*x^2+12*x^3)`.
 
+
 ## Development
 
-Follow the development and discussions on [Zulip](https://reform.zulipchat.com)!
+Follow the development of Symbolica and the open-source spin-off projects [numerica](https://github.com/symbolica-dev/numerica) and [graphica](https://github.com/symbolica-dev/graphica) on [Zulip](https://reform.zulipchat.com)!
